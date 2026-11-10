@@ -1,26 +1,19 @@
 import json
 import re
 from typing import Any, Dict, List, Optional, Set
-from openai import OpenAI
-from src.config import (
-    EMBEDDING_API_BASE_URL,
-    EMBEDDING_API_KEY,
-    EMBEDDING_MODEL,
-    PROCESSED_DATA_DIR,
-)
+from src.config import PROCESSED_DATA_DIR
 from src.retrieval.keyword_store import BM25KeywordStore
 from src.retrieval.reranker import rerank_candidates
 from src.retrieval.vector_store import (
-    _fallback_embedding,
     get_chroma_collection,
+    get_query_embedding,
 )
 
-client_api = OpenAI(base_url=EMBEDDING_API_BASE_URL, api_key=EMBEDDING_API_KEY)
 bm25_store = BM25KeywordStore()
 
 
 def detect_query_intent(query: str) -> Dict[str, Any]:
-    """3 класса намерений по разделу 5.3-5.5 rag.md: exact_lookup, semantic_query, mixed_query."""
+    """3 класса намерений по разделу 5.3-5.5 rag.md."""
     q_low = query.lower()
 
     has_exact = bool(
@@ -77,14 +70,9 @@ def resolve_allowed_versions_by_date(
     chunks_map: Dict[str, Dict[str, Any]],
     selected_doc_ids: Optional[Set[str]] = None,
 ) -> Set[str]:
-    """
-    Разрешает допустимые chunk_id с учетом:
-    1. Даты события: effective_from <= event_date < effective_to.
-    2. Связки договора с допниками: если выбран договор, допники к нему включаются автоматически.
-    """
+    """Фильтрация версий по дате события и связкам amends_document_id."""
     allowed_cids = set()
 
-    # Расширяем selected_doc_ids связями amends_document_id
     expanded_doc_ids = set(selected_doc_ids) if selected_doc_ids else None
     if expanded_doc_ids:
         for ch in chunks_map.values():
@@ -131,17 +119,13 @@ def hybrid_search(
 
     intent = detect_query_intent(query)
 
-    # 1. BM25 Search с фильтрацией до ранжирования (раздел 4.2 rag.md)
+    # 1. BM25 Search
     bm25_results = bm25_store.search(
         query, top_k=intent["bm25_top"], allowed_chunk_ids=allowed_chunk_ids
     )
 
-    # 2. Dense Vector Search в Chroma
-    try:
-        res = client_api.embeddings.create(model=EMBEDDING_MODEL, input=[query])
-        query_vector = res.data[0].embedding
-    except Exception:
-        query_vector = _fallback_embedding(query)
+    # 2. Dense Vector Search с локальным или API вектором
+    query_vector = get_query_embedding(query)
 
     collection = get_chroma_collection()
     chroma_res = collection.query(
@@ -169,7 +153,7 @@ def hybrid_search(
             intent["w_dense"] / (rrf_k + rank + 1)
         )
 
-    # Приоритет доп. соглашений (более поздней редакции) при совпадении условий
+    # Приоритет актуальных доп. соглашений
     for cid in rrf_scores:
         ch = chunks_map.get(cid)
         if ch and ch.get("amends_document_id"):
@@ -180,6 +164,5 @@ def hybrid_search(
     )[:40]
     candidate_chunks = [chunks_map[cid] for cid in sorted_cids if cid in chunks_map]
 
-    # 4. Reranking через Qwen3 Reranker 8B (раздел 6 rag.md)
-    final_chunks = rerank_candidates(query, candidate_chunks, top_k=top_k)
-    return final_chunks
+    # 4. Reranker (Qwen3 Reranker 8B)
+    return rerank_candidates(query, candidate_chunks, top_k=top_k)
