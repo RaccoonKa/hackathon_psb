@@ -4,4 +4,4 @@ __pycache__/
 .env
 storage/chroma_db/
 storage/bm25_index/
-data/raw/
+
