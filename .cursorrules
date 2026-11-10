@@ -1,0 +1,15 @@
+﻿# Git Automation Rules for AI Agent
+
+- DEFAULT_BRANCH: Always push ONLY to "feat/rag-baseline". NEVER touch, checkout, or push to "main".
+- COMMIT CONVENTION: Use Conventional Commits format:
+    - feat(rag): ...
+    - fix(parser): ...
+    - test(chunker): ...
+    - chore(deps): ...
+- AUTOMATION WORKFLOW:
+    1. Whenever you finish implementing a file or complete a logical task, run `git status`.
+    2. Check that no ignored files (.venv, .env, raw data) are staged.
+    3. Run `git add <modified_files>` (avoid `git add .` if unintended temporary files exist).
+    4. Run `git commit -m "<concise conventional message>"`.
+    5. Run `git push origin feat/rag-baseline`.
+    6. Report the commit hash and branch to the user.
