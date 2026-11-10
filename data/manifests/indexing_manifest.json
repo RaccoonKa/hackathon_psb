@@ -1,10 +1,10 @@
 {
-  "index_build_id": "index_2026_11_10_201758",
+  "index_build_id": "index_2026_11_10_221211",
   "embedding_model": "BAAI/bge-m3",
   "reranker_model": "Qwen/Qwen3-Reranker-8B",
   "chunker_version": "structural-1.0",
-  "indexed_at": "2026-11-10T20:17:58Z",
-  "total_chunks": 403,
+  "indexed_at": "2026-11-10T22:12:11Z",
+  "total_chunks": 466,
   "documents": [
     {
       "document_id": "contract_а-08-2024",
@@ -35,8 +35,8 @@
       "chunks_count": 2
     },
     {
-      "document_id": "contract_к-12",
-      "version_id": "contract_к-12_v1",
+      "document_id": "doc_письмо-комплаенс-службы-к-12-от-15-04-2025",
+      "version_id": "doc_письмо-комплаенс-службы-к-12-от-15-04-2025_v1",
       "source_hash": "sha256:9d256e900a22e14c01f341d4172dc2923aa8696b0639f5ab8eed5a6ff5884449",
       "amends_document_id": null,
       "chunks_count": 1
@@ -63,95 +63,95 @@
       "chunks_count": 1
     },
     {
-      "document_id": "contract_156-фз",
-      "version_id": "contract_156-фз_v1",
+      "document_id": "doc_152фз_ст9_действующая",
+      "version_id": "doc_152фз_ст9_действующая_v1",
       "source_hash": "sha256:26fc061b84c6f730cfbcc2c2a6a143ba391c5e0988befa694ec8afa2c36d71ec",
       "amends_document_id": null,
-      "chunks_count": 5
+      "chunks_count": 12
     },
     {
-      "document_id": "doc_законы__коап_ст13-11_действующая",
-      "version_id": "doc_законы__коап_ст13-11_действующая_v1",
+      "document_id": "doc_коап_ст13-11_действующая",
+      "version_id": "doc_коап_ст13-11_действующая_v1",
       "source_hash": "sha256:d982e1ebdc409e93fe4434ada02e7a0801971eacb9dfaad511186004628e097f",
+      "amends_document_id": null,
+      "chunks_count": 40
+    },
+    {
+      "document_id": "doc_мрот_ст1_действующая",
+      "version_id": "doc_мрот_ст1_действующая_v1",
+      "source_hash": "sha256:a487d40fa1afb4ff37be1fc4a773a93d16e275c1314a06ed316073ee72936d83",
+      "amends_document_id": null,
+      "chunks_count": 2
+    },
+    {
+      "document_id": "doc_нк_ст112_действующая",
+      "version_id": "doc_нк_ст112_действующая_v1",
+      "source_hash": "sha256:9f6e55f1968576d70d195cabffbdd1bca1f9747a29f9af665fa29025e43b3d9a",
+      "amends_document_id": null,
+      "chunks_count": 7
+    },
+    {
+      "document_id": "doc_нк_ст114_действующая",
+      "version_id": "doc_нк_ст114_действующая_v1",
+      "source_hash": "sha256:ef0c299cf34b6a7e2ab91c08f46e6bfb0d157557d7bd9161d7a40f5e13b42941",
+      "amends_document_id": null,
+      "chunks_count": 10
+    },
+    {
+      "document_id": "doc_нк_ст145_действующая",
+      "version_id": "doc_нк_ст145_действующая_v1",
+      "source_hash": "sha256:59c61690bda78bf26dab36ece2cc3374dc5fed94dd408c0d24b7991776c336b8",
+      "amends_document_id": null,
+      "chunks_count": 24
+    },
+    {
+      "document_id": "doc_нк_ст164_действующая",
+      "version_id": "doc_нк_ст164_действующая_v1",
+      "source_hash": "sha256:90f7d1f6c472be5e5a89fc1fe9bcdc3a1b57171c475c772150bb463333bb7066",
+      "amends_document_id": null,
+      "chunks_count": 90
+    },
+    {
+      "document_id": "doc_нк_ст224_действующая",
+      "version_id": "doc_нк_ст224_действующая_v1",
+      "source_hash": "sha256:b4a2313836aadf260106ae02607b14ec6bf803ffc5e029dec2a92b1ba10e0067",
       "amends_document_id": null,
       "chunks_count": 19
     },
     {
-      "document_id": "doc_законы__мрот_ст1_действующая",
-      "version_id": "doc_законы__мрот_ст1_действующая_v1",
-      "source_hash": "sha256:a487d40fa1afb4ff37be1fc4a773a93d16e275c1314a06ed316073ee72936d83",
-      "amends_document_id": null,
-      "chunks_count": 3
-    },
-    {
-      "document_id": "doc_законы__нк_ст112_действующая",
-      "version_id": "doc_законы__нк_ст112_действующая_v1",
-      "source_hash": "sha256:9f6e55f1968576d70d195cabffbdd1bca1f9747a29f9af665fa29025e43b3d9a",
-      "amends_document_id": null,
-      "chunks_count": 3
-    },
-    {
-      "document_id": "contract_425-фз",
-      "version_id": "contract_425-фз_v1",
-      "source_hash": "sha256:ef0c299cf34b6a7e2ab91c08f46e6bfb0d157557d7bd9161d7a40f5e13b42941",
-      "amends_document_id": null,
-      "chunks_count": 3
-    },
-    {
-      "document_id": "contract_228-фз",
-      "version_id": "contract_228-фз_v1",
-      "source_hash": "sha256:59c61690bda78bf26dab36ece2cc3374dc5fed94dd408c0d24b7991776c336b8",
-      "amends_document_id": null,
-      "chunks_count": 16
-    },
-    {
-      "document_id": "doc_законы__нк_ст164_действующая",
-      "version_id": "doc_законы__нк_ст164_действующая_v1",
-      "source_hash": "sha256:90f7d1f6c472be5e5a89fc1fe9bcdc3a1b57171c475c772150bb463333bb7066",
-      "amends_document_id": null,
-      "chunks_count": 80
-    },
-    {
-      "document_id": "doc_законы__нк_ст224_действующая",
-      "version_id": "doc_законы__нк_ст224_действующая_v1",
-      "source_hash": "sha256:b4a2313836aadf260106ae02607b14ec6bf803ffc5e029dec2a92b1ba10e0067",
-      "amends_document_id": null,
-      "chunks_count": 14
-    },
-    {
-      "document_id": "doc_законы__нк_ст284_действующая",
-      "version_id": "doc_законы__нк_ст284_действующая_v1",
+      "document_id": "doc_нк_ст284_действующая",
+      "version_id": "doc_нк_ст284_действующая_v1",
       "source_hash": "sha256:f4805aaa721b5256be3ba2d5a19a4a650623f11598863ff98ee98d313e6558e3",
       "amends_document_id": null,
-      "chunks_count": 116
+      "chunks_count": 122
     },
     {
-      "document_id": "contract_144-фз",
-      "version_id": "contract_144-фз_v1",
+      "document_id": "doc_тк_ст152_действующая",
+      "version_id": "doc_тк_ст152_действующая_v1",
       "source_hash": "sha256:7b08540d0e22b14b3413ddd77dbd2e404073938de90e580b896e3ee5f6f448c3",
       "amends_document_id": null,
-      "chunks_count": 4
+      "chunks_count": 3
     },
     {
-      "document_id": "contract_246-фз",
-      "version_id": "contract_246-фз_v1",
+      "document_id": "doc_тк_ст59_действующая",
+      "version_id": "doc_тк_ст59_действующая_v1",
       "source_hash": "sha256:8956e946db720da15cf3d359cb70cbbc51d5dc1c3aab5a77df43fb78a592643e",
       "amends_document_id": null,
-      "chunks_count": 6
+      "chunks_count": 5
     },
     {
-      "document_id": "contract_91-фз",
-      "version_id": "contract_91-фз_v1",
+      "document_id": "doc_тк_ст70_действующая",
+      "version_id": "doc_тк_ст70_действующая_v1",
       "source_hash": "sha256:faa132894aee5508be9c53bd6af10c28fd6c110c3734a46f32d0c70324c358fb",
       "amends_document_id": null,
-      "chunks_count": 4
+      "chunks_count": 3
     },
     {
-      "document_id": "contract_144-фз",
-      "version_id": "contract_144-фз_v1",
+      "document_id": "doc_тк_ст99_действующая",
+      "version_id": "doc_тк_ст99_действующая_v1",
       "source_hash": "sha256:428df66e32e77301db52f526ae76b47b11ad239b0562b787cf2235c984e07d8b",
       "amends_document_id": null,
-      "chunks_count": 5
+      "chunks_count": 4
     }
   ]
 }

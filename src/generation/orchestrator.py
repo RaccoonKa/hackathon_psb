@@ -17,10 +17,11 @@ from src.generation.types import AgentResult, Intent, TraceStep
 logger = logging.getLogger(__name__)
 
 
-def run_agent(query: str) -> AgentResult:
+def run_agent(query: str, event_date: str | None = None) -> AgentResult:
     trace: list[TraceStep] = []
 
     intent, intent_step = detect_intent(query=query)
+    intent_step.input["event_date"] = event_date
     trace.append(intent_step)
 
     if intent in {Intent.OUT_OF_SCOPE, Intent.ABOUT_ASSISTANT}:
@@ -29,7 +30,7 @@ def run_agent(query: str) -> AgentResult:
         )
 
     retrieved_chunks, retrieval_step = retrieve_chunks(
-        query=query, top_k=config.RAG_TOP_K
+        query=query, top_k=config.RAG_TOP_K, event_date=event_date
     )
     trace.append(retrieval_step)
 

@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Базовые директории
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DATA_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DATA_DIR = BASE_DIR / "data" / "processed"
@@ -12,33 +11,26 @@ CHROMA_DIR = BASE_DIR / "storage" / "chroma_db"
 BM25_DIR = BASE_DIR / "storage" / "bm25_index"
 MANIFESTS_DIR = BASE_DIR / "data" / "manifests"
 
-# Параметры моделей (по регламенту хакатона)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.platform.local/v1")
 API_KEY = os.getenv("API_KEY", "EMPTY")
 
-# Эмбеддинги (bge-m3)
 EMBEDDING_API_BASE_URL = os.getenv("EMBEDDING_API_BASE_URL", os.getenv("API_BASE_URL", "https://tokenharbor.ai/v1"))
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", os.getenv("API_KEY", ""))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
-# LLM (DeepSeek)
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-ai/DeepSeek-V4.1-Flash")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4.1-flash:free")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", os.getenv("LLM_API_BASE_URL", os.getenv("API_BASE_URL", "https://tokenharbor.ai/v1")))
 LLM_API_KEY = os.getenv("LLM_API_KEY", os.getenv("API_KEY", "stub-api-key"))
 
-# Реранкер (Qwen3 Reranker 8B)
 RERANKER_API_BASE_URL = os.getenv("RERANKER_API_BASE_URL", API_BASE_URL)
 RERANKER_API_KEY = os.getenv("RERANKER_API_KEY", API_KEY)
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-8B")
 
-# Имя коллекции строго по спецификации rag.md (раздел 4.1)
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "document_chunks")
 
-# Параметры нарезки текста
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 150
 
-# Импорт типов оркестратора
 from src.generation.types import Intent
 
 LLM_MODE_STUB: str = "stub"
@@ -62,9 +54,8 @@ INTENT_CLASSIFIER_MAX_TOKENS: int = int(
     os.getenv("INTENT_CLASSIFIER_MAX_TOKENS", "32")
 )
 
-# Для запуска с реальным поиском и LLM по умолчанию ставим false для стабов
 USE_STUB_RAG: bool = os.getenv("USE_STUB_RAG", "false").lower() == "true"
-USE_STUB_RERANKER: bool = os.getenv("USE_STUB_RERANKER", "true").lower() == "true"
+USE_STUB_RERANKER: bool = os.getenv("USE_STUB_RERANKER", "false").lower() == "true"
 USE_STUB_LLM: bool = os.getenv("USE_STUB_LLM", "false").lower() == "true"
 STUB_RAG_RETURN_EMPTY: bool = os.getenv("STUB_RAG_RETURN_EMPTY", "false").lower() == "true"
 
@@ -94,6 +85,8 @@ CONTEXT_CHUNK_SEPARATOR: str = "\n\n"
 
 STUB_PROMPT_TOKENS: int = int(os.getenv("STUB_PROMPT_TOKENS", "128"))
 STUB_COMPLETION_TOKENS: int = int(os.getenv("STUB_COMPLETION_TOKENS", "64"))
+
+REAL_RAG_DEFAULT_SCORE: float = float(os.getenv("REAL_RAG_DEFAULT_SCORE", "1.0"))
 
 MS_PER_SECOND: float = 1000.0
 LATENCY_ROUND_DIGITS: int = 3
