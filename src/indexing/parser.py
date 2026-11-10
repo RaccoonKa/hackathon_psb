@@ -3,45 +3,49 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 def detect_doc_type(filename: str, content: str) -> str:
-    """Определяет тип нормативного акта: закон или внутренний документ."""
     name_lower = filename.lower()
-    text_sample = content[:1000].lower()
-    if any(k in name_lower or k in text_sample for k in ["фз", "федеральный закон", "кодекс", "постановление"]):
+    sample = content[:1500].lower()
+    if any(k in name_lower or k in sample for k in ["фз", "закон", "кодекс", "постановление"]):
         return "law"
     return "internal"
 
-def extract_metadata(file_path: Path, content: str) -> Dict[str, Any]:
-    """Извлекает ключевые атрибуты: дату редакции, номер и тип акта."""
-    filename = file_path.name
-    doc_type = detect_doc_type(filename, content)
+def parse_dates_and_version(content: str, filename: str) -> Dict[str, Any]:
+    head = content[:2000]
     
-    # Поиск даты редакции / вступления в силу в первых 2000 символах
-    date_pattern = r"(?:редакция от|действует с|утвержден(?:о)?|от)\s+(\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})"
-    date_match = re.search(date_pattern, content[:2000], re.IGNORECASE)
-    doc_date = date_match.group(1) if date_match else None
-
-    # Поиск номера документа (приказ №..., закон №...-ФЗ)
-    number_pattern = r"№\s*([\d\w\-]+)"
-    num_match = re.search(number_pattern, content[:1500])
-    doc_number = num_match.group(1) if num_match else None
-
-    title_line = content.strip().split("\n")[0][:250]
+    # Поиск даты редакции или действия
+    date_match = re.search(r"(?:редакция от|действует с|от)\s+(\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})", head, re.IGNORECASE)
+    effective_from = date_match.group(1) if date_match else None
+    
+    # Определение версии из имени файла или текста
+    ver_match = re.search(r"v(\d+)", filename, re.IGNORECASE)
+    version_id = f"v{ver_match.group(1)}" if ver_match else "v1"
 
     return {
-        "source": filename,
-        "doc_id": file_path.stem,
-        "doc_title": title_line,
-        "doc_type": doc_type,
-        "effective_date": doc_date,
-        "doc_number": doc_number,
+        "effective_from": effective_from,
+        "effective_to": None,
+        "effective_dates_known": effective_from is not None,
+        "version_id": version_id
     }
 
-def load_raw_documents(raw_dir: Path) -> List[Dict[str, Any]]:
-    """Загружает все TXT файлы из data/raw с метаданными."""
-    docs = []
-    for file_path in raw_dir.glob("**/*.txt"):
-        with open(file_path, "r", encoding="utf-8") as f:
+def load_documents_with_metadata(raw_dir: Path) -> List[Dict[str, Any]]:
+    documents = []
+    for path in sorted(raw_dir.glob("**/*.txt")):
+        with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-        meta = extract_metadata(file_path, content)
-        docs.append({"content": content, "metadata": meta})
-    return docs
+
+        title_line = content.strip().splitlines()[0][:200] if content else path.stem
+        dates_ver = parse_dates_and_version(content, path.name)
+        
+        metadata = {
+            "document_id": path.stem,
+            "version_id": dates_ver["version_id"],
+            "document_title": title_line,
+            "document_type": detect_doc_type(path.name, content),
+            "scope": "global",
+            "effective_from": dates_ver["effective_from"],
+            "effective_to": dates_ver["effective_to"],
+            "effective_dates_known": dates_ver["effective_dates_known"],
+            "source_filename": path.name
+        }
+        documents.append({"content": content, "metadata": metadata})
+    return documents

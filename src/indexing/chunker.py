@@ -1,82 +1,78 @@
-import hashlib
+import json
+from pathlib import Path
 from typing import List, Dict, Any
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from src.config import PROCESSED_DATA_DIR
 
-def generate_chunk_id(doc_id: str, version_id: str, chunk_index: int, chunker_ver: str = "structural-1.0") -> str:
-    raw = f"{doc_id}_{version_id}_{chunker_ver}_{chunk_index:04d}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-def chunk_document_structural(doc_data: Dict[str, Any], chunk_size: int = 600) -> List[Dict[str, Any]]:
-    content = doc_data["content"]
-    meta = doc_data["metadata"]
+def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    content = doc["content"]
+    meta = doc["metadata"]
     lines = content.splitlines(keepends=True)
     
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=700,
+        chunk_overlap=70,
+        separators=["\n\n", "\n", ";\n", ". ", " "],
+        keep_separator=True
+    )
+
     chunks = []
-    current_path = ["Введение"]
+    current_path = ["Введение / Общие положения"]
     current_lines = []
-    current_start_line = 1
+    start_line = 1
     char_offset = 0
-    chunk_index = 0
-    
-    for line_no, line in enumerate(lines, start=1):
-        line_clean = line.strip()
+    chunk_idx = 0
+
+    def flush_block(lines_block: List[str], s_line: int, e_line: int, c_start: int):
+        nonlocal chunk_idx
+        raw_text = "".join(lines_block).strip()
+        if not raw_text:
+            return
         
-        # Обнаружение заголовков статей и разделов
-        if any(line_clean.startswith(prefix) for prefix in ["Статья ", "Глава ", "Раздел ", "Пункт "]):
-            if current_lines:
-                chunk_text = "".join(current_lines).strip()
-                if chunk_text:
-                    prefix_ctx = f"{meta['document_title']}. {' > '.join(current_path)}. "
-                    chunks.append({
-                        "chunk_id": f"{meta['document_id']}_{meta['version_id']}_{chunk_index:04d}",
-                        "document_id": meta["document_id"],
-                        "version_id": meta["version_id"],
-                        "chunk_index": chunk_index,
-                        "text": chunk_text,
-                        "embedding_text": prefix_ctx + chunk_text,
-                        "structure": {"path": list(current_path), "provision_id": current_path[-1]},
-                        "location": {
-                            "start_line": current_start_line,
-                            "end_line": line_no - 1,
-                            "char_start": char_offset,
-                            "char_end": char_offset + len(chunk_text)
-                        },
-                        "document_title": meta["document_title"],
-                        "document_type": meta["document_type"],
-                        "scope": meta.get("scope", "global"),
-                        "effective_from": meta.get("effective_from"),
-                        "effective_to": meta.get("effective_to"),
-                        "effective_dates_known": meta.get("effective_dates_known", True),
-                        "chunker_version": "structural-1.0"
-                    })
-                    chunk_index += 1
-                current_lines = []
-                current_start_line = line_no
-            current_path = [line_clean[:100]]
-
-        current_lines.append(line)
-        char_offset += len(line)
-
-    # Хвост документа
-    if current_lines:
-        chunk_text = "".join(current_lines).strip()
-        if chunk_text:
-            prefix_ctx = f"{meta['document_title']}. {' > '.join(current_path)}. "
+        splits = splitter.split_text(raw_text)
+        for part in splits:
+            context_prefix = f"{meta['document_title']}. {' > '.join(current_path)}. "
+            cid = f"{meta['document_id']}_{meta['version_id']}_{chunk_idx:04d}"
             chunks.append({
-                "chunk_id": f"{meta['document_id']}_{meta['version_id']}_{chunk_index:04d}",
+                "chunk_id": cid,
                 "document_id": meta["document_id"],
                 "version_id": meta["version_id"],
-                "chunk_index": chunk_index,
-                "text": chunk_text,
-                "embedding_text": prefix_ctx + chunk_text,
-                "structure": {"path": list(current_path), "provision_id": current_path[-1]},
-                "location": {"start_line": current_start_line, "end_line": len(lines), "char_start": char_offset, "char_end": char_offset + len(chunk_text)},
+                "chunk_index": chunk_idx,
+                "text": part.strip(),
+                "embedding_text": context_prefix + part.strip(),
+                "structure": {"path": list(current_path)},
+                "location": {"start_line": s_line, "end_line": e_line, "char_start": c_start},
                 "document_title": meta["document_title"],
                 "document_type": meta["document_type"],
-                "scope": meta.get("scope", "global"),
+                "scope": meta["scope"],
                 "effective_from": meta.get("effective_from"),
                 "effective_to": meta.get("effective_to"),
                 "effective_dates_known": meta.get("effective_dates_known", True),
                 "chunker_version": "structural-1.0"
             })
+            chunk_idx += 1
+
+    for line_no, line in enumerate(lines, start=1):
+        clean = line.strip()
+        if any(clean.startswith(p) for p in ["Статья ", "Глава ", "Раздел ", "Пункт "]):
+            if current_lines:
+                flush_block(current_lines, start_line, line_no - 1, char_offset)
+                current_lines = []
+                start_line = line_no
+            current_path = [clean[:100]]
+
+        current_lines.append(line)
+        char_offset += len(line)
+
+    if current_lines:
+        flush_block(current_lines, start_line, len(lines), char_offset)
 
     return chunks
+
+def save_canonical_chunks(all_chunks: List[Dict[str, Any]]) -> Path:
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out_file = PROCESSED_DATA_DIR / "chunks.jsonl"
+    with open(out_file, "w", encoding="utf-8") as f:
+        for ch in all_chunks:
+            f.write(json.dumps(ch, ensure_ascii=False) + "\n")
+    return out_file
