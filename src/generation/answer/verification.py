@@ -9,6 +9,7 @@ from src.generation.errors import LLMError, LLMFormatError
 from src.generation.llm.client import llm_complete_with_usage
 from src.generation.prompts import verifier as ver_prompts
 from src.generation.types import (
+    Claim,
     ClaimStatus,
     ClaimVerdict,
     DraftAnswer,
@@ -50,6 +51,39 @@ def _parse_verifier_output(raw_text: str) -> VerificationBatchSchema:
             raise LLMFormatError(f"Verifier JSON error: {exc}") from exc
 
     raise LLMFormatError("No valid JSON found in verifier output")
+
+
+def _partition_core_and_non_core_claims(
+    claims: list[Claim],
+    required_slots: list[str],
+    status_by_idx: dict[int, ClaimStatus],
+) -> tuple[list[Claim], list[Claim]]:
+    # Первый подтвержденный claim для каждого required_slot фиксируется как core;
+    # вторичные claims с интерпретациями на том же слоте считаются non-core
+    req_set = set(required_slots) if required_slots else set()
+    core_claims: list[Claim] = []
+    non_core_claims: list[Claim] = []
+    secured_slots: set[str] = set()
+
+    for idx, c in enumerate(claims):
+        orig_idx = c.original_idx if c.original_idx is not None else idx
+        st = status_by_idx.get(orig_idx, ClaimStatus.NOT_IN_SOURCE)
+        if c.slot in req_set and st == ClaimStatus.SUPPORTED and c.slot not in secured_slots:
+            core_claims.append(c)
+            secured_slots.add(c.slot)
+
+    for idx, c in enumerate(claims):
+        if c in core_claims:
+            continue
+        if c.slot in req_set and c.slot not in secured_slots:
+            core_claims.append(c)
+        else:
+            non_core_claims.append(c)
+
+    if not core_claims and claims:
+        return [claims[0]], list(claims[1:])
+
+    return core_claims, non_core_claims
 
 
 def verify(
@@ -211,17 +245,10 @@ def verify(
 
         batch_status.append(verdict_obj)
 
-    core_slot = spec.required_slots[0] if spec.required_slots else None
     status_by_idx = {v.claim_idx: v.status for v in batch_status}
-
-    core_claims = [
-        c for c in draft.claims
-        if core_slot is None or c.slot == core_slot or len(draft.claims) == 1
-    ]
-    if not core_claims:
-        core_claims = list(draft.claims)
-
-    non_core_claims = [c for c in draft.claims if c not in core_claims]
+    core_claims, non_core_claims = _partition_core_and_non_core_claims(
+        draft.claims, spec.required_slots, status_by_idx
+    )
 
     all_core_supported = all(
         status_by_idx.get(c.original_idx if c.original_idx is not None else 0) == ClaimStatus.SUPPORTED
@@ -231,23 +258,35 @@ def verify(
         status_by_idx.get(c.original_idx if c.original_idx is not None else 0) == ClaimStatus.SUPPORTED
         for c in core_claims
     )
+    has_contradicted = any(v.status == ClaimStatus.CONTRADICTED for v in batch_status)
     all_non_core_supported = all(
         status_by_idx.get(c.original_idx if c.original_idx is not None else 0) == ClaimStatus.SUPPORTED
         for c in non_core_claims
     )
 
-    if all_core_supported and all_non_core_supported and not citation_errors:
+    if all_core_supported and all_non_core_supported and not citation_errors and not has_contradicted:
         final_verdict = VerificationVerdict.ACCEPT
-    elif (not all_core_supported or citation_errors) and can_regenerate and config.MAX_REGENERATE_CYCLES > 0:
+    elif (not all_core_supported or has_contradicted or citation_errors) and can_regenerate and config.MAX_REGENERATE_CYCLES > 0:
         final_verdict = VerificationVerdict.REGENERATE
     elif any_core_supported:
         final_verdict = VerificationVerdict.PARTIAL
-        kept_claims: list = []
+        supported_slots = {
+            c.slot for c in draft.claims if c.original_idx in supported_locked and c.slot
+        }
+        kept_claims: list[Claim] = []
         for c in draft.claims:
             if c.original_idx in supported_locked:
                 kept_claims.append(c)
             else:
-                if c.slot and c.slot not in draft.missing_info:
+                interp_note = f"интерпретация: {c.text}"
+                if interp_note not in draft.assumptions:
+                    draft.assumptions.append(interp_note)
+                if (
+                    c.slot
+                    and c.slot in spec.required_slots
+                    and c.slot not in supported_slots
+                    and c.slot not in draft.missing_info
+                ):
                     draft.missing_info.append(f"не подтверждено источниками: {c.slot}")
         draft.claims = kept_claims
     else:
@@ -267,7 +306,11 @@ def verify(
     )
     step = TraceStep(
         step="verify_draft",
-        input={"claims_count": len(claims_payload)},
+        input={
+            "claims_count": len(claims_payload),
+            "core_claims_count": len(core_claims),
+            "non_core_claims_count": len(non_core_claims),
+        },
         output={
             "final_verdict": final_verdict.value,
             "supported_locked": supported_locked,

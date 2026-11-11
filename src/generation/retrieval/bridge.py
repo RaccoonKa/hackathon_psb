@@ -16,7 +16,7 @@ from src.retrieval.hybrid import hybrid_search
 
 logger = logging.getLogger(__name__)
 
-_HYBRID_SEARCH_Accepts_INTENT = "intent" in inspect.signature(hybrid_search).parameters
+_HYBRID_SEARCH_ACCEPTS_INTENT = "intent" in inspect.signature(hybrid_search).parameters
 
 _MODE_TO_HYBRID_INTENT: dict[str, str] = {
     "bm25": "exact_lookup",
@@ -65,7 +65,7 @@ def _call_hybrid_search(
         "event_date": event_date,
         "selected_doc_ids": selected_doc_ids,
     }
-    if _HYBRID_SEARCH_Accepts_INTENT and intent_str is not None:
+    if _HYBRID_SEARCH_ACCEPTS_INTENT and intent_str is not None:
         kwargs["intent"] = intent_str
 
     raw_chunks = hybrid_search(**kwargs)
@@ -129,10 +129,13 @@ def retrieve_tasks(
 
     merged_by_id: dict[str, RetrievedChunk] = {}
     hit_counts: dict[str, int] = {}
+    protected_top_ids: list[str] = []
 
     for chunk_list in task_results:
-        for ch in chunk_list:
+        for rank_idx, ch in enumerate(chunk_list):
             cid = ch.chunk_id
+            if rank_idx < 2 and cid not in protected_top_ids:
+                protected_top_ids.append(cid)
             if cid not in merged_by_id:
                 merged_by_id[cid] = ch
                 hit_counts[cid] = 1
@@ -142,17 +145,32 @@ def retrieve_tasks(
                 if ch.score > prev.score:
                     merged_by_id[cid] = ch
 
-    deduped: list[RetrievedChunk] = []
+    deduped_map: dict[str, RetrievedChunk] = {}
     for cid, ch in merged_by_id.items():
         if hit_counts[cid] > 1:
             boosted_score = min(1.0, round(ch.score + 0.1, 6))
-            deduped.append(replace(ch, score=boosted_score))
+            deduped_map[cid] = replace(ch, score=boosted_score)
         else:
-            deduped.append(ch)
+            deduped_map[cid] = ch
 
-    deduped.sort(key=lambda c: c.score, reverse=True)
-    max_keep = max(int(config.RAG_TOP_K), int(config.RERANKER_TOP_N), 8)
-    final_chunks = deduped[:max_keep]
+    sorted_all = sorted(deduped_map.values(), key=lambda c: c.score, reverse=True)
+    max_keep = max(int(config.RAG_TOP_K), int(config.RERANKER_TOP_N), 10)
+
+    # Сохраняем top-2 чанка каждой отдельной задачи, чтобы буст общих чанков не вытеснял узкие слоты
+    final_chunks: list[RetrievedChunk] = []
+    seen_final: set[str] = set()
+    for ch in sorted_all:
+        if len(final_chunks) >= max_keep:
+            break
+        final_chunks.append(ch)
+        seen_final.add(ch.chunk_id)
+
+    for pid in protected_top_ids:
+        if pid not in seen_final and pid in deduped_map:
+            final_chunks.append(deduped_map[pid])
+            seen_final.add(pid)
+
+    final_chunks.sort(key=lambda c: c.score, reverse=True)
 
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,

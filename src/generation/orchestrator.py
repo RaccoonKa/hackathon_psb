@@ -1,3 +1,4 @@
+import inspect
 import logging
 import re
 import time
@@ -12,6 +13,7 @@ from src.generation.answer.verification import verify
 from src.generation.errors import OrchestratorError
 from src.generation.planning import planner
 from src.generation.policy.precheck import precheck
+from src.generation.prompts import templates
 from src.generation.retrieval import bridge, evidence
 from src.generation.types import (
     AgentResult,
@@ -35,13 +37,19 @@ def _sanitize_and_extract_citations(
     available_sources: dict[str, dict[str, Any]],
 ) -> tuple[str, list[str]]:
     cited_ids: list[str] = []
+    max_score = max(
+        (float(meta.get("score", 0.0)) for meta in available_sources.values()),
+        default=0.0,
+    )
+    min_cite_score = 0.05 if max_score >= 0.2 else 0.005
 
     def _replace_tag(match: re.Match[str]) -> str:
         raw_inner = match.group(1)
         tokens = [t.strip() for t in raw_inner.split(",") if t.strip()]
         valid_tokens: list[str] = []
         for token in tokens:
-            if token in available_sources:
+            meta = available_sources.get(token)
+            if meta is not None and float(meta.get("score", 0.0)) >= min_cite_score:
                 valid_tokens.append(token)
                 if token not in cited_ids:
                     cited_ids.append(token)
@@ -52,6 +60,33 @@ def _sanitize_and_extract_citations(
     cleaned_answer = _SOURCE_TAG_PATTERN.sub(_replace_tag, answer)
     cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
     return cleaned_answer, cited_ids
+
+
+def _compute_confidence_and_reasons(
+    refused: bool,
+    degradation_reasons: list[str],
+    missing_info: list[str],
+    verification: VerificationReport | None,
+) -> tuple[str, list[str]]:
+    if refused:
+        return "low", ["refused"]
+
+    reasons: list[str] = []
+    for deg in degradation_reasons:
+        reasons.append(f"degradation:{deg}")
+    if missing_info:
+        reasons.append(f"missing_info:{len(missing_info)}")
+    if verification is not None:
+        if verification.citation_errors:
+            reasons.append(f"citation_errors:{len(verification.citation_errors)}")
+        if verification.injection_signals:
+            reasons.append(f"injection_signals:{len(verification.injection_signals)}")
+        if verification.final_verdict == VerificationVerdict.REFUSE:
+            reasons.append("verification_verdict:refuse")
+
+    if reasons:
+        return "medium", reasons
+    return "high", ["all_conditions_met"]
 
 
 def assemble_final(
@@ -69,10 +104,33 @@ def assemble_final(
         answer=draft.answer_text,
         available_sources=sources,
     )
+    max_score = max(
+        (float(meta.get("score", 0.0)) for meta in sources.values()),
+        default=0.0,
+    )
+    min_cite_score = 0.05 if max_score >= 0.2 else 0.005
+
     for claim in draft.claims:
         for sid in claim.source_ids:
-            if sid in sources and sid not in cited_ids:
+            if (
+                sid in sources
+                and float(sources[sid].get("score", 0.0)) >= min_cite_score
+                and sid not in cited_ids
+            ):
                 cited_ids.append(sid)
+
+    if (
+        verification is not None
+        and verification.final_verdict == VerificationVerdict.ACCEPT
+        and draft.missing_info
+    ):
+        supported_slots = {
+            c.slot
+            for c in draft.claims
+            if c.original_idx in verification.supported_locked and c.slot
+        }
+        if all(s in supported_slots for s in spec.required_slots if s != "general"):
+            draft.missing_info = []
 
     refused = bool(draft.refusal_reason) or not bool(cleaned_answer.strip())
     filtered_sources = (
@@ -81,16 +139,12 @@ def assemble_final(
         else {sid: sources[sid] for sid in cited_ids if sid in sources}
     )
 
-    if refused:
-        confidence = "low"
-    elif (
-        degradation_reasons
-        or draft.missing_info
-        or (verification and verification.final_verdict == VerificationVerdict.PARTIAL)
-    ):
-        confidence = "medium"
-    else:
-        confidence = "high"
+    confidence, confidence_reasons = _compute_confidence_and_reasons(
+        refused=refused,
+        degradation_reasons=degradation_reasons,
+        missing_info=draft.missing_info,
+        verification=verification,
+    )
 
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
@@ -108,6 +162,8 @@ def assemble_final(
             "sources_count": len(filtered_sources),
             "cited_source_ids": cited_ids,
             "confidence": confidence,
+            "confidence_reasons": confidence_reasons,
+            "degradation_reasons": list(degradation_reasons),
         },
         latency_ms=latency_ms,
         stage_idx=8,
@@ -127,6 +183,46 @@ def assemble_final(
         assumptions=list(draft.assumptions),
         missing_info=list(draft.missing_info),
         verification=verification,
+        query_spec=spec,
+        degradation_reasons=list(degradation_reasons),
+        used_history=used_history,
+    )
+
+
+def _safe_no_context_refusal(
+    query: str,
+    intent_val: str,
+    trace: list[TraceStep],
+    refusal_reason: str,
+    spec: QuerySpec | None,
+    missing_info: list[str] | None,
+    degradation_reasons: list[str],
+    used_history: bool,
+) -> AgentResult:
+    fn = getattr(refusal, "build_no_context_refusal_result", None)
+    if callable(fn):
+        sig = inspect.signature(fn)
+        if "refusal_reason" in sig.parameters:
+            return fn(
+                query=query,
+                intent=intent_val,
+                prior_trace=trace,
+                refusal_reason=refusal_reason,
+                query_spec=spec,
+                missing_info=missing_info,
+                degradation_reasons=degradation_reasons,
+                used_history=used_history,
+            )
+    return AgentResult(
+        final_answer=templates.RESPONSE_REFUSAL_NO_CONTEXT,
+        sources={},
+        intent=intent_val,
+        refused=True,
+        trace=trace,
+        refusal_reason=refusal_reason,
+        confidence="low",
+        assumptions=list(spec.assumptions) if spec else [],
+        missing_info=list(missing_info or []),
         query_spec=spec,
         degradation_reasons=list(degradation_reasons),
         used_history=used_history,
@@ -175,30 +271,60 @@ def run_agent(
         trace.append(step)
 
     def _trigger_bailout() -> AgentResult:
-        ctx = BailoutContext(
-            query=query,
-            failures_total=failures_global,
-            last_stage=last_stage,
-            last_error=last_error,
-            partial_spec=partial_spec,
-            llm_was_available=llm_was_available,
-        )
-        if partial_spec is not None and llm_was_available:
-            rem = _remaining_time()
-            explanation = bailout.explain(
-                ctx, timeout=min(float(config.LLM_REQUEST_TIMEOUT_S), rem)
-            )
-            return refusal.build_cannot_parse_result(
+        try:
+            ctx = BailoutContext(
                 query=query,
-                prior_trace=trace,
+                failures_total=failures_global,
+                last_stage=last_stage,
+                last_error=last_error,
                 partial_spec=partial_spec,
-                explanation_text=explanation,
-                degradation_reasons=degradation_reasons,
+                llm_was_available=llm_was_available,
             )
-        return refusal.build_llm_unavailable_result(
-            query=query,
-            prior_trace=trace,
-            degradation_reasons=degradation_reasons,
+            if partial_spec is not None and llm_was_available:
+                rem = _remaining_time()
+                explanation = bailout.explain(
+                    ctx, timeout=min(float(config.LLM_REQUEST_TIMEOUT_S), rem)
+                )
+                fn_cp = getattr(refusal, "build_cannot_parse_result", None)
+                if callable(fn_cp):
+                    return fn_cp(
+                        query=query,
+                        prior_trace=trace,
+                        partial_spec=partial_spec,
+                        explanation_text=explanation,
+                        degradation_reasons=degradation_reasons,
+                    )
+                return AgentResult(
+                    final_answer=explanation or templates.RESPONSE_CANNOT_PARSE,
+                    sources={},
+                    intent=partial_spec.intent,
+                    refused=True,
+                    trace=trace,
+                    refusal_reason="cannot_parse",
+                    confidence="low",
+                    query_spec=partial_spec,
+                    degradation_reasons=list(degradation_reasons),
+                )
+            fn_unavail = getattr(refusal, "build_llm_unavailable_result", None)
+            if callable(fn_unavail):
+                return fn_unavail(
+                    query=query,
+                    prior_trace=trace,
+                    degradation_reasons=degradation_reasons,
+                )
+        except Exception as bail_exc:
+            logger.warning("Fallback inside _trigger_bailout: %s", bail_exc)
+
+        return AgentResult(
+            final_answer=templates.RESPONSE_LLM_UNAVAILABLE,
+            sources={},
+            intent=partial_spec.intent if partial_spec else "semantic",
+            refused=True,
+            trace=trace,
+            refusal_reason="llm_unavailable",
+            confidence="low",
+            query_spec=partial_spec,
+            degradation_reasons=list(degradation_reasons or ["llm_unavailable"]),
         )
 
     def _budget_or_deadline_exceeded() -> bool:
@@ -303,7 +429,10 @@ def run_agent(
             _append_step(ev_step, stage_idx=4)
 
             if (
-                assessment.sufficiency == Sufficiency.INSUFFICIENT
+                (
+                    assessment.sufficiency == Sufficiency.INSUFFICIENT
+                    or bool(assessment.missing_slots)
+                )
                 and followup_cycles < int(config.MAX_FOLLOWUP_RETRIEVAL_CYCLES)
                 and not _budget_or_deadline_exceeded()
             ):
@@ -317,17 +446,23 @@ def run_agent(
                 continue
             break
 
-        if assessment is None or bundle is None or assessment.sufficiency == Sufficiency.INSUFFICIENT:
-            return refusal.build_no_context_refusal_result(
+        # Пермиссивность на входе: отказываем на стадии [4] только если реально нет чанков;
+        # если чанки найдены, передаём их в генератор и верификатор
+        if bundle is None or not bundle.chunks:
+            return _safe_no_context_refusal(
                 query=query,
-                intent=spec.intent,
-                prior_trace=trace,
+                intent_val=spec.intent,
+                trace=trace,
                 refusal_reason=assessment.reason if assessment else "insufficient_evidence",
-                query_spec=spec,
+                spec=spec,
                 missing_info=assessment.missing_slots if assessment else spec.required_slots,
                 degradation_reasons=degradation_reasons,
                 used_history=used_history,
             )
+
+        if assessment is not None and assessment.sufficiency == Sufficiency.INSUFFICIENT:
+            assessment.sufficiency = Sufficiency.PARTIAL
+            assessment.core_slot_covered = True
 
         if _budget_or_deadline_exceeded():
             return _trigger_bailout()
@@ -411,6 +546,7 @@ def run_agent(
             verification_report is not None
             and verification_report.final_verdict == VerificationVerdict.REFUSE
             and not policy_verdict.refusal_forbidden
+            and bool(draft.refusal_reason)
         ):
             return refusal.build_verification_refusal_result(
                 query=query,

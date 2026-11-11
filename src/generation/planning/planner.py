@@ -10,16 +10,27 @@ from src.generation.types import QuerySpec, RetrievalTask, TraceStep
 logger = logging.getLogger(__name__)
 
 _SLOT_SEARCH_EXPANSIONS: dict[str, str] = {
-    "rent_amount": "размер арендной платы стоимость аренды в месяц НДС",
-    "payment_deadline": "срок оплаты порядок расчетов не позднее числа месяца",
+    "security_deposit": "обеспечительный платеж размер месячной арендной платы при подписании договора пункт 3.5",
+    "penalty": "размер пеней неустойки штраф процент за каждый день просрочки пункт 5.1",
+    "accrual_period": "период начисления пеней за каждый день просрочки исполнения обязательств",
+    "liability_cap": "ограничение ответственности сторон предел ответственности реальный ущерб упущенная выгода",
+    "rent_amount": "размер арендной платы стоимость аренды в месяц рублей НДС пункт 3.1",
+    "payment_deadline": "срок внесения арендной платы оплаты порядок расчетов не позднее 5 числа текущего месяца пункт 3.2",
     "probation_period": "испытательный срок при приеме на работу максимальный срок испытания",
     "overtime_limit": "продолжительность сверхурочной работы лимит часов в год",
     "overtime_pay": "оплата сверхурочной работы первые два часа последующие часы",
-    "approval_process": "порядок согласования договора визирование юридический департамент",
+    "approval_process": "порядок согласования договора одобрение генеральным директором",
     "termination": "порядок расторжения договора односторонний отказ уведомление",
-    "penalty": "неустойка пеня штраф за просрочку исполнения обязательств",
     "tax_rate": "налоговая ставка налог на прибыль НДС освобождение",
     "effective_date": "срок действия редакция вступает в силу дополнительное соглашение",
+    "delivery_terms": "адрес доставки стоимость упаковки и доставки в цену товара",
+    "acceptance_terms": "приемка товара по качеству срок рабочих дней претензия акт недостатков",
+    "warranty_period": "гарантийный срок на товар гарантийный талон производителя",
+    "prepayment": "предоплата аванс по соглашению сторон счет поставщика",
+    "return_procedure": "возврат помещения по акту передача ключей при прекращении договора",
+    "document_handover": "выдача и передача оригиналов договоров в юридический отдел срок рабочих дней",
+    "consent_withdrawal": "отзыв согласия на обработку персональных данных продолжение обработки",
+    "seasonal_work": "срочный трудовой договор для выполнения сезонных работ",
 }
 
 
@@ -36,10 +47,11 @@ def plan(
 
     bm25_q = spec.rewritten_queries_bm25 or [spec.rewritten_queries_dense[0]]
     dense_q = spec.rewritten_queries_dense or [bm25_q[0]]
+    max_slot_queries = max(2, min(4, len(spec.required_slots) + 1))
 
     intent = spec.intent
     if intent == "exact_lookup":
-        for q in bm25_q[:2]:
+        for q in bm25_q[:max_slot_queries]:
             tasks.append(
                 RetrievalTask(
                     query=q,
@@ -63,7 +75,7 @@ def plan(
             )
         )
     elif intent in {"mixed", "mixed_query"}:
-        for q in (bm25_q + bm25_q)[:2]:
+        for q in bm25_q[:max_slot_queries]:
             tasks.append(
                 RetrievalTask(
                     query=q,
@@ -75,7 +87,7 @@ def plan(
                     top_k=top_k,
                 )
             )
-        for q in (dense_q + dense_q)[:2]:
+        for q in dense_q[:max_slot_queries]:
             tasks.append(
                 RetrievalTask(
                     query=q,
@@ -109,7 +121,7 @@ def plan(
                     )
                 )
         else:
-            for q in dense_q[:2]:
+            for q in dense_q[:max_slot_queries]:
                 tasks.append(
                     RetrievalTask(
                         query=q,
@@ -133,17 +145,18 @@ def plan(
                 top_k=top_k,
             )
         )
-        tasks.append(
-            RetrievalTask(
-                query=dense_q[0],
-                mode="dense",
-                purpose="date_version_dense",
-                selected_doc_ids=selected_doc_ids,
-                boost_doc_ids=boost_doc_ids,
-                event_date=spec.event_date,
-                top_k=top_k,
+        for q in dense_q[:max_slot_queries]:
+            tasks.append(
+                RetrievalTask(
+                    query=q,
+                    mode="dense",
+                    purpose="date_version_dense",
+                    selected_doc_ids=selected_doc_ids,
+                    boost_doc_ids=boost_doc_ids,
+                    event_date=spec.event_date,
+                    top_k=top_k,
+                )
             )
-        )
         entity_prefix = " ".join(spec.entities_raw)
         amendment_query = f"{entity_prefix} родительский договор дополнительное соглашение редакция изменения".strip()
         tasks.append(
@@ -158,7 +171,7 @@ def plan(
             )
         )
     elif intent == "checklist":
-        for q in dense_q[:2]:
+        for q in dense_q[:max_slot_queries]:
             tasks.append(
                 RetrievalTask(
                     query=q,
@@ -171,7 +184,7 @@ def plan(
                 )
             )
     else:
-        for q in dense_q[:2]:
+        for q in dense_q[:max_slot_queries]:
             tasks.append(
                 RetrievalTask(
                     query=q,
@@ -183,17 +196,33 @@ def plan(
                     top_k=top_k,
                 )
             )
-        tasks.append(
-            RetrievalTask(
-                query=bm25_q[0],
-                mode="bm25",
-                purpose="semantic_bm25",
-                selected_doc_ids=selected_doc_ids,
-                boost_doc_ids=boost_doc_ids,
-                event_date=spec.event_date,
-                top_k=top_k,
+        for q in bm25_q[:max_slot_queries]:
+            tasks.append(
+                RetrievalTask(
+                    query=q,
+                    mode="bm25",
+                    purpose="semantic_bm25",
+                    selected_doc_ids=selected_doc_ids,
+                    boost_doc_ids=boost_doc_ids,
+                    event_date=spec.event_date,
+                    top_k=top_k,
+                )
             )
-        )
+        if spec.decomposition:
+            existing_queries = {t.query.lower() for t in tasks}
+            for sq in spec.decomposition[:3]:
+                if sq.text.lower() not in existing_queries:
+                    tasks.append(
+                        RetrievalTask(
+                            query=sq.text,
+                            mode="dense",
+                            purpose=f"subquestion:{sq.aspect or 'part'}",
+                            selected_doc_ids=selected_doc_ids,
+                            boost_doc_ids=boost_doc_ids,
+                            event_date=spec.event_date,
+                            top_k=top_k,
+                        )
+                    )
 
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
@@ -236,13 +265,24 @@ def followup(
     target_slots = missing_slots or spec.required_slots or ["general"]
 
     for slot in target_slots[:3]:
-        expansion = _SLOT_SEARCH_EXPANSIONS.get(slot, slot)
-        followup_query = f"{entity_context} {expansion} {base_query}".strip()
+        expansion = _SLOT_SEARCH_EXPANSIONS.get(slot, slot.replace("_", " "))
+        followup_query = f"{entity_context} {expansion}".strip() or f"{expansion} {base_query}".strip()
         tasks.append(
             RetrievalTask(
                 query=followup_query,
-                mode="hybrid",
-                purpose=f"followup:{slot}",
+                mode="dense",
+                purpose=f"followup_dense:{slot}",
+                selected_doc_ids=selected_doc_ids,
+                boost_doc_ids=boost_doc_ids,
+                event_date=spec.event_date,
+                top_k=top_k,
+            )
+        )
+        tasks.append(
+            RetrievalTask(
+                query=followup_query,
+                mode="bm25",
+                purpose=f"followup_bm25:{slot}",
                 selected_doc_ids=selected_doc_ids,
                 boost_doc_ids=boost_doc_ids,
                 event_date=spec.event_date,

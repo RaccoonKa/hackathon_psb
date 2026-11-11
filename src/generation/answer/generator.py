@@ -51,6 +51,14 @@ def _parse_draft_schema(raw_text: str) -> DraftAnswerSchema:
     raise LLMFormatError("No valid JSON object found in generator output")
 
 
+def _filter_low_score_source_ids(
+    source_ids: list[str],
+    low_score_sids: set[str],
+) -> list[str]:
+    strong = [sid for sid in source_ids if sid not in low_score_sids]
+    return strong if strong else []
+
+
 def generate_draft(
     spec: QuerySpec,
     evidence: EvidenceBundle,
@@ -65,6 +73,13 @@ def generate_draft(
     effective_query = query or (
         spec.rewritten_queries_dense[0] if spec.rewritten_queries_dense else ""
     )
+    max_score = max((c.score for c in evidence.chunks), default=0.0)
+    low_score_sids: set[str] = set()
+    if max_score >= 0.05:
+        for idx, ch in enumerate(evidence.chunks, start=config.SOURCE_START_INDEX):
+            if ch.score < 0.05:
+                low_score_sids.add(f"{config.SOURCE_ID_PREFIX}{idx}")
+
     max_attempts = max(1, int(config.MAX_ATTEMPTS_GENERATE_INITIAL))
     retry_feedback = ""
     raw_last_output = ""
@@ -106,12 +121,16 @@ def generate_draft(
             parsed = _parse_draft_schema(raw_output)
             claims: list[Claim] = []
             for i, c_schema in enumerate(parsed.claims):
+                raw_sids = [s.strip() for s in c_schema.source_ids if s.strip()]
+                clean_sids = _filter_low_score_source_ids(raw_sids, low_score_sids)
+                if not clean_sids and raw_sids and all(s in low_score_sids for s in raw_sids):
+                    continue
                 claims.append(
                     Claim(
                         text=c_schema.text.strip(),
-                        source_ids=[s.strip() for s in c_schema.source_ids if s.strip()],
+                        source_ids=clean_sids or raw_sids,
                         slot=c_schema.slot or (spec.required_slots[0] if spec.required_slots else None),
-                        original_idx=i,
+                        original_idx=len(claims),
                     )
                 )
 
@@ -146,6 +165,8 @@ def generate_draft(
                 output={
                     "answer_length": len(draft.answer_text),
                     "claims_count": len(draft.claims),
+                    "assumptions_count": len(draft.assumptions),
+                    "missing_info_count": len(draft.missing_info),
                     "refusal_reason": draft.refusal_reason,
                 },
                 latency_ms=latency_ms,
@@ -216,7 +237,6 @@ def _enforce_supported_locked(
     report: VerificationReport,
     available_sources: set[str],
 ) -> DraftAnswer:
-    # Обязательное сопоставление строго по original_idx, а не по позиции в списке
     by_orig = {
         c.original_idx: c
         for c in previous.claims
