@@ -1,14 +1,13 @@
 import logging
-from langchain_openai import ChatOpenAI
 from src import config
 from src.generation.stubs import stub_llm_complete
 
 logger = logging.getLogger(__name__)
 
 
-def _build_chat_model(
-    model: str, temperature: float, max_tokens: int
-) -> ChatOpenAI:
+def _build_chat_model(model: str, temperature: float, max_tokens: int):
+    from langchain_openai import ChatOpenAI
+
     return ChatOpenAI(
         model=model,
         api_key=config.LLM_API_KEY,

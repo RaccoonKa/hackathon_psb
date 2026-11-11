@@ -6,4 +6,6 @@ storage/chroma_db/
 storage/bm25_index/
 models/
 model/
+submit/
+.DS_Store
 

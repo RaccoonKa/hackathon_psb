@@ -1,8 +1,11 @@
-import tiktoken
-
 try:
-    _encoder = tiktoken.get_encoding("cl100k_base")
-except Exception:
+    import tiktoken
+
+    try:
+        _encoder = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        _encoder = None
+except ImportError:  # pragma: no cover - tiktoken не установлен
     _encoder = None
 
 

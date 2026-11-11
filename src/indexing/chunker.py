@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src.config import PROCESSED_DATA_DIR
 from src.indexing.parser import extract_document_structure
 from src.indexing.tokenizer_utils import count_tokens
@@ -16,12 +15,22 @@ OVERLAP_TOKENS = 60
 SUB_CHUNK_SIZE_CHARS = HARD_MAX_TOKENS * 3
 SUB_CHUNK_OVERLAP_CHARS = OVERLAP_TOKENS * 3
 
-oversized_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=SUB_CHUNK_SIZE_CHARS,
-    chunk_overlap=SUB_CHUNK_OVERLAP_CHARS,
-    separators=["\n\n", "\n", ";\n", ". ", " "],
-    keep_separator=True,
-)
+_oversized_splitter = None
+
+
+def _get_oversized_splitter():
+    """Ленивая инициализация langchain-сплиттера (не нужна при импорте)."""
+    global _oversized_splitter
+    if _oversized_splitter is None:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+        _oversized_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=SUB_CHUNK_SIZE_CHARS,
+            chunk_overlap=SUB_CHUNK_OVERLAP_CHARS,
+            separators=["\n\n", "\n", ";\n", ". ", " "],
+            keep_separator=True,
+        )
+    return _oversized_splitter
 
 
 def generate_chunk_id(
@@ -130,7 +139,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         # 1. Положение превышает лимит (> 750 токенов) -> делим с перекрытием
         if b_tokens > HARD_MAX_TOKENS:
-            sub_parts = oversized_splitter.split_text(b["text"])
+            sub_parts = _get_oversized_splitter().split_text(b["text"])
             running_char = b["char_start"]
             for part in sub_parts:
                 chunks.append(

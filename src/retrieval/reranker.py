@@ -1,6 +1,14 @@
+import logging
 from typing import Any, Dict, List
-import requests
-from src.config import RERANKER_API_BASE_URL, RERANKER_API_KEY, RERANKER_MODEL
+
+from src.config import (
+    RERANKER_API_BASE_URL,
+    RERANKER_API_KEY,
+    RERANKER_MODEL,
+    RERANKER_TIMEOUT,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def rerank_candidates(
@@ -20,34 +28,51 @@ def rerank_candidates(
         return candidates[:top_k]
 
     try:
+        import requests
+
         url = f"{RERANKER_API_BASE_URL.rstrip('/')}/rerank"
         headers = {
             "Authorization": f"Bearer {RERANKER_API_KEY}",
             "Content-Type": "application/json",
         }
-        # Передаем обогащенный контекстом текст, чтобы реранкер учитывал название статьи и кодекса
-        doc_texts = [c.get("embedding_text") or c["text"] for c in candidates]
+        doc_texts = [
+            c.get("embedding_text") or c["text"] for c in candidates
+        ]
         payload = {
             "model": RERANKER_MODEL,
             "query": query,
             "documents": doc_texts,
             "top_n": min(top_k, len(candidates)),
         }
-        res = requests.post(url, headers=headers, json=payload, timeout=10)
-        if res.status_code == 200:
-            data = res.json()
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=RERANKER_TIMEOUT,
+        )
+        if response.status_code == 200:
+            data = response.json()
             reranked: List[Dict[str, Any]] = []
             for item in data.get("results", []):
-                idx = item.get("index")
-                if isinstance(idx, int) and 0 <= idx < len(candidates):
-                    cand_copy = dict(candidates[idx])
-                    raw_score = item.get("relevance_score", item.get("score"))
+                index = item.get("index")
+                if isinstance(index, int) and 0 <= index < len(candidates):
+                    candidate_copy = dict(candidates[index])
+                    raw_score = item.get(
+                        "relevance_score", item.get("score")
+                    )
                     if raw_score is not None:
-                        cand_copy["score"] = float(raw_score)
-                    reranked.append(cand_copy)
+                        candidate_copy["score"] = float(raw_score)
+                    reranked.append(candidate_copy)
             if reranked:
                 return reranked[:top_k]
-    except Exception:
-        pass
+        else:
+            logger.warning(
+                "Реранкер вернул HTTP %s; сохранён исходный порядок",
+                response.status_code,
+            )
+    except Exception as exc:  # noqa: BLE001 - реранкер необязателен
+        logger.warning(
+            "Реранкер недоступен, сохранён исходный RRF-порядок: %s", exc
+        )
 
     return candidates[:top_k]
