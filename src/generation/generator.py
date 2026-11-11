@@ -1,12 +1,15 @@
 import logging
+import re
 import time
 from typing import Any
 from src import config
 from src.generation import prompts
-from src.generation.llm_client import llm_complete
+from src.generation.llm_client import llm_complete_with_usage
 from src.generation.types import AgentResult, Intent, TraceStep
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_TAG_PATTERN = re.compile(r"<source>(.*?)</source>", re.DOTALL)
 
 
 def build_generation_messages(
@@ -29,7 +32,7 @@ def build_generation_messages(
 def generate_answer(query: str, context: str) -> tuple[str, TraceStep]:
     start_time = time.perf_counter()
     messages = build_generation_messages(query=query, context=context)
-    answer = llm_complete(
+    answer, prompt_tokens, completion_tokens = llm_complete_with_usage(
         messages=messages,
         model=config.LLM_MODEL,
         temperature=config.LLM_TEMPERATURE,
@@ -51,8 +54,8 @@ def generate_answer(query: str, context: str) -> tuple[str, TraceStep]:
         output={"answer_length": len(answer)},
         latency_ms=latency_ms,
         model=config.LLM_MODEL,
-        prompt_tokens=config.STUB_PROMPT_TOKENS,
-        completion_tokens=config.STUB_COMPLETION_TOKENS,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
     logger.info(
         "Step %s generated answer (%d chars) in %.3f ms",
@@ -63,6 +66,29 @@ def generate_answer(query: str, context: str) -> tuple[str, TraceStep]:
     return answer, step
 
 
+def _sanitize_and_extract_citations(
+    answer: str, available_sources: dict[str, dict[str, Any]]
+) -> tuple[str, list[str]]:
+    cited_ids: list[str] = []
+
+    def _replace_tag(match: re.Match[str]) -> str:
+        raw_inner = match.group(1)
+        tokens = [t.strip() for t in raw_inner.split(",") if t.strip()]
+        valid_tokens: list[str] = []
+        for token in tokens:
+            if token in available_sources:
+                valid_tokens.append(token)
+                if token not in cited_ids:
+                    cited_ids.append(token)
+        if not valid_tokens:
+            return ""
+        return f"<source>{', '.join(valid_tokens)}</source>"
+
+    cleaned_answer = _SOURCE_TAG_PATTERN.sub(_replace_tag, answer)
+    cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
+    return cleaned_answer, cited_ids
+
+
 def assemble_final_response(
     final_answer: str,
     sources: dict[str, dict[str, Any]],
@@ -70,6 +96,12 @@ def assemble_final_response(
     trace: list[TraceStep],
 ) -> AgentResult:
     start_time = time.perf_counter()
+    cleaned_answer, cited_ids = _sanitize_and_extract_citations(
+        answer=final_answer, available_sources=sources
+    )
+    filtered_sources = (
+        {sid: sources[sid] for sid in cited_ids} if cited_ids else dict(sources)
+    )
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
         config.LATENCY_ROUND_DIGITS,
@@ -83,7 +115,8 @@ def assemble_final_response(
         },
         output={
             "refused": False,
-            "sources_count": len(sources),
+            "sources_count": len(filtered_sources),
+            "cited_source_ids": cited_ids,
         },
         latency_ms=latency_ms,
     )
@@ -94,8 +127,8 @@ def assemble_final_response(
         latency_ms,
     )
     return AgentResult(
-        final_answer=final_answer,
-        sources=sources,
+        final_answer=cleaned_answer,
+        sources=filtered_sources,
         intent=intent.value,
         refused=False,
         trace=full_trace,

@@ -2,7 +2,7 @@ import logging
 import time
 from src import config
 from src.generation.stubs import stub_rag_retrieve, stub_reranker
-from src.generation.types import RetrievedChunk, TraceStep
+from src.generation.types import Intent, RetrievedChunk, TraceStep
 from src.retrieval.hybrid import hybrid_search
 
 logger = logging.getLogger(__name__)
@@ -10,6 +10,12 @@ logger = logging.getLogger(__name__)
 
 def _dict_to_chunk(raw: dict) -> RetrievedChunk:
     structure = raw.get("structure") or {}
+    raw_score = raw.get("score")
+    score = (
+        float(raw_score)
+        if raw_score is not None
+        else config.REAL_RAG_DEFAULT_SCORE
+    )
     return RetrievedChunk(
         chunk_id=raw["chunk_id"],
         text=raw["text"],
@@ -18,12 +24,20 @@ def _dict_to_chunk(raw: dict) -> RetrievedChunk:
         document_title=raw["document_title"],
         provision_id=structure.get("provision_id"),
         structure_path=list(structure.get("path") or []),
-        score=config.REAL_RAG_DEFAULT_SCORE,
+        score=score,
+        effective_from=raw.get("effective_from"),
+        effective_to=raw.get("effective_to"),
+        effective_dates_known=bool(raw.get("effective_dates_known", True)),
+        amends_document_id=raw.get("amends_document_id"),
     )
 
 
 def retrieve_chunks(
-    query: str, top_k: int, event_date: str | None = None
+    query: str,
+    top_k: int,
+    event_date: str | None = None,
+    intent: Intent | None = None,
+    selected_doc_ids: set[str] | None = None,
 ) -> tuple[list[RetrievedChunk], TraceStep]:
     start_time = time.perf_counter()
     if config.USE_STUB_RAG:
@@ -32,7 +46,11 @@ def retrieve_chunks(
     else:
         mode = "real"
         raw_chunks = hybrid_search(
-            query=query, top_k=top_k, event_date=event_date
+            query=query,
+            top_k=top_k,
+            event_date=event_date,
+            selected_doc_ids=selected_doc_ids,
+            intent=intent.value if intent is not None else None,
         )
         chunks = [_dict_to_chunk(raw) for raw in raw_chunks]
     latency_ms = round(
@@ -45,6 +63,12 @@ def retrieve_chunks(
             "query": query,
             "top_k": top_k,
             "event_date": event_date,
+            "intent": intent.value if intent is not None else None,
+            "selected_doc_ids": (
+                sorted(selected_doc_ids)
+                if selected_doc_ids is not None
+                else None
+            ),
             "mode": mode,
         },
         output={
@@ -109,7 +133,18 @@ def filter_chunks_by_threshold(
     max_score = max(
         (c.score for c in chunks), default=config.DEFAULT_MIN_SCORE
     )
-    passed = bool(chunks) and max_score >= threshold
+    
+    # Адаптивный порог: если скоры просели ниже 0.1, значит API реранкера 
+    # недоступно и мы получили сырой RRF-скор. Снижаем порог до 0.005.
+    effective_threshold = threshold
+    if 0.0 < max_score < 0.1:
+        effective_threshold = 0.005
+        logger.warning(
+            "Обнаружены RRF-скоры (max=%.3f). Порог адаптивно снижен до %.3f", 
+            max_score, effective_threshold
+        )
+
+    passed = bool(chunks) and max_score >= effective_threshold
     filtered = list(chunks) if passed else []
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
@@ -119,6 +154,7 @@ def filter_chunks_by_threshold(
         step=config.STEP_THRESHOLD_FILTER,
         input={
             "threshold": threshold,
+            "effective_threshold": effective_threshold,
             "input_count": len(chunks),
             "max_score": max_score,
         },
@@ -130,11 +166,11 @@ def filter_chunks_by_threshold(
         latency_ms=latency_ms,
     )
     logger.info(
-        "Step %s evaluated passed=%s (max_score=%.3f, threshold=%.3f) in %.3f ms",
+        "Step %s evaluated passed=%s (max_score=%.3f, eff_threshold=%.3f) in %.3f ms",
         config.STEP_THRESHOLD_FILTER,
         passed,
         max_score,
-        threshold,
+        effective_threshold,
         latency_ms,
     )
     return passed, filtered, step

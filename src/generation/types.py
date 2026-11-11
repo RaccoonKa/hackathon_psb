@@ -19,6 +19,10 @@ class SourceMetadata(TypedDict):
     provision_id: Optional[str]
     structure_path: list[str]
     score: float
+    effective_from: Optional[str]
+    effective_to: Optional[str]
+    effective_dates_known: bool
+    amends_document_id: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,10 @@ class RetrievedChunk:
     provision_id: Optional[str]
     structure_path: list[str]
     score: float
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
+    effective_dates_known: bool = True
+    amends_document_id: Optional[str] = None
 
 
 @dataclass

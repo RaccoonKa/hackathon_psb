@@ -11,9 +11,38 @@ from src.retrieval.vector_store import (
 
 bm25_store = BM25KeywordStore()
 
+_INTENT_WEIGHTS: Dict[str, Dict[str, Any]] = {
+    "mixed_query": {
+        "intent": "mixed_query",
+        "w_bm25": 0.5,
+        "w_dense": 0.5,
+        "bm25_top": 30,
+        "dense_top": 30,
+    },
+    "exact_lookup": {
+        "intent": "exact_lookup",
+        "w_bm25": 0.7,
+        "w_dense": 0.3,
+        "bm25_top": 40,
+        "dense_top": 20,
+    },
+    "semantic_query": {
+        "intent": "semantic_query",
+        "w_bm25": 0.3,
+        "w_dense": 0.7,
+        "bm25_top": 20,
+        "dense_top": 40,
+    },
+}
 
-def detect_query_intent(query: str) -> Dict[str, Any]:
+
+def detect_query_intent(
+    query: str, precomputed_intent: Optional[str] = None
+) -> Dict[str, Any]:
     """3 класса намерений по разделу 5.3-5.5 rag.md."""
+    if precomputed_intent and precomputed_intent in _INTENT_WEIGHTS:
+        return dict(_INTENT_WEIGHTS[precomputed_intent])
+
     q_low = query.lower()
 
     has_exact = bool(
@@ -30,28 +59,10 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     )
 
     if has_exact and has_semantic:
-        return {
-            "intent": "mixed_query",
-            "w_bm25": 0.5,
-            "w_dense": 0.5,
-            "bm25_top": 30,
-            "dense_top": 30,
-        }
+        return dict(_INTENT_WEIGHTS["mixed_query"])
     if has_exact:
-        return {
-            "intent": "exact_lookup",
-            "w_bm25": 0.7,
-            "w_dense": 0.3,
-            "bm25_top": 40,
-            "dense_top": 20,
-        }
-    return {
-        "intent": "semantic_query",
-        "w_bm25": 0.3,
-        "w_dense": 0.7,
-        "bm25_top": 20,
-        "dense_top": 40,
-    }
+        return dict(_INTENT_WEIGHTS["exact_lookup"])
+    return dict(_INTENT_WEIGHTS["semantic_query"])
 
 
 def load_canonical_chunks_map() -> Dict[str, Dict[str, Any]]:
@@ -108,6 +119,7 @@ def hybrid_search(
     event_date: Optional[str] = None,
     selected_doc_ids: Optional[Set[str]] = None,
     rrf_k: int = 60,
+    intent: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     chunks_map = load_canonical_chunks_map()
     allowed_chunk_ids = resolve_allowed_versions_by_date(
@@ -117,11 +129,11 @@ def hybrid_search(
     if not allowed_chunk_ids:
         return []
 
-    intent = detect_query_intent(query)
+    intent_cfg = detect_query_intent(query, precomputed_intent=intent)
 
     # 1. BM25 Search
     bm25_results = bm25_store.search(
-        query, top_k=intent["bm25_top"], allowed_chunk_ids=allowed_chunk_ids
+        query, top_k=intent_cfg["bm25_top"], allowed_chunk_ids=allowed_chunk_ids
     )
 
     # 2. Dense Vector Search с локальным или API вектором
@@ -130,7 +142,7 @@ def hybrid_search(
     collection = get_chroma_collection()
     chroma_res = collection.query(
         query_embeddings=[query_vector],
-        n_results=intent["dense_top"],
+        n_results=intent_cfg["dense_top"],
         include=["documents", "metadatas"],
     )
 
@@ -143,14 +155,14 @@ def hybrid_search(
     # 3. Weighted RRF
     rrf_scores: Dict[str, float] = {}
 
-    for rank, (cid, score) in enumerate(bm25_results):
+    for rank, (cid, _score) in enumerate(bm25_results):
         rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (
-            intent["w_bm25"] / (rrf_k + rank + 1)
+            intent_cfg["w_bm25"] / (rrf_k + rank + 1)
         )
 
     for rank, cid in enumerate(dense_chunk_ids):
         rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (
-            intent["w_dense"] / (rrf_k + rank + 1)
+            intent_cfg["w_dense"] / (rrf_k + rank + 1)
         )
 
     # Приоритет актуальных доп. соглашений
@@ -162,7 +174,13 @@ def hybrid_search(
     sorted_cids = sorted(
         rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True
     )[:40]
-    candidate_chunks = [chunks_map[cid] for cid in sorted_cids if cid in chunks_map]
+
+    candidate_chunks: List[Dict[str, Any]] = []
+    for cid in sorted_cids:
+        if cid in chunks_map:
+            chunk_copy = dict(chunks_map[cid])
+            chunk_copy["score"] = round(float(rrf_scores[cid]), 6)
+            candidate_chunks.append(chunk_copy)
 
     # 4. Reranker (Qwen3 Reranker 8B)
     return rerank_candidates(query, candidate_chunks, top_k=top_k)

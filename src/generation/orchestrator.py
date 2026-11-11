@@ -17,11 +17,18 @@ from src.generation.types import AgentResult, Intent, TraceStep
 logger = logging.getLogger(__name__)
 
 
-def run_agent(query: str, event_date: str | None = None) -> AgentResult:
+def run_agent(
+    query: str,
+    event_date: str | None = None,
+    selected_doc_ids: set[str] | None = None,
+) -> AgentResult:
     trace: list[TraceStep] = []
 
     intent, intent_step = detect_intent(query=query)
     intent_step.input["event_date"] = event_date
+    intent_step.input["selected_doc_ids"] = (
+        sorted(selected_doc_ids) if selected_doc_ids is not None else None
+    )
     trace.append(intent_step)
 
     if intent in {Intent.OUT_OF_SCOPE, Intent.ABOUT_ASSISTANT}:
@@ -30,7 +37,11 @@ def run_agent(query: str, event_date: str | None = None) -> AgentResult:
         )
 
     retrieved_chunks, retrieval_step = retrieve_chunks(
-        query=query, top_k=config.RAG_TOP_K, event_date=event_date
+        query=query,
+        top_k=config.RAG_TOP_K,
+        event_date=event_date,
+        intent=intent,
+        selected_doc_ids=selected_doc_ids,
     )
     trace.append(retrieval_step)
 

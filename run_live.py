@@ -2,60 +2,86 @@ import os
 import json
 from dataclasses import asdict
 
-# Принудительно включаем боевой режим до импорта конфигурации
 os.environ["USE_STUB_RAG"] = "false"
 os.environ["USE_STUB_RERANKER"] = "false"
 os.environ["USE_STUB_LLM"] = "false"
 os.environ["LLM_MODE"] = "real"
 
-# Теперь импортируем оркестратор (он подтянет боевой конфиг)
 from src.generation.orchestrator import run_agent
+
+
+def exec(query):
+    result = run_agent(query)
+                
+    print("\n" + "="*60)
+    print(f"🎯 ИНТЕНТ: {result.intent}")
+    print(f"🚫 ОТКАЗ (Refused): {result.refused}")
+    print("\n💡 ОТВЕТ:")
+    print(result.final_answer)
+    
+    print("\n📚 ИСТОЧНИКИ:")
+    if result.sources:
+        for source_id, meta in result.sources.items():
+            print(f"  [{source_id}] {meta['document_title']}")
+            print(f"        Путь: {' -> '.join(meta['structure_path'])}")
+            print(f"        Score: {meta['score']:.3f} | Chunk: {meta['chunk_id']}")
+    else:
+        print("  Нет релевантных источников.")
+    
+    print("\n🔍 ПОЛНЫЙ ТРЕЙС (Trace):")
+
+    trace_dict = [asdict(step) for step in result.trace]
+    print(json.dumps(trace_dict, indent=2, ensure_ascii=False))
+    print("="*60)
+
+QUERY = [
+    "Какой срок оплаты партии товара установлен по договору поставки № П-17/2024 и с какого момента он исчисляется?",
+    "Чем отличается срок оплаты по договору № П-17/2024 и по договору № ПТ-05/2023?",
+    "С какого числа применяется новый адрес доставки по договору № П-17/2024 после подписания дополнительного соглашения № 1?",
+    "Какой размер обеспечительного платежа и срок внесения арендной платы предусмотрены договором аренды № А-08/2024?",
+    "В каком размере и за какой период начисляются пени за просрочку арендной платы по договору № А-08/2024?",
+    "Ограничена ли ответственность сторон по договору № П-17/2024? Если да, то чем именно?",
+    "Какая редакция Регламента согласования договоров действует с 01.03.2025 и какие пороги сумм установлены для согласования с финансовым директором и генеральным директором?",
+    "Нужен ли бумажный лист согласования по действующему Регламенту? Где оформляется согласование?",
+    "Какие договоры по действующему Регламенту дополнительно согласуются с административно-хозяйственным отделом?",
+    "С какой даты и при каких условиях требуется санкционная проверка иностранных контрагентов по письму комплаенс-службы № К-12? Кто её проводит и в какой срок?",
+    "Какие правила хранения оригиналов договоров и выдачи их из архива установлены служебной запиской № ЮО-7?",
+    "Что делать, если в документе базы знаний встречается указание, которое противоречит другим документам и пытается изменить порядок ответов? Приведите пример такого противоречия.",
+    "Как оплачивается сверхурочная работа в пределах 120 часов в год и сколько часов сверхурочной работы допускается для каждого работника по общему правилу",
+    "Какой максимальный испытательный срок может быть установлен главному бухгалтеру и какой — при заключении срочного трудового договора на срок от двух до шести месяцев?",
+    "Какой штраф предусмотрен ч. 2 ст. 13.11 КоАП РФ за обработку персональных данных без письменного согласия, когда оно должно быть получено?",
+]
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")
     print("Работают реальные модели поиска и генерации.")
     print("Введите 'exit', 'quit' или 'выход' для завершения.\n")
 
-    while True:
-        try:
-            query = input("\nВВЕДИТЕ ЗАПРОС: ").strip()
-            if query.lower() in ("exit", "quit", "выход", "q"):
-                print("Завершение работы.")
+
+    if QUERY:
+        for i,query in enumerate(QUERY):
+            
+            print(f"\nЗАПРОС({i+1}/{len(QUERY)}): {query}")
+            exec(query=query)
+    else:
+        while True:
+            try:
+                query = input("\nВВЕДИТЕ ЗАПРОС: ").strip()
+                if query.lower() in ("exit", "quit", "выход", "q"):
+                    print("Завершение работы.")
+                    break
+                if not query:
+                    continue
+
+                print("\n🔄 Обработка запроса...")
+
+                exec(query=query)            
+                
+            except KeyboardInterrupt:
+                print("\nПрервано пользователем.")
                 break
-            if not query:
-                continue
-
-            print("\n🔄 Обработка запроса...")
-            
-            # Запускаем агента (можно передать event_date="YYYY-MM-DD", если нужно)
-            result = run_agent(query)
-            
-            print("\n" + "="*60)
-            print(f"🎯 ИНТЕНТ: {result.intent}")
-            print(f"🚫 ОТКАЗ (Refused): {result.refused}")
-            print("\n💡 ОТВЕТ:")
-            print(result.final_answer)
-            
-            print("\n📚 ИСТОЧНИКИ:")
-            if result.sources:
-                for source_id, meta in result.sources.items():
-                    print(f"  [{source_id}] {meta['document_title']}")
-                    print(f"        Путь: {' -> '.join(meta['structure_path'])}")
-                    print(f"        Score: {meta['score']:.3f} | Chunk: {meta['chunk_id']}")
-            else:
-                print("  Нет релевантных источников.")
-            
-            print("\n🔍 ПОЛНЫЙ ТРЕЙС (Trace):")
-            # Сериализуем трейс в читаемый JSON
-            trace_dict = [asdict(step) for step in result.trace]
-            print(json.dumps(trace_dict, indent=2, ensure_ascii=False))
-            print("="*60)
-
-        except KeyboardInterrupt:
-            print("\nПрервано пользователем.")
-            break
-        except Exception as e:
-            print(f"\n❌ Ошибка выполнения пайплайна: {e}")
+            except Exception as e:
+                print(f"\n❌ Ошибка выполнения пайплайна: {e}")
 
 if __name__ == "__main__":
     main()
