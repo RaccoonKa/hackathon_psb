@@ -137,15 +137,20 @@ def filter_chunks_by_threshold(
     # Адаптивный порог: если скоры просели ниже 0.1, значит API реранкера 
     # недоступно и мы получили сырой RRF-скор. Снижаем порог до 0.005.
     effective_threshold = threshold
-    if 0.0 < max_score < 0.1:
-        effective_threshold = 0.005
+    if 0.0 < max_score < config.RRF_FALLBACK_SCORE_CEILING:
+        effective_threshold = config.RRF_FALLBACK_THRESHOLD
         logger.warning(
-            "Обнаружены RRF-скоры (max=%.3f). Порог адаптивно снижен до %.3f", 
-            max_score, effective_threshold
+            "Обнаружены RRF-скоры (max=%.3f). Порог адаптивно снижен до %.3f",
+            max_score,
+            effective_threshold,
         )
 
     passed = bool(chunks) and max_score >= effective_threshold
-    filtered = list(chunks) if passed else []
+    filtered = (
+        [chunk for chunk in chunks if chunk.score >= effective_threshold]
+        if passed
+        else []
+    )
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
         config.LATENCY_ROUND_DIGITS,

@@ -46,8 +46,15 @@ LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 LLM_MODE: str = os.getenv("LLM_MODE", LLM_MODE_REAL)
 
 RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "8"))
-RERANKER_TOP_N: int = int(os.getenv("RERANKER_TOP_N", "5"))
+RERANKER_TOP_N: int = int(os.getenv("RERANKER_TOP_N", str(RAG_TOP_K)))
 RAG_SCORE_THRESHOLD: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.5"))
+
+RRF_FALLBACK_SCORE_CEILING: float = float(
+    os.getenv("RRF_FALLBACK_SCORE_CEILING", "0.1")
+)
+RRF_FALLBACK_THRESHOLD: float = float(
+    os.getenv("RRF_FALLBACK_THRESHOLD", "0.005")
+)
 
 INTENT_FALLBACK: Intent = Intent(
     os.getenv("INTENT_FALLBACK", Intent.SEMANTIC_QUERY.value)

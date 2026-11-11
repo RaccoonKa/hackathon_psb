@@ -1,10 +1,12 @@
 import logging
+import re
 from langchain_openai import ChatOpenAI
 from src import config
 from src.generation.stubs import stub_llm_complete
 
 logger = logging.getLogger(__name__)
 
+_THINK_TAG_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 def _build_chat_model(
     model: str, temperature: float, max_tokens: int
@@ -46,12 +48,16 @@ def _invoke_real_llm(
         model=model, temperature=temperature, max_tokens=max_tokens
     )
     response = llm.invoke(messages)
+
+    prompt_tokens, completion_tokens = _extract_token_usage(response)
+
     content = (
         response.content
         if isinstance(response.content, str)
         else str(response.content)
     )
-    prompt_tokens, completion_tokens = _extract_token_usage(response)
+    content = _THINK_TAG_PATTERN.sub("", content).strip()
+
     return content, prompt_tokens, completion_tokens
 
 
