@@ -49,42 +49,56 @@ def parse_ru_text_date(date_str: str) -> Optional[str]:
     return None
 
 
-def clean_garant_headers(content: str) -> Tuple[str, Optional[str]]:
-    """Отсекает служебные мета-строки систем Гарант/Консультант и возвращает чистый текст."""
+def clean_garant_headers(content: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Отсекает служебные мета-строки систем Гарант/Консультант.
+    Возвращает (очищенный текст, полное название документа, дату выгрузки).
+    """
     lines = content.splitlines(keepends=True)
     cleaned_lines = []
     extracted_title = None
+    export_date = None
 
     skip_header = True
     for line in lines:
         stripped = line.strip()
         if skip_header:
             if stripped.startswith("Источник:"):
-                # Извлекаем название закона из строки источника
                 m_title = re.search(r"Источник:\s*(.+)$", stripped)
                 if m_title:
-                    extracted_title = m_title.group(1).split(".")[0].strip()
+                    raw_title = m_title.group(1).strip()
+                    extracted_title = re.sub(
+                        r"\s*\(с\s+изменениями\s+и\s+дополнениями\).*", "", raw_title, flags=re.IGNORECASE
+                    ).strip()
                 continue
-            if stripped.startswith("URL:") or stripped.startswith("Дата выгрузки:"):
+            if stripped.startswith("Дата выгрузки:"):
+                m_exp = re.search(r"Дата выгрузки:\s*(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})", stripped)
+                if m_exp:
+                    export_date = parse_ru_text_date(m_exp.group(1))
+                continue
+            if stripped.startswith("URL:"):
                 continue
             if not stripped:
                 continue
             skip_header = False
 
+        if re.search(r"воспользуйтесь\s+калькулятором.*?(?:гарант|консультант)", stripped, re.IGNORECASE):
+            continue
+
         cleaned_lines.append(line)
 
-    return "".join(cleaned_lines), extracted_title
+    return "".join(cleaned_lines), extracted_title, export_date
 
 
 def detect_doc_type(filename: str, content: str) -> str:
-    """Точная типизация документа с приоритетом префиксов и служебных отметок."""
+    """Точная типизация документа с поддержкой писем комплаенса и служебных записок."""
     fn_low = filename.lower()
     head_low = content[:1500].lower()
 
     if fn_low.startswith("законы__") or any(k in head_low for k in ["федеральный закон", "кодекс российской федерации"]):
         return "law"
 
-    if any(k in fn_low or k in head_low for k in ["служебная записка", "приказ", "положение", "регламент", "инструкция"]):
+    if any(k in fn_low or k in head_low for k in ["служебная записка", "приказ", "положение", "регламент", "инструкция", "письмо"]):
         return "internal"
 
     if any(k in fn_low or k in head_low for k in ["договор", "контракт", "дополнительное соглашение", "доп соглашение"]):
@@ -98,44 +112,80 @@ def normalize_contract_number(raw_num: str) -> str:
     return clean.replace("—", "-")
 
 
-def parse_dates_and_version(content: str, filename: str) -> Tuple[Dict[str, Any], Optional[str]]:
+def parse_dates_and_version(
+    content: str, filename: str, doc_type: str = "internal", export_date: Optional[str] = None
+) -> Tuple[Dict[str, Any], Optional[str]]:
     """Извлекает даты вступления редакции в силу, окончания действия и связи документов."""
     head = content[:3500]
+    cutoff_date = export_date or "2026-10-10"
 
-    # 1. Поиск даты актуальной редакции (приоритет для законов)
-    date_found = None
-    m_revision = re.search(
-        r"(?:изменена\s+с|в\s+редакции\s+от|действует\s+с|вступает\s+в\s+силу\s+с)\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
-        head,
+    # 1. Поиск даты окончания действия или утраты силы
+    effective_to = None
+
+    m_expired = re.search(
+        r"(?:утратил(?:а|о)?\s+силу\s+с|утрачивает\s+силу\s+с)\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
+        content,
         re.IGNORECASE,
     )
-    if m_revision:
-        date_found = parse_ru_text_date(m_revision.group(1))
+    if m_expired:
+        effective_to = parse_ru_text_date(m_expired.group(1))
 
-    # Если точной даты редакции нет, ищем дату принятия документа
-    if not date_found:
+    if not effective_to:
+        for m_until in re.finditer(
+            r"действует\s+до\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
+            content,
+            re.IGNORECASE,
+        ):
+            window = content[m_until.start(): m_until.end() + 150].lower()
+            if any(k in window for k in ["продлева", "пролонгир"]):
+                continue
+            effective_to = parse_ru_text_date(m_until.group(1))
+            if effective_to:
+                break
+
+    clean_head = re.sub(r"^РЕДАКЦИЯ\s+УТРАТИЛА\s+СИЛУ[^\n]*\n?", "", head, flags=re.IGNORECASE)
+
+    # 2. Поиск даты актуальной редакции или начала применения
+    effective_from = None
+
+    m_action_start = re.search(
+        r"(?:начиная\s+с|[Сс])\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4})\s+(?:до\s+подписания|применяется|вступает)",
+        clean_head,
+        re.IGNORECASE,
+    )
+    if m_action_start:
+        effective_from = parse_ru_text_date(m_action_start.group(1))
+
+    if not effective_from:
+        rev_matches = re.findall(
+            r"(?:изменена\s+с|(?:в\s+)?редакци[яие]\s+от|действует\s+с|вступает\s+в\s+силу\s+с|вступающие\s+в\s+силу\s+с)\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
+            clean_head,
+            re.IGNORECASE,
+        )
+        parsed_dates = [parse_ru_text_date(d) for d in rev_matches if parse_ru_text_date(d)]
+
+        if parsed_dates:
+            past_or_current = [d for d in parsed_dates if d <= cutoff_date]
+            future_dates = [d for d in parsed_dates if d > cutoff_date]
+
+            if past_or_current:
+                effective_from = max(past_or_current)
+            if future_dates and not effective_to:
+                effective_to = min(future_dates)
+
+    if not effective_from:
         m_doc_date = re.search(
             r"(?:—|от)\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
-            head,
+            clean_head,
             re.IGNORECASE,
         )
         if m_doc_date:
-            date_found = parse_ru_text_date(m_doc_date.group(1))
+            effective_from = parse_ru_text_date(m_doc_date.group(1))
 
-    # 2. Дата окончания действия
-    date_to = None
-    m_to = re.search(
-        r"действует\s+до\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
-        content[-3000:] + " " + head,
-        re.IGNORECASE,
-    )
-    if m_to:
-        date_to = parse_ru_text_date(m_to.group(1))
-
-    # 3. Идентификаторы и связь с доп. соглашениями
+    # 3. Идентификаторы и связи документов
     amends_doc_id = None
-    m_amend = re.search(r"к\s+договору\s+[^№]*№\s*([A-Za-zА-Яа-я0-9\-\/]+)", head, re.IGNORECASE)
-    m_self_num = re.search(r"№\s*([A-Za-zА-Яа-я0-9\-\/]+)", head[:1000])
+    m_amend = re.search(r"к\s+договору\s+[^№]*№\s*([A-Za-zА-Яа-я0-9\-\/]+)", clean_head, re.IGNORECASE)
+    m_self_num = re.search(r"№\s*([A-Za-zА-Яа-я0-9\-\/]+)", clean_head[:1000])
 
     is_amendment = "доп" in filename.lower() and "соглашение" in filename.lower()
     fn_stem = Path(filename).stem.replace("документы компании__", "").replace("законы__", "")
@@ -145,7 +195,7 @@ def parse_dates_and_version(content: str, filename: str) -> Tuple[Dict[str, Any]
         amends_doc_id = f"contract_{parent_num}"
         amend_num = m_self_num.group(1) if m_self_num else "1"
         doc_id = f"amend_{normalize_contract_number(amend_num)}_{parent_num}"
-    elif m_self_num and ("договор" in fn_stem.lower() or "контракт" in fn_stem.lower()):
+    elif doc_type == "contract" and m_self_num:
         doc_id = f"contract_{normalize_contract_number(m_self_num.group(1))}"
     else:
         doc_id = f"doc_{normalize_contract_number(fn_stem)}"
@@ -155,21 +205,47 @@ def parse_dates_and_version(content: str, filename: str) -> Tuple[Dict[str, Any]
     dates_dict = {
         "document_id": doc_id,
         "version_id": ver_id,
-        "published_at": date_found,
-        "effective_from": date_found,
-        "effective_to": date_to,
-        "effective_dates_known": date_found is not None,
+        "published_at": effective_from,
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "effective_dates_known": effective_from is not None,
     }
     return dates_dict, amends_doc_id
 
 
-def classify_heading(line: str, in_article: bool = False, current_art_num: Optional[str] = None) -> Optional[Tuple[int, str, Optional[str]]]:
+def classify_heading(
+    line: str,
+    in_article: bool = False,
+    current_art_num: Optional[str] = None,
+    current_part_num: Optional[str] = None,
+    is_nk: bool = False,
+    in_notes: bool = False,
+) -> Optional[Tuple[int, str, Optional[str]]]:
     """
-    Классифицирует заголовок с поддержкой частей законов РФ и очисткой от кавычек.
-    Возвращает (уровень, заголовок, provision_id).
+    Классифицирует заголовок по уровням:
+    Уровень 0: Раздел
+    Уровень 1: Глава
+    Уровень 2: Статья закона / Крупный раздел договора
+    Уровень 3: Пункт договора / Часть статьи закона / Примечания
+    Уровень 4: Подпункт со скобкой / Пункт примечания
     """
-    clean = re.sub(r'^[«"\'„“”\s]+|[»"\'„“”\s]+$', '', line.strip())
+    clean = re.sub(r'^[«"\'„“”\s]+|[»"\'„“”\s]+$', "", line.strip())
     if not clean:
+        return None
+
+    # Игнорируем технические пометки справочных систем
+    if re.search(
+        r"^(?:(?:Пункт|Подпункт|Статья|Часть|Абзац|Раздел|Глава)\s+\d+(?:[\.\-]\d+)*.*?\s+(?:изменен|дополнен|утратил|внесены)|"
+        r"Примечания\s+изменены\s+|"
+        r"(?:Положения|Действие положений|Действие)\s+|"
+        r"О\s+(?:проверке\s+конституционности|конституционно-правовом\s+смысле)|"
+        r"Согласно\s+Определению|"
+        r"Федеральным\s+законом\s+от|"
+        r"Обратите\s+внимание,\s+что\s+применительно|"
+        r"Cрок\s+давности\s+привлечения)",
+        clean,
+        re.IGNORECASE,
+    ):
         return None
 
     # Уровень 0: Раздел
@@ -182,48 +258,85 @@ def classify_heading(line: str, in_article: bool = False, current_art_num: Optio
     if m_chap:
         return (1, m_chap.group(1).strip(), None)
 
-    # Уровень 2: Статья закона
-    m_art = re.match(r"^(Статья\s+(\d+[\.\d]*)[^\n\.\;]*)", clean, re.IGNORECASE)
+    # Уровень 2: Статья закона (например, "Статья 112.", "Статья 13.11.")
+    m_art = re.match(r"^Статья\s+(\d+(?:\.\d+)*)\.?(.*)$", clean, re.IGNORECASE)
     if m_art:
-        return (2, m_art.group(1).strip(), m_art.group(2).strip())
+        art_num = m_art.group(1).rstrip(".")
+        rest = m_art.group(2).strip()
+        title = f"Статья {art_num}. {rest}".strip().rstrip(".")
+        return (2, title[:120], art_num)
 
-    # Уровень 2: Крупный раздел договора ("1. Предмет договора")
+    # Уровень 3: Раздел примечаний к статье (КоАП)
+    if re.match(r"^Примечания:?$", clean, re.IGNORECASE):
+        art_clean = current_art_num.rstrip(".") if current_art_num else ""
+        prov_id = f"{art_clean}.прим" if art_clean else "прим"
+        return (3, "Примечания", prov_id)
+
+    # Уровень 2: Крупный раздел договора ("1. Предмет договора", "3. Порядок поставки")
     m_major = re.match(r"^(\d+)\.\s+([А-Яа-яЁёA-Za-z\s]{3,80})$", clean)
     if m_major and not in_article:
         return (2, clean[:100], m_major.group(1).strip())
 
-    # Уровень 3: Часть статьи закона РФ (например, "1. Субъект персональных данных...")
-    m_part = re.match(r"^(\d+)\.\s+(.+)$", clean)
-    if m_part and in_article:
-        part_num = m_part.group(1)
-        prov_id = f"{current_art_num}.{part_num}" if current_art_num else part_num
-        return (3, f"Часть {part_num}", prov_id)
+    # Уровень 4: Пункты внутри блока примечаний: "1. За административные..."
+    m_note_item = re.match(r"^(\d+)\.\s+(.+)$", clean)
+    if m_note_item and in_notes:
+        note_num = m_note_item.group(1)
+        art_clean = current_art_num.rstrip(".") if current_art_num else ""
+        prov_id = f"{art_clean}.прим.{note_num}" if art_clean else f"прим.{note_num}"
+        return (4, f"Примечание {note_num}", prov_id)
 
-    # Уровень 3: Пункт словом ("Пункт 3.2. ...")
-    m_punkt = re.match(r"^(Пункт\s+(\d+[\.\d]*)[^\n\.\;]*)", clean, re.IGNORECASE)
-    if m_punkt:
-        return (3, m_punkt.group(1).strip(), m_punkt.group(2).strip())
-
-    # Уровень 3+: Цифровые подпункты ("3.2.", "1.1", "2.2.3")
+    # Уровень 3+: Цифровые пункты договоров ("3.2.", "1.1", "2.2.3") или части закона с дробью (КоАП "1.1.", "2.1.")
     m_sub = re.match(r"^(\d+\.\d+(?:\.\d+)*)\.?\s*(.*)$", clean)
     if m_sub:
-        num_str = m_sub.group(1)
+        num_str = m_sub.group(1).rstrip(".")
         depth = num_str.count(".")
         level = 3 + min(depth - 1, 2)
-        return (level, f"Пункт {num_str}", num_str)
+        if in_article and current_art_num:
+            prov_id = f"{current_art_num}.{num_str}"
+            item_title = f"Пункт {num_str}" if is_nk else f"Часть {num_str}"
+            return (level, item_title, prov_id)
+        else:
+            return (level, f"Пункт {num_str}", num_str)
+
+    # Уровень 3: Часть закона (1., 2., 3.) или Пункт НК РФ — строго внутри статьи закона!
+    m_part = re.match(r"^(\d+)\.\s+(.+)$", clean)
+    if m_part and in_article and not in_notes:
+        part_num = m_part.group(1).rstrip(".")
+        art_clean = current_art_num.rstrip(".") if current_art_num else ""
+        prov_id = f"{art_clean}.{part_num}" if art_clean else part_num
+        item_title = f"Пункт {part_num}" if is_nk else f"Часть {part_num}"
+        return (3, item_title, prov_id)
+
+    # Уровень 3: Пункт словом ("Пункт 3.2. ...")
+    m_punkt = re.match(r"^Пункт\s+(\d+(?:\.\d+)*)\.?(.*)$", clean, re.IGNORECASE)
+    if m_punkt:
+        p_num = m_punkt.group(1).rstrip(".")
+        return (3, f"Пункт {p_num}", p_num)
+
+    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)")
+    m_paren = re.match(r"^(\d+(?:[\.\-]\d+)*)\)\s*(.*)$", clean)
+    if m_paren and in_article:
+        sub_num = m_paren.group(1).rstrip(".")
+        parent_id = current_part_num or current_art_num
+        parent_clean = parent_id.rstrip(".") if parent_id else ""
+        prov_id = f"{parent_clean}.{sub_num}" if parent_clean else sub_num
+        return (4, f"Подпункт {sub_num}", prov_id)
 
     return None
 
 
 def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     """Разбивает документ на блоки с непрерывным ведением стека иерархии."""
+    is_nk = "налоговый кодекс" in content[:2000].lower() or "нк рф" in content[:2000].lower()
     lines = content.splitlines(keepends=True)
     blocks: List[Dict[str, Any]] = []
 
     path_stack: List[Tuple[int, str]] = [(0, "Введение / Общие положения")]
     current_provision_id: Optional[str] = None
     current_art_num: Optional[str] = None
+    current_part_num: Optional[str] = None
     in_article = False
+    in_notes = False
     current_lines: List[str] = []
 
     start_line = 1
@@ -231,7 +344,14 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     block_char_start = 0
 
     for line_no, line in enumerate(lines, start=1):
-        h_info = classify_heading(line, in_article=in_article, current_art_num=current_art_num)
+        h_info = classify_heading(
+            line,
+            in_article=in_article,
+            current_art_num=current_art_num,
+            current_part_num=current_part_num,
+            is_nk=is_nk,
+            in_notes=in_notes,
+        )
         if h_info is not None:
             level, h_title, prov_id = h_info
 
@@ -252,17 +372,36 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
                 block_char_start = char_offset
 
             while path_stack and path_stack[-1][0] >= level:
-                popped_level, _ = path_stack.pop()
+                popped_level, popped_title = path_stack.pop()
                 if popped_level == 2:
                     in_article = False
                     current_art_num = None
+                    current_part_num = None
+                    in_notes = False
+                elif popped_level == 3 and popped_title == "Примечания":
+                    in_notes = False
+                elif popped_level == 3:
+                    current_part_num = None
 
             path_stack.append((level, h_title))
             current_provision_id = prov_id
 
-            if level == 2 and "Статья" in h_title:
-                in_article = True
-                current_art_num = prov_id
+            if level == 2:
+                if "Статья" in h_title or is_nk:
+                    in_article = True
+                    in_notes = False
+                    current_art_num = prov_id
+                    current_part_num = None
+                else:
+                    in_article = False
+                    in_notes = False
+                    current_art_num = None
+                    current_part_num = None
+            elif level == 3:
+                if h_title == "Примечания":
+                    in_notes = True
+                else:
+                    current_part_num = prov_id
 
         current_lines.append(line)
         char_offset += len(line)
@@ -285,9 +424,11 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
 
 def extract_metadata(file_path: Path, raw_content: str) -> Tuple[Dict[str, Any], str]:
     """Формирует канонические метаданные версии документа и возвращает очищенный текст."""
-    cleaned_content, extracted_title = clean_garant_headers(raw_content)
-    dates_ver, amends_id = parse_dates_and_version(cleaned_content, file_path.name)
+    cleaned_content, extracted_title, export_date = clean_garant_headers(raw_content)
     doc_type = detect_doc_type(file_path.name, cleaned_content)
+    dates_ver, amends_id = parse_dates_and_version(
+        cleaned_content, file_path.name, doc_type=doc_type, export_date=export_date
+    )
 
     title = extracted_title
     if not title:

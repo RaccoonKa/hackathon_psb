@@ -6,7 +6,7 @@ from src.config import BM25_DIR
 
 
 def tokenize_ru(text: str) -> List[str]:
-    """Простая токенизация русских юридических терминов и номеров."""
+    """Токенизация русских терминов, латиницы и числовых номеров статей/пунктов."""
     return re.findall(r"[A-Za-zА-Яа-яЁё0-9]+", text.lower())
 
 
@@ -19,7 +19,11 @@ class BM25KeywordStore:
 
     def build_index(self, chunks: List[Dict[str, Any]]):
         self.chunk_ids = [c["chunk_id"] for c in chunks]
-        self.tokenized_corpus = [tokenize_ru(c["text"]) for c in chunks]
+        # Индексируем embedding_text (заголовок + путь + текст), чтобы BM25
+        # находил фрагменты по названиям кодексов и номерам статей
+        self.tokenized_corpus = [
+            tokenize_ru(c.get("embedding_text") or c["text"]) for c in chunks
+        ]
         self.bm25 = BM25Okapi(self.tokenized_corpus)
 
     def save(self):
@@ -48,7 +52,7 @@ class BM25KeywordStore:
 
         scores = self.bm25.get_scores(tokens)
 
-        # Фильтрация кандидатов до ранжирования по разделу 4.2 rag.md
+        # Фильтрация кандидатов до ранжирования (раздел 4.2 rag.md)
         scored = []
         for cid, sc in zip(self.chunk_ids, scores):
             if sc > 0:

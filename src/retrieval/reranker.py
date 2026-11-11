@@ -9,15 +9,15 @@ def rerank_candidates(
     top_k: int = 8,
 ) -> List[Dict[str, Any]]:
     """
-    Ранжирует пул кандидатов через Qwen3 Reranker 8B (по разделу 6 rag.md).
+    Ранжирует пул кандидатов через Qwen3 Reranker 8B.
+    Использует embedding_text для сохранения контекста статьи при ранжировании.
     Если API недоступен, возвращает порядок кандидатов из Weighted RRF.
     """
     if not candidates:
         return []
 
-    # Если кандидатов меньше или равно top_k, реранкинг не требуется
-    if len(candidates) <= top_k:
-        return candidates
+    if len(candidates) <= 1:
+        return candidates[:top_k]
 
     try:
         url = f"{RERANKER_API_BASE_URL.rstrip('/')}/rerank"
@@ -25,19 +25,29 @@ def rerank_candidates(
             "Authorization": f"Bearer {RERANKER_API_KEY}",
             "Content-Type": "application/json",
         }
+        # Передаем обогащенный контекстом текст, чтобы реранкер учитывал название статьи и кодекса
+        doc_texts = [c.get("embedding_text") or c["text"] for c in candidates]
         payload = {
             "model": RERANKER_MODEL,
             "query": query,
-            "documents": [c["text"] for c in candidates],
-            "top_n": top_k,
+            "documents": doc_texts,
+            "top_n": min(top_k, len(candidates)),
         }
         res = requests.post(url, headers=headers, json=payload, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            ranked_indices = [item["index"] for item in data.get("results", [])]
-            return [candidates[idx] for idx in ranked_indices if idx < len(candidates)]
+            reranked: List[Dict[str, Any]] = []
+            for item in data.get("results", []):
+                idx = item.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(candidates):
+                    cand_copy = dict(candidates[idx])
+                    raw_score = item.get("relevance_score", item.get("score"))
+                    if raw_score is not None:
+                        cand_copy["score"] = float(raw_score)
+                    reranked.append(cand_copy)
+            if reranked:
+                return reranked[:top_k]
     except Exception:
-        # Прозрачный фоллбэк на RRF скоринг
         pass
 
     return candidates[:top_k]

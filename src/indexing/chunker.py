@@ -57,7 +57,6 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     ) -> Dict[str, Any]:
         nonlocal chunk_idx
 
-        # Добавляем указание на доп. соглашение прямо в контекст чанка для LLM
         prefix_parts = [meta["document_title"]]
         if meta.get("amends_document_id"):
             prefix_parts.append(f"[ИЗМЕНЕНИЕ ДЛЯ {meta['amends_document_id'].upper()}]")
@@ -106,12 +105,14 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         chunk_idx += 1
         return payload
 
-    # Защита коротких допников: если весь документ до 500 токенов, сохраняем целиком
-    if total_doc_tokens <= 500 and meta.get("amends_document_id"):
+    # Защита коротких допников и служебных писем (до 500 токенов): сохраняем целиком
+    if total_doc_tokens <= 500 and (
+        meta.get("amends_document_id") or meta.get("document_type") == "internal"
+    ):
         chunks.append(
             make_chunk_payload(
                 text=content,
-                path=["Полный текст дополнительного соглашения"],
+                path=["Полный текст документа"],
                 provision_id=None,
                 start_line=1,
                 end_line=len(content.splitlines()),
@@ -127,7 +128,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         b = blocks[i]
         b_tokens = count_tokens(b["text"])
 
-        # 1. Положение превышает лимит (> 750 токенов) -> делим с overlap
+        # 1. Положение превышает лимит (> 750 токенов) -> делим с перекрытием
         if b_tokens > HARD_MAX_TOKENS:
             sub_parts = oversized_splitter.split_text(b["text"])
             running_char = b["char_start"]
@@ -147,7 +148,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
             i += 1
             continue
 
-        # 2. Мелкие преамбулы без номера статьи -> объединяем до TARGET_MAX_TOKENS
+        # 2. Мелкие вводные преамбулы без номера нормы -> объединяем до TARGET_MAX_TOKENS
         if b["provision_id"] is None and b_tokens < TARGET_MIN_TOKENS:
             merged_text = [b["text"]]
             merged_end_line = b["end_line"]
@@ -176,7 +177,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
             i = j
             continue
 
-        # 3. Самостоятельное положение целевого размера
+        # 3. Самостоятельное положение с provision_id сохраняется в отдельный адресуемый чанк
         chunks.append(
             make_chunk_payload(
                 text=b["text"],
