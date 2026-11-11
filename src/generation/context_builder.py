@@ -8,10 +8,29 @@ from src.generation.types import RetrievedChunk, SourceMetadata, TraceStep
 logger = logging.getLogger(__name__)
 
 
+def _format_effective_dates(chunk: RetrievedChunk) -> str:
+    if not chunk.effective_dates_known:
+        return ""
+    if chunk.effective_from and chunk.effective_to:
+        return f"действует с {chunk.effective_from} по {chunk.effective_to}"
+    if chunk.effective_from:
+        return f"действует с {chunk.effective_from} по настоящее время"
+    if chunk.effective_to:
+        return f"действует по {chunk.effective_to}"
+    return ""
+
+
 def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
     has_provision: bool = (
         chunk.provision_id is not None and bool(chunk.provision_id.strip())
     )
+    effective_str = _format_effective_dates(chunk)
+    has_effective: bool = bool(effective_str)
+    has_amends: bool = (
+        chunk.amends_document_id is not None
+        and bool(chunk.amends_document_id.strip())
+    )
+
     structure_path_str = config.STRUCTURE_PATH_SEPARATOR.join(
         chunk.structure_path
     )
@@ -20,16 +39,22 @@ def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
         document_title=chunk.document_title,
         structure_path_str=structure_path_str,
         provision_id=chunk.provision_id or "",
+        effective_str=effective_str,
+        amends_document_id=chunk.amends_document_id or "",
         text=chunk.text,
     )
-    if not has_provision:
-        filtered_lines = [
-            line
-            for line in rendered.splitlines()
-            if not line.startswith(prompts.PROVISION_LINE_PREFIX)
-        ]
-        return "\n".join(filtered_lines)
-    return rendered
+
+    filtered_lines: list[str] = []
+    for line in rendered.splitlines():
+        if not has_provision and line.startswith(prompts.PROVISION_LINE_PREFIX):
+            continue
+        if not has_effective and line.startswith(prompts.EFFECTIVE_LINE_PREFIX):
+            continue
+        if not has_amends and line.startswith(prompts.AMENDS_LINE_PREFIX):
+            continue
+        filtered_lines.append(line)
+
+    return "\n".join(filtered_lines)
 
 
 def build_source_entry(chunk: RetrievedChunk) -> SourceMetadata:
@@ -41,6 +66,10 @@ def build_source_entry(chunk: RetrievedChunk) -> SourceMetadata:
         "provision_id": chunk.provision_id,
         "structure_path": list(chunk.structure_path),
         "score": chunk.score,
+        "effective_from": chunk.effective_from,
+        "effective_to": chunk.effective_to,
+        "effective_dates_known": chunk.effective_dates_known,
+        "amends_document_id": chunk.amends_document_id,
     }
 
 

@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "document_id": "doc_тк_ст70_действующая",
+    "version_id": "doc_тк_ст70_действующая_v1",
+    "document_title": "Испытательный срок. Статья 70. ТК РФ Испытание при приеме на работу. Трудовой кодекс Российской Федерации от 30.12.2001 N 197-ФЗ (ТК РФ)",
+    "document_type": "law",
+    "scope": "global",
+    "chat_id": null,
+    "created_by": "system",
+    "source_filename": "законы__ТК_ст70_действующая.txt",
+    "source_hash": "sha256:faa132894aee5508be9c53bd6af10c28fd6c110c3734a46f32d0c70324c358fb",
+    "published_at": "2026-09-01",
+    "effective_from": "2026-09-01",
+    "effective_to": null,
+    "effective_dates_known": true,
+    "ingested_at": "2026-11-11T14:17:39Z",
+    "amends_document_id": null,
+    "parser_version": "txt-parser-2.0",
+    "chunker_version": "structural-1.0"
+  },
+  "total_characters": 2476,
+  "total_blocks_found": 2,
+  "blocks_preview": [
+    {
+      "provision_id": null,
+      "path": [
+        "Введение / Общие положения"
+      ],
+      "start_line": 1,
+      "end_line": 2,
+      "char_length": 87,
+      "text_sample": "Статья 70 изменена с 1 сентября 2026 г. - Федеральный закон от 9 апреля 2026 г. № 91-ФЗ..."
+    },
+    {
+      "provision_id": "70.",
+      "path": [
+        "Введение / Общие положения",
+        "Статья 70. Испытание при приеме на работу"
+      ],
+      "start_line": 3,
+      "end_line": 33,
+      "char_length": 2386,
+      "text_sample": "Статья 70. Испытание при приеме на работу  При заключении трудового договора в нем по соглашению сторон может быть предусмотрено условие об испытании работника ..."
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 import logging
+import re
 import time
 from src import config
 from src.generation import prompts
-from src.generation.llm_client import llm_complete
+from src.generation.llm_client import llm_complete_with_usage
 from src.generation.types import Intent, TraceStep
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,19 @@ def parse_intent_label(raw_label: str) -> Intent:
     for item in Intent:
         if item.value == cleaned:
             return item
+    for item in Intent:
+        if re.search(rf"\b{re.escape(item.value)}\b", cleaned):
+            return item
+    for item in Intent:
+        if item.value in cleaned:
+            return item
     return config.INTENT_FALLBACK
 
 
 def detect_intent(query: str) -> tuple[Intent, TraceStep]:
     start_time = time.perf_counter()
     messages = build_intent_messages(query=query)
-    raw_output = llm_complete(
+    raw_output, prompt_tokens, completion_tokens = llm_complete_with_usage(
         messages=messages,
         model=config.LLM_MODEL,
         temperature=config.INTENT_CLASSIFIER_TEMPERATURE,
@@ -53,8 +60,8 @@ def detect_intent(query: str) -> tuple[Intent, TraceStep]:
         output={"intent": detected.value},
         latency_ms=latency_ms,
         model=config.LLM_MODEL,
-        prompt_tokens=config.STUB_PROMPT_TOKENS,
-        completion_tokens=config.STUB_COMPLETION_TOKENS,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
     logger.info(
         "Step %s finished with intent=%s in %.3f ms",

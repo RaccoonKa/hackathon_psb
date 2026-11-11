@@ -57,15 +57,9 @@ def get_chroma_collection():
 
 
 def compute_embeddings(texts: List[str], batch_size: int = 16) -> List[List[float]]:
-    """
-    Вычисляет 1024-мерные эмбеддинги.
-    Приоритет 1: локальный инференс bge-m3 (Transformers + PyTorch).
-    Приоритет 2: API платформы соревнований.
-    Приоритет 3: детерминированный фоллбэк.
-    """
+    """Вычисляет 1024-мерные эмбеддинги (локально -> API -> детерминированный фоллбэк)."""
     tok, model, device = _load_local_model()
 
-    # 1. Локальный расчет через transformers
     if tok is not None and model is not None:
         import torch
 
@@ -82,13 +76,11 @@ def compute_embeddings(texts: List[str], batch_size: int = 16) -> List[List[floa
 
             with torch.no_grad():
                 outputs = model(**inputs)
-                # CLS token dense representation + L2 normalize
                 cls_rep = outputs.last_hidden_state[:, 0]
                 normalized = torch.nn.functional.normalize(cls_rep, p=2, dim=1)
                 all_embeddings.extend(normalized.cpu().tolist())
         return all_embeddings
 
-    # 2. Удаленный API платформы
     try:
         res = client_api.embeddings.create(model=EMBEDDING_MODEL, input=texts)
         return [d.embedding for d in res.data]
