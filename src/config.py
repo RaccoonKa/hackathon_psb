@@ -22,7 +22,8 @@ EMBEDDING_API_BASE_URL = os.getenv(
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", os.getenv("API_KEY", ""))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4.1-flash:free")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "deepseek-v4.1-flash:free")
+LLM_MODEL = os.getenv("LLM_MODEL", LLM_MODEL_NAME)
 LLM_BASE_URL = os.getenv(
     "LLM_BASE_URL",
     os.getenv(
@@ -109,3 +110,21 @@ REAL_RAG_DEFAULT_SCORE: float = float(
 MS_PER_SECOND: float = 1000.0
 LATENCY_ROUND_DIGITS: int = 3
 DEFAULT_MIN_SCORE: float = 0.0
+
+MAX_LLM_FAILURES_PER_REQUEST: int = int(os.getenv("MAX_LLM_FAILURES_PER_REQUEST", "12"))
+MAX_LLM_FAILURES_PER_STEP: int = int(os.getenv("MAX_LLM_FAILURES_PER_STEP", "3"))
+
+MAX_ATTEMPTS_QUERY_ANALYSIS: int = int(os.getenv("MAX_ATTEMPTS_QUERY_ANALYSIS", "2"))
+MAX_ATTEMPTS_GENERATE_INITIAL: int = int(os.getenv("MAX_ATTEMPTS_GENERATE_INITIAL", "2"))
+MAX_REGENERATE_CYCLES: int = int(os.getenv("MAX_REGENERATE_CYCLES", "1"))
+MAX_FOLLOWUP_RETRIEVAL_CYCLES: int = int(os.getenv("MAX_FOLLOWUP_RETRIEVAL_CYCLES", "1"))
+
+LLM_REQUEST_TIMEOUT_S: int = int(os.getenv("LLM_REQUEST_TIMEOUT_S", "30"))
+RETRIEVAL_TIMEOUT_S: int = int(os.getenv("RETRIEVAL_TIMEOUT_S", "20"))
+REQUEST_TOTAL_TIMEOUT_S: int = int(os.getenv("REQUEST_TOTAL_TIMEOUT_S", "90"))
+
+ENABLE_MEMORY: bool = os.getenv("ENABLE_MEMORY", "false").lower() == "true"
+ENABLE_LLM_VERIFIER: bool = os.getenv("ENABLE_LLM_VERIFIER", "true").lower() == "true"
+ENABLE_PREMISE_CHECK: bool = os.getenv("ENABLE_PREMISE_CHECK", "true").lower() == "true"
+ENABLE_INJECTION_GUARD: bool = os.getenv("ENABLE_INJECTION_GUARD", "true").lower() == "true"
+ENABLE_SANITY_CHECK_IN_ANALYSIS: bool = os.getenv("ENABLE_SANITY_CHECK_IN_ANALYSIS", "false").lower() == "true"

@@ -1,15 +1,20 @@
+from functools import lru_cache
 import logging
 import re
 from langchain_openai import ChatOpenAI
+import openai
 from src import config
+from src.generation.errors import LLMAPIError, LLMTimeoutError
 from src.generation.stubs import stub_llm_complete
 
 logger = logging.getLogger(__name__)
 
 _THINK_TAG_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
 
+
+@lru_cache(maxsize=16)
 def _build_chat_model(
-    model: str, temperature: float, max_tokens: int
+    model: str, temperature: float, max_tokens: int, timeout: float
 ) -> ChatOpenAI:
     return ChatOpenAI(
         model=model,
@@ -18,7 +23,15 @@ def _build_chat_model(
         temperature=temperature,
         max_completion_tokens=max_tokens,
         max_retries=config.MAX_RETRIES,
+        timeout=timeout,
     )
+
+
+def _strip_reasoning_tokens(text: str) -> str:
+    cleaned = _THINK_TAG_PATTERN.sub("", text)
+    if "<think>" in cleaned:
+        cleaned = cleaned.split("<think>", 1)[0]
+    return cleaned.strip()
 
 
 def _extract_token_usage(response: object) -> tuple[int, int]:
@@ -42,22 +55,38 @@ def _extract_token_usage(response: object) -> tuple[int, int]:
 
 
 def _invoke_real_llm(
-    messages: list[dict], model: str, temperature: float, max_tokens: int
+    messages: list[dict],
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
 ) -> tuple[str, int, int]:
     llm = _build_chat_model(
-        model=model, temperature=temperature, max_tokens=max_tokens
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
     )
-    response = llm.invoke(messages)
+    try:
+        response = llm.invoke(messages)
+    except openai.APITimeoutError as exc:
+        raise LLMTimeoutError(f"LLM request timed out after {timeout}s: {exc}") from exc
+    except openai.APIError as exc:
+        raise LLMAPIError(f"LLM API error: {exc}") from exc
+    except TimeoutError as exc:
+        raise LLMTimeoutError(f"LLM request timed out: {exc}") from exc
+    except Exception as exc:
+        if "timeout" in str(exc).lower() or "timed out" in str(exc).lower():
+            raise LLMTimeoutError(f"LLM timeout: {exc}") from exc
+        raise LLMAPIError(f"Unexpected LLM transport error: {exc}") from exc
 
-    prompt_tokens, completion_tokens = _extract_token_usage(response)
-
-    content = (
+    raw_content = (
         response.content
         if isinstance(response.content, str)
         else str(response.content)
     )
-    content = _THINK_TAG_PATTERN.sub("", content).strip()
-
+    content = _strip_reasoning_tokens(raw_content)
+    prompt_tokens, completion_tokens = _extract_token_usage(response)
     return content, prompt_tokens, completion_tokens
 
 
@@ -66,8 +95,14 @@ def llm_complete_with_usage(
     model: str,
     temperature: float,
     max_tokens: int,
+    timeout: float | None = None,
 ) -> tuple[str, int, int]:
-    if config.USE_STUB_LLM:
+    effective_timeout = (
+        float(timeout)
+        if timeout is not None
+        else float(config.LLM_REQUEST_TIMEOUT_S)
+    )
+    if config.USE_STUB_LLM or getattr(config, "LLM_MODE", "real") == config.LLM_MODE_STUB:
         text = stub_llm_complete(
             messages=messages,
             model=model,
@@ -80,6 +115,7 @@ def llm_complete_with_usage(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=effective_timeout,
     )
 
 
@@ -88,11 +124,13 @@ def llm_complete(
     model: str,
     temperature: float,
     max_tokens: int,
+    timeout: float | None = None,
 ) -> str:
     content, _, _ = llm_complete_with_usage(
         messages=messages,
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
     )
     return content
