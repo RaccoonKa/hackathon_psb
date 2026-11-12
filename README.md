@@ -100,6 +100,11 @@ project/
 
 Если GGUF уже скачан, повторно загружать модель не нужно.
 
+Скачать GGUF (выполнять в корне репозитория `hackathon-psb`):
+```bash
+hf download gorse-io/Qwen3-Reranker-8B-GGUF Qwen3-Reranker-8B-Q4_K_M.gguf --local-dir ./models/Qwen3-Reranker-8B
+```
+
 ---
 
 ## 2. Установка llama.cpp
