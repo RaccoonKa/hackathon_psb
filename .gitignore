@@ -8,4 +8,8 @@ models/
 model/
 submit/
 .DS_Store
+data/debug/
+data/manifests/
+data/processed/
+run.log
 

@@ -110,6 +110,8 @@ if USE_SUBMIT:
         _first_env("RERANKER_MODEL") or "Qwen/Qwen3-Reranker-8B"
     )
 
+    RERANKER_BACKEND: str = "api"
+
     EMBEDDING_API_BASE_URL: str = LLM_BASE_URL
     EMBEDDING_API_KEY: str = LLM_API_KEY
     RERANKER_API_BASE_URL: str = LLM_BASE_URL
@@ -188,6 +190,8 @@ else:
         "RERANKER_MODEL", "Qwen/Qwen3-Reranker-8B"
     )
 
+    RERANKER_BACKEND: str = "api"
+
     LLM_TEMPERATURE: float = _env_float("LLM_TEMPERATURE", 0.0)
     LLM_MAX_TOKENS: int = _env_int("LLM_MAX_TOKENS", 1536, minimum=1)
     RAG_TOP_K: int = _env_int("RAG_TOP_K", 10, minimum=1)
@@ -244,9 +248,19 @@ INTENT_CLASSIFIER_MAX_TOKENS: int = _env_int(
 
 MAX_RETRIES: int = _env_int("MAX_RETRIES", 1, minimum=0)
 
-# Таймауты сетевых вызовов.
+# Таймауты сетевых вызовов и параметры локального реранкера.
 EMBED_BATCH_SIZE: int = _env_int("EMBED_BATCH_SIZE", 16, minimum=1)
 RERANKER_TIMEOUT: float = _env_float("RERANKER_TIMEOUT", 30.0)
+RERANKER_LOCAL_PATH: Path = Path(
+    _first_env("RERANKER_LOCAL_PATH")
+    or (BASE_DIR / "models" / "Qwen3-Reranker-8B")
+).expanduser().resolve()
+RERANKER_MAX_LENGTH: int = _env_int(
+    "RERANKER_MAX_LENGTH", 8192, minimum=512
+)
+RERANKER_BATCH_SIZE: int = _env_int(
+    "RERANKER_BATCH_SIZE", 2, minimum=1
+)
 
 # Контракт выходного файла.
 SUBMISSION_FILENAME: str = "submission.csv"

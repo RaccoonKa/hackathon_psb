@@ -281,6 +281,7 @@ assert config.EMBEDDING_API_BASE_URL == config.LLM_BASE_URL
 assert config.EMBEDDING_API_KEY == config.LLM_API_KEY
 assert config.RERANKER_API_BASE_URL == config.LLM_BASE_URL
 assert config.RERANKER_API_KEY == config.LLM_API_KEY
+assert config.RERANKER_BACKEND == "api"
 assert config.LLM_MODEL == "test-gen-model"
 assert config.EMBEDDING_MODEL == "test-emb-model"
 assert config.RERANKER_MODEL == "test-rerank-model"
@@ -323,6 +324,7 @@ assert config.BM25_DIR == root / "storage" / "bm25_index"
 assert config.MANIFESTS_DIR == root / "data" / "manifests"
 assert config.USE_LOCAL_EMBEDDING_MODEL is True
 assert config.ALLOW_HASH_FALLBACK is True
+assert config.RERANKER_BACKEND == "transformers"
 print("local-ok")
 """
     _expect_ok(
