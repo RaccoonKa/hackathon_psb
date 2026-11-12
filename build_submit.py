@@ -32,19 +32,67 @@ MAX_ZIP_BYTES = 128 * 1024 * 1024
 # source -> target в плоской сборке
 MODULE_SOURCES: List[Tuple[str, str]] = [
     ("src/config.py", "config.py"),
-    ("src/generation/context_builder.py", "generation_context_builder.py"),
-    ("src/generation/generator.py", "generation_generator.py"),
-    ("src/generation/intent.py", "generation_intent.py"),
-    ("src/generation/llm_client.py", "generation_llm_client.py"),
+    # --- orchestration / shared ---
     ("src/generation/orchestrator.py", "generation_orchestrator.py"),
-    ("src/generation/prompts.py", "generation_prompts.py"),
+    ("src/generation/bailout.py", "generation_bailout.py"),
+    ("src/generation/errors.py", "generation_errors.py"),
     ("src/generation/refusal.py", "generation_refusal.py"),
-    (
-        "src/generation/retrieval_bridge.py",
-        "generation_retrieval_bridge.py",
-    ),
     ("src/generation/stubs.py", "generation_stubs.py"),
     ("src/generation/types.py", "generation_types.py"),
+    # --- analysis ---
+    (
+        "src/generation/analysis/entity_resolver.py",
+        "generation_analysis_entity_resolver.py",
+    ),
+    (
+        "src/generation/analysis/prefilter.py",
+        "generation_analysis_prefilter.py",
+    ),
+    (
+        "src/generation/analysis/query_analysis.py",
+        "generation_analysis_query_analysis.py",
+    ),
+    # --- answer ---
+    (
+        "src/generation/answer/context_builder.py",
+        "generation_answer_context_builder.py",
+    ),
+    ("src/generation/answer/generator.py", "generation_answer_generator.py"),
+    (
+        "src/generation/answer/verification.py",
+        "generation_answer_verification.py",
+    ),
+    # --- llm / planning / policy ---
+    ("src/generation/llm/client.py", "generation_llm_client.py"),
+    (
+        "src/generation/planning/planner.py",
+        "generation_planning_planner.py",
+    ),
+    ("src/generation/policy/precheck.py", "generation_policy_precheck.py"),
+    # --- prompts package (плоские модули) ---
+    (
+        "src/generation/prompts/templates.py",
+        "generation_prompts_templates.py",
+    ),
+    ("src/generation/prompts/bailout.py", "generation_prompts_bailout.py"),
+    ("src/generation/prompts/evidence.py", "generation_prompts_evidence.py"),
+    ("src/generation/prompts/generator.py", "generation_prompts_generator.py"),
+    (
+        "src/generation/prompts/query_analysis.py",
+        "generation_prompts_query_analysis.py",
+    ),
+    (
+        "src/generation/prompts/regenerate.py",
+        "generation_prompts_regenerate.py",
+    ),
+    ("src/generation/prompts/verifier.py", "generation_prompts_verifier.py"),
+    # --- retrieval (generation) ---
+    ("src/generation/retrieval/bridge.py", "generation_retrieval_bridge.py"),
+    (
+        "src/generation/retrieval/evidence.py",
+        "generation_retrieval_evidence.py",
+    ),
+    # --- indexing / retrieval ---
     ("src/indexing/chunker.py", "indexing_chunker.py"),
     ("src/indexing/parser.py", "indexing_parser.py"),
     ("src/indexing/tokenizer_utils.py", "indexing_tokenizer_utils.py"),

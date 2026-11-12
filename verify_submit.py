@@ -324,7 +324,8 @@ assert config.BM25_DIR == root / "storage" / "bm25_index"
 assert config.MANIFESTS_DIR == root / "data" / "manifests"
 assert config.USE_LOCAL_EMBEDDING_MODEL is True
 assert config.ALLOW_HASH_FALLBACK is True
-assert config.RERANKER_BACKEND == "transformers"
+# LOCAL допускает оба backend-а локального Qwen: HTTP (llama-server) и transformers.
+assert config.RERANKER_BACKEND in {"api", "transformers"}
 print("local-ok")
 """
     _expect_ok(
