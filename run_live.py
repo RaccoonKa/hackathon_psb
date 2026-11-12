@@ -9,31 +9,40 @@ os.environ["LLM_MODE"] = "real"
 
 from src.generation.orchestrator import run_agent
 
+NEED_SOURCES = True
+NEED_INTENT = False
+NEED_TRACE = False
+
 
 def exec(query):
     result = run_agent(query)
-                
-    print("\n" + "="*60)
-    print(f"🎯 ИНТЕНТ: {result.intent}")
-    print(f"🚫 ОТКАЗ (Refused): {result.refused}")
-    print("\n💡 ОТВЕТ:")
-    print(result.final_answer)
-    
-    print("\n📚 ИСТОЧНИКИ:")
-    if result.sources:
-        for source_id, meta in result.sources.items():
-            print(f"  [{source_id}] {meta['document_title']}")
-            print(f"        Путь: {' -> '.join(meta['structure_path'])}")
-            print(f"        Score: {meta['score']:.3f} | Chunk: {meta['chunk_id']}")
-    else:
-        print("  Нет релевантных источников.")
-    
-    print("\n🔍 ПОЛНЫЙ ТРЕЙС (Trace):")
 
-    trace_dict = [asdict(step) for step in result.trace]
-    print(json.dumps(trace_dict, indent=2, ensure_ascii=False))
+    print("\n" + "="*60)
+    if NEED_INTENT:
+        print(f"🎯 ИНТЕНТ: {result.intent}")
+        print(f"🚫 ОТКАЗ (Refused): {result.refused}")
+        print("\n💡 ОТВЕТ:")
+    print(result.final_answer)
+
+    if NEED_SOURCES:
+        print("\n📚 ИСТОЧНИКИ:")
+        if result.sources:
+            for source_id, meta in result.sources.items():
+                print(f"  [{source_id}] {meta['document_title']}")
+                print(f"        Путь: {' -> '.join(meta['structure_path'])}")
+                print(f"        Score: {meta['score']:.3f} | Chunk: {meta['chunk_id']}")
+        else:
+            print("  Нет релевантных источников.")
+
+    if NEED_TRACE:
+        print("\n🔍 ПОЛНЫЙ ТРЕЙС (Trace):")
+        trace_dict = [asdict(step) for step in result.trace]
+        print(json.dumps(trace_dict, indent=2, ensure_ascii=False))
+
     print("="*60)
 
+
+# Полный набор из 18 запросов версии A (включая многошаговые диалоги).
 QUERY = [
     "Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?",
     "Какой максимальный срок испытания можно установить главному бухгалтеру?",
@@ -55,17 +64,14 @@ QUERY = [
     "Пользователь: Подписали новый договор, оригинал пока у меня. Не знаю, кому его дальше передавать.\nАссистент: Вы про порядок передачи документов в ООО «Меридиан» после подписания?\nПользователь: Да. В юротдел нужно отнести сразу или есть какой-то срок?",
 ]
 
-QUERY = ["«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?",]
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")
     print("Работают реальные модели поиска и генерации.")
     print("Введите 'exit', 'quit' или 'выход' для завершения.\n")
 
-
     if QUERY:
-        for i,query in enumerate(QUERY):
-            
+        for i, query in enumerate(QUERY):
             print(f"\nЗАПРОС({i+1}/{len(QUERY)}): {query}")
             exec(query=query)
     else:
@@ -80,8 +86,8 @@ def main():
 
                 print("\n🔄 Обработка запроса...")
 
-                exec(query=query)            
-                
+                exec(query=query)
+
             except KeyboardInterrupt:
                 print("\nПрервано пользователем.")
                 break

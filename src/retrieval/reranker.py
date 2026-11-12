@@ -8,6 +8,8 @@ import logging
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
 from src import config
 
 logger = logging.getLogger(__name__)
@@ -243,8 +245,6 @@ def _rerank_with_api(
     top_k: int,
 ) -> List[Dict[str, Any]]:
     """Существующий HTTP backend для платформенного SUBMIT без изменений API."""
-    import requests
-
     url = f"{config.RERANKER_API_BASE_URL.rstrip('/')}/rerank"
     headers = {
         "Authorization": f"Bearer {config.RERANKER_API_KEY}",

@@ -236,6 +236,13 @@ RAG_SCORE_THRESHOLD: float = _env_float("RAG_SCORE_THRESHOLD", 0.0)
 REAL_RAG_DEFAULT_SCORE: float = 0.5
 DEFAULT_MIN_SCORE: float = 0.0
 
+RRF_FALLBACK_SCORE_CEILING: float = float(
+    os.getenv("RRF_FALLBACK_SCORE_CEILING", "0.1")
+)
+RRF_FALLBACK_THRESHOLD: float = float(
+    os.getenv("RRF_FALLBACK_THRESHOLD", "0.005")
+)
+
 INTENT_FALLBACK: Intent = Intent(
     os.getenv("INTENT_FALLBACK", Intent.SEMANTIC_QUERY.value)
 )
@@ -301,10 +308,12 @@ STUB_COMPLETION_TOKENS: int = _env_int(
     "STUB_COMPLETION_TOKENS", 64, minimum=0
 )
 
+REAL_RAG_DEFAULT_SCORE: float = float(
+    os.getenv("REAL_RAG_DEFAULT_SCORE", "1.0")
+)
+
 MS_PER_SECOND: float = 1000.0
 LATENCY_ROUND_DIGITS: int = 3
-
-
 def validate_submit_config() -> None:
     """Проверяет обязательные параметры SUBMIT, не раскрывая секреты."""
     if not USE_SUBMIT:
@@ -322,3 +331,35 @@ def validate_submit_config() -> None:
             + ", ".join(missing)
             + ". Значения ключей в лог не выводятся."
         )
+
+
+# --- бюджеты, таймауты и флаги агентного пайплайна (портировано из feat/rag-agent-logic) ---
+MAX_LLM_FAILURES_PER_REQUEST: int = _env_int(
+    "MAX_LLM_FAILURES_PER_REQUEST", 12, minimum=1
+)
+MAX_LLM_FAILURES_PER_STEP: int = _env_int(
+    "MAX_LLM_FAILURES_PER_STEP", 3, minimum=1
+)
+
+MAX_ATTEMPTS_QUERY_ANALYSIS: int = _env_int(
+    "MAX_ATTEMPTS_QUERY_ANALYSIS", 2, minimum=1
+)
+MAX_ATTEMPTS_GENERATE_INITIAL: int = _env_int(
+    "MAX_ATTEMPTS_GENERATE_INITIAL", 2, minimum=1
+)
+MAX_REGENERATE_CYCLES: int = _env_int("MAX_REGENERATE_CYCLES", 1, minimum=0)
+MAX_FOLLOWUP_RETRIEVAL_CYCLES: int = _env_int(
+    "MAX_FOLLOWUP_RETRIEVAL_CYCLES", 1, minimum=0
+)
+
+LLM_REQUEST_TIMEOUT_S: float = _env_float("LLM_REQUEST_TIMEOUT_S", 30.0)
+RETRIEVAL_TIMEOUT_S: float = _env_float("RETRIEVAL_TIMEOUT_S", 20.0)
+REQUEST_TOTAL_TIMEOUT_S: float = _env_float("REQUEST_TOTAL_TIMEOUT_S", 90.0)
+
+ENABLE_MEMORY: bool = _env_bool("ENABLE_MEMORY", False)
+ENABLE_LLM_VERIFIER: bool = _env_bool("ENABLE_LLM_VERIFIER", True)
+ENABLE_PREMISE_CHECK: bool = _env_bool("ENABLE_PREMISE_CHECK", True)
+ENABLE_INJECTION_GUARD: bool = _env_bool("ENABLE_INJECTION_GUARD", True)
+ENABLE_SANITY_CHECK_IN_ANALYSIS: bool = _env_bool(
+    "ENABLE_SANITY_CHECK_IN_ANALYSIS", False
+)
