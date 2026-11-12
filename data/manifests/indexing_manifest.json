@@ -1,11 +1,18 @@
 {
-  "index_build_id": "index_2026_11_12_123117",
+  "index_build_id": "index_2026_11_12_130121",
   "embedding_model": "BAAI/bge-m3",
   "reranker_model": "Qwen/Qwen3-Reranker-8B",
   "chunker_version": "structural-1.0",
-  "indexed_at": "2026-11-12T12:31:17Z",
-  "total_chunks": 433,
+  "indexed_at": "2026-11-12T13:01:21Z",
+  "total_chunks": 453,
   "documents": [
+    {
+      "document_id": "doc_proverka",
+      "version_id": "doc_proverka_v1",
+      "source_hash": "sha256:2461d5c0fcf1dc59b49c6c55f6199099cc94c8e689880d32a7e097dadeeb2d4c",
+      "amends_document_id": null,
+      "chunks_count": 20
+    },
     {
       "document_id": "contract_а-08-2024",
       "version_id": "contract_а-08-2024_v1",
