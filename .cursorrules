@@ -1,15 +1,27 @@
 ﻿# Git Automation Rules for AI Agent
 
-- DEFAULT_BRANCH: Always push ONLY to "feat/rag-baseline". NEVER touch, checkout, or push to "main".
+- PROTECTED_BRANCH: NEVER touch, checkout, commit, merge, or push to "main".
+- DEFAULT_INTEGRATION_BRANCH: "feat/rag-baseline" (or the currently active feature branch specified by the user).
 - COMMIT CONVENTION: Use Conventional Commits format:
     - feat(rag): ...
     - fix(parser): ...
     - test(chunker): ...
     - chore(deps): ...
-- AUTOMATION WORKFLOW:
+
+- MERGING & HISTORY PRESERVATION RULES (CRITICAL):
+    1. NEVER use `git merge --squash`, `git rebase`, or `git push --force` when merging branches. Always preserve full commit history.
+    2. Always merge using `git merge --no-ff <source-branch>` to create an explicit merge commit that records the branch history.
+    3. Before merging `<source-branch>` into `<target-branch>`:
+        - Ensure all local changes are committed or cleanly stashed.
+        - Run `git fetch origin` to sync remote state.
+        - Checkout `<target-branch>` and run `git pull origin <target-branch>`.
+        - Run `git merge --no-ff <source-branch> -m "merge: integrate <source-branch> into <target-branch>"`.
+    4. If merge conflicts occur, stop and resolve them carefully without dropping code from either branch, then complete the merge commit (`git add <resolved_files>` and `git commit`).
+
+- AUTOMATION WORKFLOW (COMMIT & PUSH):
     1. Whenever you finish implementing a file or complete a logical task, run `git status`.
-    2. Check that no ignored files (.venv, .env, raw data) are staged.
+    2. Check that no ignored files (`.venv`, `.env`, `data/raw`, `storage/`) are staged.
     3. Run `git add <modified_files>` (avoid `git add .` if unintended temporary files exist).
     4. Run `git commit -m "<concise conventional message>"`.
-    5. Run `git push origin feat/rag-baseline`.
-    6. Report the commit hash and branch to the user.
+    5. Run `git push origin <current_branch>`.
+    6. Report the commit hash, branch name, and merge status to the user.

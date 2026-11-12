@@ -1,11 +1,18 @@
 {
-  "index_build_id": "index_2026_11_11_205134",
+  "index_build_id": "index_2026_11_12_130121",
   "embedding_model": "BAAI/bge-m3",
   "reranker_model": "Qwen/Qwen3-Reranker-8B",
   "chunker_version": "structural-1.0",
-  "indexed_at": "2026-11-11T20:51:34Z",
-  "total_chunks": 416,
+  "indexed_at": "2026-11-12T13:01:21Z",
+  "total_chunks": 453,
   "documents": [
+    {
+      "document_id": "doc_proverka",
+      "version_id": "doc_proverka_v1",
+      "source_hash": "sha256:2461d5c0fcf1dc59b49c6c55f6199099cc94c8e689880d32a7e097dadeeb2d4c",
+      "amends_document_id": null,
+      "chunks_count": 20
+    },
     {
       "document_id": "contract_а-08-2024",
       "version_id": "contract_а-08-2024_v1",
@@ -32,7 +39,7 @@
       "version_id": "amend_1_п-17-2024_v1",
       "source_hash": "sha256:f37f50f7bcb0900854230903be263bebdea60b3cae4be93ee9ed7ec02e4a380a",
       "amends_document_id": "contract_п-17-2024",
-      "chunks_count": 2
+      "chunks_count": 1
     },
     {
       "document_id": "doc_письмо-комплаенс-службы-к-12-от-15-04-2025",
@@ -46,7 +53,7 @@
       "version_id": "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1",
       "source_hash": "sha256:27dcb53da4f654f50bdf233aa00b3e006075a85086f10dac57800473e499575d",
       "amends_document_id": null,
-      "chunks_count": 15
+      "chunks_count": 1
     },
     {
       "document_id": "doc_регламент-согласования-договоров-ред-2025",
@@ -102,28 +109,28 @@
       "version_id": "doc_нк_ст145_действующая_v1",
       "source_hash": "sha256:59c61690bda78bf26dab36ece2cc3374dc5fed94dd408c0d24b7991776c336b8",
       "amends_document_id": null,
-      "chunks_count": 16
+      "chunks_count": 19
     },
     {
       "document_id": "doc_нк_ст164_действующая",
       "version_id": "doc_нк_ст164_действующая_v1",
       "source_hash": "sha256:90f7d1f6c472be5e5a89fc1fe9bcdc3a1b57171c475c772150bb463333bb7066",
       "amends_document_id": null,
-      "chunks_count": 86
+      "chunks_count": 98
     },
     {
       "document_id": "doc_нк_ст224_действующая",
       "version_id": "doc_нк_ст224_действующая_v1",
       "source_hash": "sha256:b4a2313836aadf260106ae02607b14ec6bf803ffc5e029dec2a92b1ba10e0067",
       "amends_document_id": null,
-      "chunks_count": 12
+      "chunks_count": 15
     },
     {
       "document_id": "doc_нк_ст284_действующая",
       "version_id": "doc_нк_ст284_действующая_v1",
       "source_hash": "sha256:f4805aaa721b5256be3ba2d5a19a4a650623f11598863ff98ee98d313e6558e3",
       "amends_document_id": null,
-      "chunks_count": 87
+      "chunks_count": 100
     },
     {
       "document_id": "doc_тк_ст152_действующая",
@@ -151,7 +158,7 @@
       "version_id": "doc_тк_ст99_действующая_v1",
       "source_hash": "sha256:428df66e32e77301db52f526ae76b47b11ad239b0562b787cf2235c984e07d8b",
       "amends_document_id": null,
-      "chunks_count": 10
+      "chunks_count": 11
     }
   ]
 }

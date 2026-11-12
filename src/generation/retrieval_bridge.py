@@ -161,8 +161,8 @@ def filter_chunks_by_threshold(
     )
 
     effective_threshold = threshold
-    if 0.0 < max_score < 0.1:
-        effective_threshold = 0.005
+    if threshold > 0.0 and 0.0 < max_score < 0.1:
+        effective_threshold = min(threshold, 0.005)
         logger.warning(
             "Обнаружены RRF-скоры (max=%.3f). Порог адаптивно снижен до %.3f",
             max_score,

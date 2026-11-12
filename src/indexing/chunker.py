@@ -1,7 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.config import PROCESSED_DATA_DIR
 from src.indexing.parser import extract_document_structure
@@ -12,6 +12,7 @@ TARGET_MAX_TOKENS = 600
 HARD_MAX_TOKENS = 750
 OVERLAP_TOKENS = 60
 
+# Константы сохранены для обратной совместимости с тестами перекрытия
 SUB_CHUNK_SIZE_CHARS = HARD_MAX_TOKENS * 3
 SUB_CHUNK_OVERLAP_CHARS = OVERLAP_TOKENS * 3
 
@@ -19,15 +20,17 @@ _oversized_splitter = None
 
 
 def _get_oversized_splitter():
-    """Ленивая инициализация langchain-сплиттера (не нужна при импорте)."""
+    """Ленивая инициализация langchain-сплиттера по токенам (не нужна при импорте)."""
     global _oversized_splitter
     if _oversized_splitter is None:
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
         _oversized_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=SUB_CHUNK_SIZE_CHARS,
-            chunk_overlap=SUB_CHUNK_OVERLAP_CHARS,
-            separators=["\n\n", "\n", ";\n", ". ", " "],
+            chunk_size=HARD_MAX_TOKENS - 15,
+            chunk_overlap=OVERLAP_TOKENS,
+            length_function=count_tokens,
+            separators=["\n\n", "\n", ";\n", r"(?<!\d)\.\s+", " "],
+            is_separator_regex=True,
             keep_separator=True,
         )
     return _oversized_splitter
@@ -47,9 +50,36 @@ def generate_chunk_id(
     return f"{ver_id}_{chunk_index:04d}_{hash_suffix}"
 
 
+def _resolve_page_number(
+    content: str,
+    c_start: int,
+    c_end: int,
+    page_spans: Optional[List[Tuple[int, int, int]]],
+) -> Optional[int]:
+    """Определяет номер страницы (1-based) для PDF по символьному смещению; None для TXT/DOCX."""
+    if not page_spans:
+        return None
+
+    # Смещаем точку поиска к первому непробельному символу фрагмента,
+    # чтобы ведущие переносы строк не относили чанк к предыдущей странице.
+    target_pos = c_start
+    limit = min(len(content), max(c_start, c_end))
+    while target_pos < limit and content[target_pos].isspace():
+        target_pos += 1
+
+    for p_start, p_end, page_num in page_spans:
+        if p_start <= target_pos < p_end:
+            return page_num
+
+    if target_pos < page_spans[0][0]:
+        return page_spans[0][2]
+    return page_spans[-1][2]
+
+
 def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     content = doc["content"]
     meta = doc["metadata"]
+    page_spans: Optional[List[Tuple[int, int, int]]] = doc.get("page_spans")
     total_doc_tokens = count_tokens(content)
 
     chunks: List[Dict[str, Any]] = []
@@ -73,6 +103,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         prefix = ". ".join(prefix_parts) + ". "
         clean_text = text.strip()
+        page_num = _resolve_page_number(content, c_start, c_end, page_spans)
 
         cid = generate_chunk_id(
             doc_id=meta["document_id"],
@@ -98,7 +129,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "end_line": end_line,
                 "char_start": c_start,
                 "char_end": c_end,
-                "page": None,
+                "page": page_num,
             },
             "document_title": meta["document_title"],
             "document_type": meta["document_type"],
@@ -114,8 +145,8 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         chunk_idx += 1
         return payload
 
-    # Защита коротких допников и служебных писем (до 500 токенов): сохраняем целиком
-    if total_doc_tokens <= 500 and (
+    # Защита коротких допников и служебных писем (до HARD_MAX_TOKENS): сохраняем целиком
+    if total_doc_tokens <= HARD_MAX_TOKENS and (
         meta.get("amends_document_id") or meta.get("document_type") == "internal"
     ):
         chunks.append(
@@ -137,23 +168,44 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         b = blocks[i]
         b_tokens = count_tokens(b["text"])
 
-        # 1. Положение превышает лимит (> 750 токенов) -> делим с перекрытием
+        # 1. Положение превышает лимит (> 750 токенов) -> делим по реальным токенам с перекрытием
         if b_tokens > HARD_MAX_TOKENS:
             sub_parts = _get_oversized_splitter().split_text(b["text"])
             running_char = b["char_start"]
+            search_cursor = b["char_start"]
+
             for part in sub_parts:
+                clean_part = part.strip()
+                found_idx = (
+                    content.find(clean_part, search_cursor, b["char_end"] + 50)
+                    if len(clean_part) >= 15
+                    else -1
+                )
+
+                if found_idx != -1:
+                    c_start = found_idx
+                    c_end = found_idx + len(clean_part)
+                    search_cursor = max(c_start + 1, c_end - SUB_CHUNK_OVERLAP_CHARS * 3)
+                    part_start_line = content.count("\n", 0, c_start) + 1
+                    part_end_line = content.count("\n", 0, max(c_start, c_end - 1)) + 1
+                else:
+                    c_start = running_char
+                    c_end = running_char + len(part)
+                    part_start_line = b["start_line"]
+                    part_end_line = b["end_line"]
+
                 chunks.append(
                     make_chunk_payload(
                         text=part,
                         path=b["path"],
                         provision_id=b["provision_id"],
-                        start_line=b["start_line"],
-                        end_line=b["end_line"],
-                        c_start=running_char,
-                        c_end=running_char + len(part),
+                        start_line=part_start_line,
+                        end_line=part_end_line,
+                        c_start=c_start,
+                        c_end=c_end,
                     )
                 )
-                running_char += max(1, len(part) - SUB_CHUNK_OVERLAP_CHARS)
+                running_char = c_start + max(1, len(part) - SUB_CHUNK_OVERLAP_CHARS)
             i += 1
             continue
 
