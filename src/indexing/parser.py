@@ -1,8 +1,13 @@
 import hashlib
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+SUPPORTED_EXTENSIONS = {".txt", ".docx", ".pdf"}
 
 RU_MONTHS = {
     "января": "01", "январе": "01",
@@ -20,9 +25,101 @@ RU_MONTHS = {
 }
 
 
-def calculate_source_hash(content: str) -> str:
+def calculate_source_hash(content: str, raw_bytes: Optional[bytes] = None) -> str:
     """Детерминированный SHA-256 хеш исходного файла."""
-    return f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}"
+    payload = raw_bytes if raw_bytes is not None else content.encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _normalize_extracted_text(text: str) -> str:
+    """Очищает артефакты извлечения из PDF/DOCX без искажения структуры строк."""
+    text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\xa0", " ")
+    return text
+
+
+def _extract_docx_text(file_path: Path) -> str:
+    """Извлекает текст из DOCX с сохранением порядка параграфов и таблиц."""
+    from docx import Document
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    document = Document(str(file_path))
+    parts: List[str] = []
+
+    for child in document.element.body:
+        if isinstance(child, CT_P):
+            para_text = Paragraph(child, document).text.strip()
+            if para_text:
+                parts.append(para_text)
+        elif isinstance(child, CT_Tbl):
+            table = Table(child, document)
+            for row in table.rows:
+                row_cells: List[str] = []
+                seen_tcs = set()
+                for cell in row.cells:
+                    if id(cell._tc) in seen_tcs:
+                        continue
+                    seen_tcs.add(id(cell._tc))
+                    cell_text = " ".join(cell.text.split())
+                    if cell_text:
+                        row_cells.append(cell_text)
+                if row_cells:
+                    parts.append(" | ".join(row_cells))
+
+    return _normalize_extracted_text("\n".join(parts))
+
+
+def _extract_pdf_text_and_pages(
+    file_path: Path,
+) -> Tuple[str, List[Tuple[int, int, int]]]:
+    """
+    Постранично извлекает текст из PDF и возвращает:
+    (объединённый текст, список кортежей (char_start, char_end, page_num_1_based)).
+    """
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(file_path))
+    page_texts: List[str] = []
+    page_spans: List[Tuple[int, int, int]] = []
+    cursor = 0
+
+    for page_num, page in enumerate(reader.pages, start=1):
+        raw_page = page.extract_text() or ""
+        clean_page = _normalize_extracted_text(raw_page).strip()
+        if not clean_page:
+            continue
+
+        if page_texts:
+            cursor += 2  # разделитель "\n\n" между страницами
+
+        start_pos = cursor
+        end_pos = start_pos + len(clean_page)
+        page_texts.append(clean_page)
+        page_spans.append((start_pos, end_pos, page_num))
+        cursor = end_pos
+
+    return "\n\n".join(page_texts), page_spans
+
+
+def extract_text_from_file(
+    file_path: Path,
+) -> Tuple[str, Optional[List[Tuple[int, int, int]]]]:
+    """
+    Универсальный экстрактор текста для .txt, .docx и .pdf.
+    Для PDF дополнительно возвращает карту страниц [(char_start, char_end, page), ...].
+    """
+    suffix = file_path.suffix.lower()
+    if suffix == ".txt":
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read(), None
+    if suffix == ".docx":
+        return _extract_docx_text(file_path), None
+    if suffix == ".pdf":
+        return _extract_pdf_text_and_pages(file_path)
+    raise ValueError(f"Неподдерживаемый формат файла: {file_path.suffix}")
 
 
 def parse_ru_text_date(date_str: str) -> Optional[str]:
@@ -51,7 +148,7 @@ def parse_ru_text_date(date_str: str) -> Optional[str]:
 
 def clean_garant_headers(content: str) -> Tuple[str, Optional[str], Optional[str]]:
     """
-    Отсекает служебные мета-строки систем Гарант/Консультант.
+    Отсекает служебные мета-строки систем Гарант/Консультант (включая многострочные переносы в PDF).
     Возвращает (очищенный текст, полное название документа, дату выгрузки).
     """
     lines = content.splitlines(keepends=True)
@@ -60,32 +157,54 @@ def clean_garant_headers(content: str) -> Tuple[str, Optional[str], Optional[str
     export_date = None
 
     skip_header = True
+    in_source_block = False
+    raw_title_parts: List[str] = []
+
     for line in lines:
         stripped = line.strip()
         if skip_header:
             if stripped.startswith("Источник:"):
+                in_source_block = True
                 m_title = re.search(r"Источник:\s*(.+)$", stripped)
                 if m_title:
-                    raw_title = m_title.group(1).strip()
-                    extracted_title = re.sub(
-                        r"\s*\(с\s+изменениями\s+и\s+дополнениями\).*", "", raw_title, flags=re.IGNORECASE
-                    ).strip()
+                    raw_title_parts.append(m_title.group(1).strip())
+                continue
+            if stripped.startswith("URL:"):
+                in_source_block = False
                 continue
             if stripped.startswith("Дата выгрузки:"):
-                m_exp = re.search(r"Дата выгрузки:\s*(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})", stripped)
+                in_source_block = False
+                m_exp = re.search(
+                    r"Дата выгрузки:\s*(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})",
+                    stripped,
+                )
                 if m_exp:
                     export_date = parse_ru_text_date(m_exp.group(1))
                 continue
-            if stripped.startswith("URL:"):
-                continue
             if not stripped:
+                in_source_block = False
                 continue
+            if in_source_block and not re.match(
+                r"^(?:Статья|Глава|Раздел|Федеральным\s+законом|ДОГОВОР|ПРИКАЗ|РЕГЛАМЕНТ)\b",
+                stripped,
+                re.IGNORECASE,
+            ):
+                raw_title_parts.append(stripped)
+                continue
+
+            in_source_block = False
             skip_header = False
 
         if re.search(r"воспользуйтесь\s+калькулятором.*?(?:гарант|консультант)", stripped, re.IGNORECASE):
             continue
 
         cleaned_lines.append(line)
+
+    if raw_title_parts:
+        full_raw_title = re.sub(r"\s+", " ", " ".join(raw_title_parts)).strip()
+        extracted_title = re.sub(
+            r"\s*\(с\s+изменениями\s+и\s+дополнениями\).*", "", full_raw_title, flags=re.IGNORECASE
+        ).strip()
 
     return "".join(cleaned_lines), extracted_title, export_date
 
@@ -288,7 +407,7 @@ def classify_heading(
         prov_id = f"{art_clean}.прим.{note_num}" if art_clean else f"прим.{note_num}"
         return (4, f"Примечание {note_num}", prov_id)
 
-    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)") — проверяем ДО m_sub!
+    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)") — проверяем ДО m_sub
     m_paren = re.match(r"^(\d+(?:[\.\-]\d+)*)\)\s*(.*)$", clean)
     if m_paren and in_article:
         sub_num = m_paren.group(1).rstrip(".")
@@ -310,7 +429,7 @@ def classify_heading(
         else:
             return (level, f"Пункт {num_str}", num_str)
 
-    # Уровень 3: Часть закона (1., 2., 3.) или Пункт НК РФ — строго внутри статьи закона!
+    # Уровень 3: Часть закона (1., 2., 3.) или Пункт НК РФ — строго внутри статьи закона
     m_part = re.match(r"^(\d+)\.\s+(.+)$", clean)
     if m_part and in_article and not in_notes:
         part_num = m_part.group(1).rstrip(".")
@@ -425,7 +544,11 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     return blocks
 
 
-def extract_metadata(file_path: Path, raw_content: str) -> Tuple[Dict[str, Any], str]:
+def extract_metadata(
+    file_path: Path,
+    raw_content: str,
+    raw_bytes: Optional[bytes] = None,
+) -> Tuple[Dict[str, Any], str]:
     """Формирует канонические метаданные версии документа и возвращает очищенный текст."""
     cleaned_content, extracted_title, export_date = clean_garant_headers(raw_content)
     doc_type = detect_doc_type(file_path.name, cleaned_content)
@@ -444,6 +567,13 @@ def extract_metadata(file_path: Path, raw_content: str) -> Tuple[Dict[str, Any],
         title = file_path.stem
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    suffix = file_path.suffix.lower()
+    if suffix == ".docx":
+        parser_ver = "docx-parser-1.0"
+    elif suffix == ".pdf":
+        parser_ver = "pdf-parser-1.0"
+    else:
+        parser_ver = "txt-parser-2.0"
 
     metadata = {
         "document_id": dates_ver["document_id"],
@@ -454,24 +584,46 @@ def extract_metadata(file_path: Path, raw_content: str) -> Tuple[Dict[str, Any],
         "chat_id": None,
         "created_by": "system",
         "source_filename": file_path.name,
-        "source_hash": calculate_source_hash(raw_content),
+        "source_hash": calculate_source_hash(raw_content, raw_bytes=raw_bytes),
         "published_at": dates_ver["published_at"],
         "effective_from": dates_ver["effective_from"],
         "effective_to": dates_ver["effective_to"],
         "effective_dates_known": dates_ver["effective_dates_known"],
         "ingested_at": now_iso,
         "amends_document_id": amends_id,
-        "parser_version": "txt-parser-2.0",
+        "parser_version": parser_ver,
         "chunker_version": "structural-1.0",
     }
     return metadata, cleaned_content
 
 
 def load_documents_with_metadata(raw_dir: Path) -> List[Dict[str, Any]]:
-    docs = []
-    for p in sorted(raw_dir.glob("**/*.txt")):
-        with open(p, "r", encoding="utf-8") as f:
-            raw_c = f.read()
-        meta, clean_c = extract_metadata(p, raw_c)
-        docs.append({"content": clean_c, "metadata": meta})
+    """Загружает все поддерживаемые документы (.txt, .docx, .pdf) из директории."""
+    docs: List[Dict[str, Any]] = []
+    all_files = sorted(
+        p for p in raw_dir.glob("**/*")
+        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+    )
+
+    for p in all_files:
+        suffix = p.suffix.lower()
+        raw_bytes = p.read_bytes() if suffix in {".docx", ".pdf"} else None
+        raw_c, page_spans = extract_text_from_file(p)
+
+        if not raw_c.strip():
+            logger.warning("Пропущен пустой файл или скан без текстового слоя: %s", p.name)
+            continue
+
+        meta, clean_c = extract_metadata(p, raw_c, raw_bytes=raw_bytes)
+        doc_entry: Dict[str, Any] = {"content": clean_c, "metadata": meta}
+        if page_spans is not None:
+            header_shift = max(0, len(raw_c) - len(clean_c))
+            adjusted_spans = [
+                (max(0, s - header_shift), max(0, e - header_shift), pg)
+                for s, e, pg in page_spans
+                if e > header_shift
+            ]
+            doc_entry["page_spans"] = adjusted_spans
+        docs.append(doc_entry)
+
     return docs

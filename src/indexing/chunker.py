@@ -1,7 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src.config import PROCESSED_DATA_DIR
@@ -41,9 +41,36 @@ def generate_chunk_id(
     return f"{ver_id}_{chunk_index:04d}_{hash_suffix}"
 
 
+def _resolve_page_number(
+    content: str,
+    c_start: int,
+    c_end: int,
+    page_spans: Optional[List[Tuple[int, int, int]]],
+) -> Optional[int]:
+    """Определяет номер страницы (1-based) для PDF по символьному смещению; None для TXT/DOCX."""
+    if not page_spans:
+        return None
+
+    # Смещаем точку поиска к первому непробельному символу фрагмента,
+    # чтобы ведущие переносы строк не относили чанк к предыдущей странице.
+    target_pos = c_start
+    limit = min(len(content), max(c_start, c_end))
+    while target_pos < limit and content[target_pos].isspace():
+        target_pos += 1
+
+    for p_start, p_end, page_num in page_spans:
+        if p_start <= target_pos < p_end:
+            return page_num
+
+    if target_pos < page_spans[0][0]:
+        return page_spans[0][2]
+    return page_spans[-1][2]
+
+
 def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     content = doc["content"]
     meta = doc["metadata"]
+    page_spans: Optional[List[Tuple[int, int, int]]] = doc.get("page_spans")
     total_doc_tokens = count_tokens(content)
 
     chunks: List[Dict[str, Any]] = []
@@ -67,6 +94,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         prefix = ". ".join(prefix_parts) + ". "
         clean_text = text.strip()
+        page_num = _resolve_page_number(content, c_start, c_end, page_spans)
 
         cid = generate_chunk_id(
             doc_id=meta["document_id"],
@@ -92,7 +120,7 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "end_line": end_line,
                 "char_start": c_start,
                 "char_end": c_end,
-                "page": None,
+                "page": page_num,
             },
             "document_title": meta["document_title"],
             "document_type": meta["document_type"],
