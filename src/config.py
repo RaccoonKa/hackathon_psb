@@ -314,6 +314,30 @@ REAL_RAG_DEFAULT_SCORE: float = float(
 
 MS_PER_SECOND: float = 1000.0
 LATENCY_ROUND_DIGITS: int = 3
+
+# --- подробность трассировки (off|basic|detailed) ---
+# basic  — полный диагностический блок retrieval (§7): задачи, счётчики,
+#          ошибки без стектрейсов; рабочий production-режим по умолчанию.
+# detailed — дополнительно стектрейсы ошибок и расширенные срезы
+#          (используется в run_live.py для отладки).
+# off    — только агрегированные счётчики, без по-задачных деталей.
+_TRACE_DETAIL_RAW: str = (
+    os.getenv("TRACE_DETAIL_LEVEL", "basic").strip().lower() or "basic"
+)
+TRACE_DETAIL_LEVEL: str = (
+    _TRACE_DETAIL_RAW if _TRACE_DETAIL_RAW in {"off", "basic", "detailed"} else "basic"
+)
+# По умолчанию диагностика включается во всех режимах, кроме off.
+TRACE_INCLUDE_DIAGNOSTICS: bool = _env_bool(
+    "TRACE_INCLUDE_DIAGNOSTICS", TRACE_DETAIL_LEVEL != "off"
+)
+# Ограничения объёма, чтобы trace не разрастался и не содержал секретов.
+TRACE_MAX_ERROR_CHARS: int = _env_int("TRACE_MAX_ERROR_CHARS", 300, minimum=50)
+TRACE_MAX_TRACEBACK_CHARS: int = _env_int(
+    "TRACE_MAX_TRACEBACK_CHARS", 4000, minimum=200
+)
+TRACE_MAX_TASKS: int = _env_int("TRACE_MAX_TASKS", 20, minimum=1)
+TRACE_MAX_LIST_ITEMS: int = _env_int("TRACE_MAX_LIST_ITEMS", 20, minimum=1)
 def validate_submit_config() -> None:
     """Проверяет обязательные параметры SUBMIT, не раскрывая секреты."""
     if not USE_SUBMIT:
@@ -355,6 +379,30 @@ MAX_FOLLOWUP_RETRIEVAL_CYCLES: int = _env_int(
 LLM_REQUEST_TIMEOUT_S: float = _env_float("LLM_REQUEST_TIMEOUT_S", 30.0)
 RETRIEVAL_TIMEOUT_S: float = _env_float("RETRIEVAL_TIMEOUT_S", 20.0)
 REQUEST_TOTAL_TIMEOUT_S: float = _env_float("REQUEST_TOTAL_TIMEOUT_S", 90.0)
+
+# Параметры пула retrieval-задач. Отдельный ключ не переопределяет
+# MAX_WORKERS (он задаёт конкурентность LLM в локальном режиме).
+_RETRIEVAL_MAX_WORKERS_DEFAULT: int = 2 if USE_SUBMIT else 4
+RETRIEVAL_MAX_WORKERS: int = min(
+    _env_int(
+        "RETRIEVAL_MAX_WORKERS", _RETRIEVAL_MAX_WORKERS_DEFAULT, minimum=1
+    ),
+    8,
+)
+# Общий (не per-task) дедлайн ожидания задач батча.
+RETRIEVAL_TASK_TIMEOUT_S: float = _env_float(
+    "RETRIEVAL_TASK_TIMEOUT_S", RETRIEVAL_TIMEOUT_S
+)
+# Ограниченное время ожидания завершения потоков после shutdown.
+RETRIEVAL_SHUTDOWN_GRACE_S: float = _env_float(
+    "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0
+)
+
+# Таймауты и ретраи клиента эмбеддингов (значения не логируются).
+EMBEDDING_API_TIMEOUT_S: float = _env_float("EMBEDDING_API_TIMEOUT_S", 60.0)
+EMBEDDING_API_MAX_RETRIES: int = _env_int(
+    "EMBEDDING_API_MAX_RETRIES", 1, minimum=0
+)
 
 ENABLE_MEMORY: bool = _env_bool("ENABLE_MEMORY", False)
 ENABLE_LLM_VERIFIER: bool = _env_bool("ENABLE_LLM_VERIFIER", True)

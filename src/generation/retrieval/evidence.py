@@ -25,13 +25,31 @@ logger = logging.getLogger(__name__)
 
 CHUNKS_JSONL_PATH = Path("data/chunks.jsonl")
 
+# Сильные термины слота: одиночного совпадения достаточно для покрытия.
+# Если для слота не задано отдельного списка, все его ключевые слова
+# считаются сильными (обратная совместимость).
+SLOT_KEYWORDS_STRONG: dict[str, list[str]] = {
+    "rent_amount": [
+        "арендная плата составляет",
+        "рублей в месяц",
+        "450 000",
+        "размер арендной платы по настоящему",
+    ],
+    "payment_deadline": [
+        "не позднее",
+        "числа текущего месяца",
+        "срок внесения арендной платы",
+        "пункт 3.2",
+    ],
+}
+
 SLOT_KEYWORDS: dict[str, list[str]] = {
     "security_deposit": ["обеспечительн", "депозит", "месячной арендной платы", "при подписании договора"],
     "penalty": ["пен", "неустойк", "штраф", "%", "процент", "просрочк"],
     "accrual_period": ["за каждый день", "день просрочки", "период просрочки", "со дня", "начисляются за"],
     "liability_cap": ["огранич", "ответственност", "реальн", "ущерб", "упущенн", "предел", "совокупн", "не несут", "убытк", "размер ответственности"],
     "rent_amount": ["арендная плата составляет", "рублей в месяц", "включая ндс", "450 000", "размер арендной платы по настоящему"],
-    "payment_deadline": ["не позднее", "числа текущего месяца", "вносится ежемесячно", "срок оплаты", "оплата производится", "календарных дней", "рабочих дней", "оплачивает товар"],
+    "payment_deadline": ["не позднее", "числа текущего месяца", "вносится", "ежемесячн", "срок внесения арендной платы", "срок оплаты", "порядок расчетов", "пункт 3.2"],
     "probation_period": ["испытани", "испытательн", "шести месяцев", "трех месяцев", "двух недель"],
     "overtime_limit": ["сверхурочн", "120 часов", "четырех часов", "двух дней подряд"],
     "overtime_pay": ["сверхурочн", "полуторн", "двойн", "первые два часа", "последующие часы"],
@@ -50,6 +68,38 @@ SLOT_KEYWORDS: dict[str, list[str]] = {
     "seasonal_work": ["сезонн", "срочный трудовой договор", "определенного периода"],
 }
 
+
+def _field(chunk: Any, name: str, default: Any = None) -> Any:
+    """Доступ к полю чанка, совместимый с dict и pydantic/dataclass."""
+    if isinstance(chunk, dict):
+        return chunk.get(name, default)
+    if hasattr(chunk, name):
+        return getattr(chunk, name)
+    model_dump = getattr(chunk, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return model_dump().get(name, default)
+        except Exception:  # noqa: BLE001 - защищаемся от чужих моделей
+            return default
+    return default
+
+
+def _slot_matches(body: str, slot: str) -> bool:
+    """Покрытие слота подтверждается текстом: ≥1 сильный или ≥2 слабых."""
+    keywords = SLOT_KEYWORDS.get(slot) or []
+    if not keywords:
+        return False
+    strong = SLOT_KEYWORDS_STRONG.get(slot) or keywords
+    if any(term in body for term in strong):
+        return True
+    weak_hits = sum(
+        1
+        for term in keywords
+        if term not in strong and term in body
+    )
+    return weak_hits >= 2
+
+
 _HEADER_LINE_RE = re.compile(
     r"^\s*(?:раздел\s+\d+|глава\s+\d+|статья\s+\d+|пункт\s+\d+(?:\.\d+)*|\d+\.\s+[А-ЯЁA-Z][^\n.;:]{0,70})\s*$",
     re.IGNORECASE,
@@ -63,9 +113,12 @@ _NUMERIC_CONFLICT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 
 def _extract_substantive_body(chunk: RetrievedChunk) -> str:
-    lines = [line.strip() for line in chunk.text.splitlines() if line.strip()]
-    path_titles = {p.strip().lower() for p in chunk.structure_path if p.strip()}
-    doc_title_lower = chunk.document_title.strip().lower()
+    text = str(_field(chunk, "text", "") or "")
+    structure_path = list(_field(chunk, "structure_path", []) or [])
+    document_title = str(_field(chunk, "document_title", "") or "")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    path_titles = {str(p).strip().lower() for p in structure_path if str(p).strip()}
+    doc_title_lower = document_title.strip().lower()
 
     body_lines: list[str] = []
     for line in lines:
@@ -85,7 +138,7 @@ def _extract_substantive_body(chunk: RetrievedChunk) -> str:
 def _detect_retrieval_fallback(chunks: list[RetrievedChunk]) -> bool:
     if not chunks:
         return False
-    scores = [c.score for c in chunks]
+    scores = [float(_field(c, "score", 0.0) or 0.0) for c in chunks]
     max_score = max(scores)
     if max_score >= 0.1:
         return False
@@ -147,7 +200,7 @@ def _detect_contradictions(
 ) -> list[dict[str, Any]]:
     # Сравниваем числа только между чанками с одинаковым provision_id (например, старая и новая редакции одного пункта),
     # чтобы не принимать разные пункты одного договора за противоречие
-    by_id = {c.chunk_id: c for c in chunks}
+    by_id = {str(_field(c, "chunk_id")): c for c in chunks}
     contradictions: list[dict[str, Any]] = []
 
     for slot, cids in slot_map.items():
@@ -156,8 +209,9 @@ def _detect_contradictions(
         by_provision: dict[str, list[RetrievedChunk]] = {}
         for cid in cids:
             ch = by_id.get(cid)
-            if ch and ch.provision_id:
-                by_provision.setdefault(ch.provision_id, []).append(ch)
+            provision_id = _field(ch, "provision_id") if ch is not None else None
+            if ch is not None and provision_id:
+                by_provision.setdefault(str(provision_id), []).append(ch)
 
         for prov_id, group_chunks in by_provision.items():
             if len(group_chunks) < 2:
@@ -165,13 +219,14 @@ def _detect_contradictions(
             for pat_name, pattern in _NUMERIC_CONFLICT_PATTERNS:
                 values_by_chunk: dict[str, set[str]] = {}
                 for ch in group_chunks:
+                    text = str(_field(ch, "text", "") or "")
                     matches = {
                         re.sub(r"\s+", "", m)
-                        for m in pattern.findall(ch.text)
+                        for m in pattern.findall(text)
                         if m.strip()
                     }
                     if matches:
-                        values_by_chunk[ch.chunk_id] = matches
+                        values_by_chunk[str(_field(ch, "chunk_id"))] = matches
 
                 if len(values_by_chunk) >= 2:
                     distinct_sets = list(values_by_chunk.values())
@@ -259,38 +314,39 @@ def assess(
     substantive_bodies: dict[str, str] = {}
     viable_chunks: list[RetrievedChunk] = []
     for c in chunks:
-        if c.score < min_viable_score:
+        chunk_id = str(_field(c, "chunk_id"))
+        score = float(_field(c, "score", 0.0) or 0.0)
+        if not chunk_id or score < min_viable_score:
             continue
         body = _extract_substantive_body(c)
         if body:
-            substantive_bodies[c.chunk_id] = body
+            substantive_bodies[chunk_id] = body
             viable_chunks.append(c)
 
     if viable_chunks:
         for slot in required_slots:
-            keywords = SLOT_KEYWORDS.get(slot)
-            if not keywords:
+            if slot not in SLOT_KEYWORDS:
                 custom_terms = [w.lower() for w in slot.split("_") if len(w) >= 4]
                 if custom_terms:
                     matched_cids = [
-                        c.chunk_id
-                        for c in viable_chunks
-                        if any(t in substantive_bodies[c.chunk_id] for t in custom_terms)
+                        cid
+                        for cid, body in substantive_bodies.items()
+                        if any(t in body for t in custom_terms)
                     ]
                 else:
-                    matched_cids = [c.chunk_id for c in viable_chunks]
+                    matched_cids = list(substantive_bodies)
 
                 if matched_cids or slot == "general":
-                    slot_map[slot] = matched_cids or [c.chunk_id for c in viable_chunks]
+                    slot_map[slot] = matched_cids or list(substantive_bodies)
                     covered_slots.append(slot)
                 else:
                     missing_slots.append(slot)
                 continue
 
             matched_cids = [
-                c.chunk_id
-                for c in viable_chunks
-                if any(kw in substantive_bodies[c.chunk_id] for kw in keywords)
+                cid
+                for cid, body in substantive_bodies.items()
+                if _slot_matches(body, slot)
             ]
             if matched_cids:
                 slot_map[slot] = matched_cids
@@ -419,8 +475,16 @@ def assess(
         output={
             "sufficiency": sufficiency.value,
             "reason": reason,
+            "required_slots": required_slots,
             "covered_slots": covered_slots,
+            "uncovered_slots": missing_slots,
             "missing_slots": missing_slots,
+            "core_slot_covered": core_slot_covered,
+            "min_viable_score": min_viable_score,
+            "checked_chunks_count": len(viable_chunks),
+            "slot_match_counts": {
+                slot: len(cids) for slot, cids in slot_map.items()
+            },
             "retrieval_fallback": retrieval_fallback,
             "contradictions_count": 0 if not contradictions else len(contradictions),
             "version_issues_count": len(version_issues),

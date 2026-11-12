@@ -48,6 +48,14 @@ class BM25KeywordStore:
             self.chunk_ids, self.tokenized_corpus, self.bm25 = pickle.load(f)
         self._is_built = True
 
+    def get_chunk_ids(self) -> List[str]:
+        """Снимок id индекса (неразрушающий, ленивая загрузка под lock)."""
+        if not self._is_built:
+            with self._load_lock:
+                if not self._is_built:
+                    self.load()
+        return list(self.chunk_ids)
+
     def search(
         self,
         query: str,

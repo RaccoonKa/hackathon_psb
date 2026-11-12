@@ -2,6 +2,10 @@ import os
 import json
 from dataclasses import asdict
 
+# Для отладки печатаем подробный trace (скетч §4): стектрейсы ошибок,
+# полный tasks-блок, embeddings-диагностика. В production по умолчанию basic.
+os.environ.setdefault("TRACE_DETAIL_LEVEL", "detailed")
+
 os.environ["USE_STUB_RAG"] = "false"
 os.environ["USE_STUB_RERANKER"] = "false"
 os.environ["USE_STUB_LLM"] = "false"
@@ -10,8 +14,8 @@ os.environ["LLM_MODE"] = "real"
 from src.generation.orchestrator import run_agent
 
 NEED_SOURCES = True
-NEED_INTENT = False
-NEED_TRACE = False
+NEED_INTENT = True
+NEED_TRACE = True
 
 
 def exec(query):
@@ -64,6 +68,10 @@ QUERY = [
     "Пользователь: Подписали новый договор, оригинал пока у меня. Не знаю, кому его дальше передавать.\nАссистент: Вы про порядок передачи документов в ООО «Меридиан» после подписания?\nПользователь: Да. В юротдел нужно отнести сразу или есть какой-то срок?",
 ]
 
+QUERY = [
+    "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+    "Пользователь: Подскажите гарантию по договору с «Альфой».\nАссистент: Уточните, пожалуйста, поставщик — «Альфа-Трейд» или «Альфа-Трейдинг»?\nПользователь: «Альфа-Трейдинг», у них компьютеры покупали. На сколько гарантия?",
+]
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")

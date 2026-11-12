@@ -117,6 +117,8 @@ def _restore_transformers(saved):
 
 
 def _reset_local_cache():
+    # Публичный сброс также очищает кэш неудачи загрузки (_local_model_error).
+    vs_mod.reset_local_model_cache()
     vs_mod._local_tokenizer = None
     vs_mod._local_model = None
     vs_mod._local_device = None

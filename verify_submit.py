@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import os
 import shutil
 import subprocess
@@ -380,6 +381,75 @@ print("local-ok")
     )
 
 
+def check_index_consistency_report() -> None:
+    """Неразрушающая сверка chunks.jsonl / Chroma / BM25 (только отчёт).
+
+    Ничего не удаляет и не переиндексирует; при отсутствии локальных
+    данных проверка пропускается.
+    """
+    chunks_path = ROOT / "data" / "processed" / "chunks.jsonl"
+    if not chunks_path.exists():
+        print("  (согласованность индексов: локальных данных нет — пропуск)")
+        return
+
+    code = """
+import json
+from src.retrieval.hybrid import check_index_consistency
+
+report = check_index_consistency()
+print(json.dumps({
+    "jsonl_chunks": report["jsonl_chunks"],
+    "chroma_chunks": report["chroma_chunks"],
+    "bm25_chunks": report["bm25_chunks"],
+    "missing_in_chroma": report["missing_in_chroma"],
+    "stale_in_chroma": report["stale_in_chroma"],
+    "missing_in_bm25": report["missing_in_bm25"],
+    "stale_in_bm25": report["stale_in_bm25"],
+    "chroma_embedding_dimension": report["chroma_embedding_dimension"],
+    "expected_embedding_dimension": report.get("expected_embedding_dimension"),
+    "dimension_mismatch": report["dimension_mismatch"],
+    "warnings": report["warnings"],
+    "errors": report["errors"],
+}))
+"""
+    result = _run_python(code, cwd=ROOT, pythonpath=ROOT, timeout=180)
+    _expect_ok(result, "Согласованность индексов")
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+
+    print(
+        "  chunks.jsonl={jsonl_chunks}, chroma={chroma_chunks}, "
+        "bm25={bm25_chunks}, dim={chroma_embedding_dimension}".format(
+            **payload
+        )
+    )
+    print(
+        "  missing_in_chroma={}, stale_in_chroma={}, "
+        "missing_in_bm25={}, stale_in_bm25={}".format(
+            len(payload["missing_in_chroma"]),
+            len(payload["stale_in_chroma"]),
+            len(payload["missing_in_bm25"]),
+            len(payload["stale_in_bm25"]),
+        )
+    )
+    for warning in payload["warnings"]:
+        print(f"  [WARN] {warning}")
+
+    if payload["errors"]:
+        raise CheckFailure(
+            "Ошибки чтения индексов: "
+            + "; ".join(
+                f"{error['type']}: {error['message']}"
+                for error in payload["errors"]
+            )
+        )
+    if payload["dimension_mismatch"]:
+        raise CheckFailure(
+            "Размерность эмбеддингов Chroma не совпадает с текущей моделью: "
+            f"{payload['chroma_embedding_dimension']} != "
+            f"{payload['expected_embedding_dimension']}"
+        )
+
+
 def check_safe_extract(submit_dir: Path) -> None:
     code = """
 import tempfile
@@ -683,6 +753,10 @@ def run_checks(
         ("изолированный импорт", lambda: check_isolated_imports(submit_dir)),
         ("конфигурация SUBMIT", lambda: check_submit_config(submit_dir)),
         ("конфигурация LOCAL", check_local_config),
+        (
+            "согласованность индексов",
+            check_index_consistency_report,
+        ),
         ("безопасная распаковка", lambda: check_safe_extract(submit_dir)),
         ("загрузка документов", lambda: check_document_loading(submit_dir)),
         ("контракт CSV", lambda: check_csv_contract(submit_dir)),

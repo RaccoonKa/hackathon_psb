@@ -33,6 +33,11 @@ MODULES = [
     "tests.test_llm_client",
     "tests.test_retrieval_bridge",
     "tests.test_retrieval",
+    "tests.test_regression_retrieval",
+    "tests.test_regression_bridge",
+    "tests.test_regression_embeddings",
+    "tests.test_regression_orchestrator",
+    "tests.test_regression_integration_contract",
 ]
 
 

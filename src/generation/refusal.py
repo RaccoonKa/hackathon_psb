@@ -12,6 +12,15 @@ from src.generation.types import (
 
 logger = logging.getLogger(__name__)
 
+# Технический сбой поиска — принципиально иное сообщение, чем отказ
+# «недостаточно сведений»: пользователь должен понимать, что база знаний
+# не проверялась из-за сбоя, и запрос имеет смысл повторить.
+RESPONSE_RETRIEVAL_ERROR: str = (
+    "Не удалось выполнить поиск по базе знаний из-за временной технической "
+    "ошибки. Пожалуйста, повторите запрос через несколько секунд. "
+    "Если ошибка повторится, уточните реквизиты документа и попробуйте ещё раз."
+)
+
 
 def build_template_intent_result(
     query: str,
@@ -152,6 +161,70 @@ def build_cannot_parse_result(
         confidence="low",
         query_spec=partial_spec,
         degradation_reasons=list(degradation_reasons or ["cannot_parse"]),
+    )
+
+
+def build_retrieval_error_result(
+    query: str,
+    prior_trace: list[TraceStep],
+    error_types: list[str] | None = None,
+    attempts: list[dict] | None = None,
+    query_spec: QuerySpec | None = None,
+    missing_info: list[str] | None = None,
+    degradation_reasons: list[str] | None = None,
+    used_history: bool = False,
+) -> AgentResult:
+    """Отказ из-за технического сбоя retrieval.
+
+    В отличие от ``build_no_context_refusal_result`` сообщает о сбое поиска,
+    а не об отсутствии сведений. В trace попадают только имена классов
+    ошибок и номера попыток — без путей, ключей и стектрейсов.
+    """
+    start_time = time.perf_counter()
+    intent_val = query_spec.intent if query_spec else "semantic"
+    safe_types = sorted({str(t) for t in (error_types or []) if t})
+    attempt_summaries = [
+        {
+            "attempt": item.get("attempt"),
+            "status": item.get("status", "error"),
+            "error_type": item.get("error_type"),
+        }
+        for item in (attempts or [])[:10]
+    ]
+    latency_ms = round(
+        (time.perf_counter() - start_time) * config.MS_PER_SECOND,
+        config.LATENCY_ROUND_DIGITS,
+    )
+    step = TraceStep(
+        step=config.STEP_REFUSAL,
+        input={
+            "query": query,
+            "reason": "retrieval_error",
+            "attempts": attempt_summaries,
+        },
+        output={
+            "refused": True,
+            "refusal_kind": "retrieval_error",
+            "error_types": safe_types,
+            "answer_length": len(RESPONSE_RETRIEVAL_ERROR),
+        },
+        latency_ms=latency_ms,
+        stage_idx=3,
+        degradation="retrieval_error",
+    )
+    return AgentResult(
+        final_answer=RESPONSE_RETRIEVAL_ERROR,
+        sources={},
+        intent=intent_val,
+        refused=True,
+        trace=[*prior_trace, step],
+        refusal_reason="retrieval_error",
+        confidence="low",
+        assumptions=list(query_spec.assumptions) if query_spec else [],
+        missing_info=list(missing_info or []),
+        query_spec=query_spec,
+        degradation_reasons=list(degradation_reasons or ["retrieval_error"]),
+        used_history=used_history,
     )
 
 

@@ -2,6 +2,7 @@ import inspect
 import logging
 import re
 import time
+import traceback
 from typing import Any
 from src import config
 from src.generation import bailout, refusal
@@ -32,6 +33,236 @@ logger = logging.getLogger(__name__)
 _SOURCE_TAG_PATTERN = re.compile(r"<source>(.*?)</source>", re.DOTALL)
 _NULL_LIKE_REFUSAL = {"null", "none", "nil", "false", "нет", "n/a", ""}
 
+# Редакция trace: ключи, токены, абсолютные пути вне проекта не выводятся.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "<redacted-key>"),
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]+"), r"\1<redacted>"),
+    (re.compile(r"(?i)(api[_-]?key\s*[=:]\s*)[^\s,;]+"), r"\1<redacted>"),
+    (re.compile(r"(?i)(authorization\s*[=:]\s*)[^\s,;]+"), r"\1<redacted>"),
+)
+_ABS_PATH_RE = re.compile(
+    r"/(?:Users|home|root|private|var|tmp|opt|etc)/[^\s:'\",;)]+"
+)
+_SEARCH_FIELDS: tuple[str, ...] = (
+    "selected_doc_ids",
+    "allowed_chunk_ids_count",
+    "bm25_candidates_count",
+    "dense_candidates_count",
+    "candidates_before_filters",
+    "candidates_after_date_filter",
+    "candidates_after_document_filter",
+    "final_chunks_count",
+    "validity_unknown_count",
+)
+_EMBEDDING_FIELDS: tuple[str, ...] = (
+    "provider",
+    "model",
+    "dimension",
+    "success",
+    "fallback_used",
+    "error_type",
+)
+
+
+def _trace_level() -> str:
+    return str(getattr(config, "TRACE_DETAIL_LEVEL", "basic") or "basic")
+
+
+def _trace_detailed() -> bool:
+    return _trace_level() == "detailed"
+
+
+def _trace_diagnostics_enabled() -> bool:
+    return bool(getattr(config, "TRACE_INCLUDE_DIAGNOSTICS", True)) and (
+        _trace_level() != "off"
+    )
+
+
+def _max_error_chars() -> int:
+    return int(getattr(config, "TRACE_MAX_ERROR_CHARS", 300))
+
+
+def _truncate(value: Any, limit: int) -> str:
+    text = str(value or "")
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)] + "…"
+
+
+def _redact_text(value: Any) -> str:
+    """Удаляет секреты и абсолютные пути вне проекта из диагностики."""
+    text = str(value or "")
+    base_dir = str(getattr(config, "BASE_DIR", "") or "")
+    if base_dir:
+        text = text.replace(base_dir + "/", "").replace(base_dir, ".")
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    text = _ABS_PATH_RE.sub("<path>", text)
+    return text
+
+
+def _safe_message(value: Any, limit: int | None = None) -> str:
+    return _truncate(
+        _redact_text(value), limit if limit is not None else _max_error_chars()
+    )
+
+
+def _prepare_task_diag(entry: dict[str, Any]) -> dict[str, Any]:
+    search = entry.get("search") or {}
+    embeddings = entry.get("embeddings") or {}
+    return {
+        "task_id": entry.get("task_id"),
+        "mode": entry.get("mode"),
+        "purpose": entry.get("purpose"),
+        "query": _safe_message(entry.get("query"), 200),
+        "status": entry.get("status"),
+        "duration_ms": entry.get("duration_ms", 0),
+        "error_type": entry.get("error_type"),
+        "error_message": (
+            _safe_message(entry.get("error_message"))
+            if entry.get("error_message")
+            else None
+        ),
+        "search": {
+            key: search.get(key, [] if key == "selected_doc_ids" else 0)
+            for key in _SEARCH_FIELDS
+        },
+        "embeddings": {key: embeddings.get(key) for key in _EMBEDDING_FIELDS},
+    }
+
+
+def _prepare_errors(errors: list[dict[str, Any]]) -> list[dict[str, str]]:
+    limit = int(getattr(config, "TRACE_MAX_LIST_ITEMS", 20))
+    prepared: list[dict[str, str]] = []
+    for error in errors[:limit]:
+        prepared.append(
+            {
+                "type": str(error.get("type", "UnknownError")),
+                "message": _safe_message(error.get("message")),
+            }
+        )
+    return prepared
+
+
+def _failed_tasks(diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
+    failed_statuses = {"error", "timeout", "cancelled"}
+    result: list[dict[str, Any]] = []
+    for entry in diagnostics.get("tasks") or []:
+        if entry.get("status") in failed_statuses:
+            result.append(
+                {
+                    "task_id": entry.get("task_id"),
+                    "mode": entry.get("mode"),
+                    "purpose": entry.get("purpose"),
+                    "status": entry.get("status"),
+                    "error_type": entry.get("error_type"),
+                }
+            )
+    return result
+
+
+def _enrich_retrieval_step(
+    step: TraceStep, diagnostics: dict[str, Any], attempt: int
+) -> TraceStep:
+    """Дополняет шаг retrieval диагностикой из ``diagnostics_out``."""
+    executor = dict(diagnostics.get("executor") or {})
+    errors = list(diagnostics.get("errors") or [])
+    degraded = bool(diagnostics.get("degraded"))
+    failed = _failed_tasks(diagnostics)
+
+    step.input["attempt"] = attempt
+    step.output["executor"] = executor
+    step.output["degraded"] = degraded
+    step.output["status"] = "partial" if degraded else "ok"
+    if failed:
+        step.output["failed_tasks"] = failed
+    if _trace_diagnostics_enabled():
+        max_tasks = int(getattr(config, "TRACE_MAX_TASKS", 20))
+        step.output["errors"] = _prepare_errors(errors)
+        step.output["tasks"] = [
+            _prepare_task_diag(entry)
+            for entry in (diagnostics.get("tasks") or [])[:max_tasks]
+        ]
+    step.extra.update(
+        {
+            "executor": executor,
+            "errors_count": len(errors),
+            "degraded": degraded,
+            "attempt": attempt,
+            "status": step.output["status"],
+        }
+    )
+    if degraded:
+        step.degradation = "retrieval_partial_failure"
+    return step
+
+
+def _build_retrieval_error_step(
+    exc: Exception,
+    traceback_text: str,
+    diagnostics: dict[str, Any],
+    attempt: int,
+    tasks: list[Any],
+) -> TraceStep:
+    """Шаг ``rag_retrieval`` со статусом error вместо маскировки пустым списком."""
+    executor = dict(diagnostics.get("executor") or {})
+    errors = list(diagnostics.get("errors") or [])
+    error_type = type(exc).__name__
+    tb_limit = (
+        int(getattr(config, "TRACE_MAX_TRACEBACK_CHARS", 4000))
+        if _trace_detailed()
+        else min(800, int(getattr(config, "TRACE_MAX_TRACEBACK_CHARS", 4000)))
+    )
+    output: dict[str, Any] = {
+        "status": "error",
+        "chunk_ids": [],
+        "scores": [],
+        "count": 0,
+        "executor": executor,
+        "degraded": True,
+        "degradation_reason": "retrieval_error",
+        "error_type": error_type,
+        "error_message": _safe_message(str(exc)),
+        "error_types": sorted(
+            {
+                str(error.get("type", "UnknownError"))
+                for error in errors
+            }
+            or {error_type}
+        ),
+        "attempt": attempt,
+    }
+    if _trace_diagnostics_enabled():
+        output["error_traceback"] = _truncate(
+            _redact_text(traceback_text), tb_limit
+        )
+        output["errors"] = _prepare_errors(errors)
+        max_tasks = int(getattr(config, "TRACE_MAX_TASKS", 20))
+        output["tasks"] = [
+            _prepare_task_diag(entry)
+            for entry in (diagnostics.get("tasks") or [])[:max_tasks]
+        ]
+    return TraceStep(
+        step=config.STEP_RAG_RETRIEVAL,
+        input={
+            "tasks_count": len(tasks),
+            "queries": [t.query for t in tasks[:3]],
+            "attempt": attempt,
+        },
+        output=output,
+        latency_ms=0.0,
+        stage_idx=3,
+        degradation="retrieval_error",
+        extra={
+            "executor": executor,
+            "errors_count": len(errors),
+            "degraded": True,
+            "attempt": attempt,
+            "status": "error",
+            "error_type": error_type,
+        },
+    )
+
 
 def _sanitize_and_extract_citations(
     answer: str,
@@ -55,6 +286,39 @@ def _sanitize_and_extract_citations(
     cleaned_answer = _SOURCE_TAG_PATTERN.sub(_replace_tag, answer)
     cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
     return cleaned_answer, cited_ids
+
+
+def _summarize_retrieval_trace(trace: list[TraceStep]) -> dict[str, Any]:
+    """Агрегирует статусы/счётчики всех попыток retrieval по trace."""
+    summary: dict[str, Any] = {
+        "attempts": 0,
+        "attempts_ok": 0,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 0,
+        "tasks_completed": 0,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0,
+    }
+    for step in trace:
+        if step.step != config.STEP_RAG_RETRIEVAL:
+            continue
+        summary["attempts"] += 1
+        status = str(step.output.get("status") or "ok")
+        if status == "error":
+            summary["attempts_error"] += 1
+        elif status == "partial" or step.output.get("degraded"):
+            summary["attempts_partial"] += 1
+        else:
+            summary["attempts_ok"] += 1
+        executor = step.output.get("executor") or step.extra.get("executor") or {}
+        summary["tasks_submitted"] += int(executor.get("submitted", 0) or 0)
+        summary["tasks_completed"] += int(executor.get("completed", 0) or 0)
+        summary["tasks_failed"] += int(executor.get("failed", 0) or 0)
+        summary["tasks_cancelled"] += int(executor.get("cancelled", 0) or 0)
+        summary["tasks_timed_out"] += int(executor.get("timed_out", 0) or 0)
+    return summary
 
 
 def _compute_confidence_and_reasons(
@@ -158,6 +422,7 @@ def assemble_final(
             "confidence": confidence,
             "confidence_reasons": confidence_reasons,
             "degradation_reasons": list(degradation_reasons),
+            "retrieval_summary": _summarize_retrieval_trace(trace),
         },
         latency_ms=latency_ms,
         stage_idx=8,
@@ -366,6 +631,16 @@ def run_agent(
                 timeout=_llm_timeout(),
             )
             partial_spec = spec
+            # Сущности и слоты без сырых ответов LLM (секреты в trace не нужны).
+            qa_step.output["entities"] = [
+                {
+                    "raw": ref.raw,
+                    "document_id": ref.document_id,
+                    "resolved": ref.resolved,
+                }
+                for ref in spec.entities_resolved
+            ]
+            qa_step.output["entities_raw"] = list(spec.entities_raw)
             _append_step(qa_step, stage_idx=1)
         except OrchestratorError as exc:
             last_error = str(exc)
@@ -385,31 +660,79 @@ def run_agent(
             return _trigger_bailout()
 
         followup_cycles = 0
-        accumulated_chunks = []
+        accumulated_chunks: list[Any] = []
         bundle = None
         assessment = None
+        retrieval_attempt = 0
+        retrieval_attempt_log: list[dict[str, Any]] = []
+        technical_retrieval_failure = False
+        executed_queries: set[str] = {t.query for t in tasks}
 
         while True:
             last_stage = "retrieve"
             failures_step = 0
+            retrieval_attempt += 1
+            diagnostics: dict[str, Any] = {}
             try:
-                new_chunks, ret_step = bridge.retrieve_tasks(tasks=tasks)
+                new_chunks, ret_step = bridge.retrieve_tasks(
+                    tasks=tasks, diagnostics_out=diagnostics
+                )
+                _enrich_retrieval_step(ret_step, diagnostics, retrieval_attempt)
                 _append_step(ret_step, stage_idx=3)
-            except OrchestratorError as exc:
+            except Exception as exc:  # noqa: BLE001 - изолируем техсбой retrieval
                 _record_failure(exc)
-                degradation_reasons.append("retrieval_error")
+                # Ошибка НЕ маскируется пустым результатом: шаг rag_retrieval
+                # попадает в trace со status=error и диагностикой.
+                err_step = _build_retrieval_error_step(
+                    exc=exc,
+                    traceback_text=traceback.format_exc(limit=20),
+                    diagnostics=diagnostics,
+                    attempt=retrieval_attempt,
+                    tasks=tasks,
+                )
+                _append_step(err_step, stage_idx=3)
+                technical_retrieval_failure = True
+                retrieval_attempt_log.append(
+                    {
+                        "attempt": retrieval_attempt,
+                        "status": "error",
+                        "error_type": type(exc).__name__,
+                        "executor": dict(diagnostics.get("executor") or {}),
+                    }
+                )
                 new_chunks = []
+                logger.warning(
+                    "Retrieval attempt %d failed: %s",
+                    retrieval_attempt,
+                    type(exc).__name__,
+                )
+            else:
+                partial = bool(diagnostics.get("degraded"))
+                if partial:
+                    technical_retrieval_failure = True
+                retrieval_attempt_log.append(
+                    {
+                        "attempt": retrieval_attempt,
+                        "status": "partial" if partial else "ok",
+                        "error_type": None,
+                        "executor": dict(diagnostics.get("executor") or {}),
+                    }
+                )
 
             # Реранкинг — отдельный этап после объединения задач: внутри
             # hybrid_search он отключён (rerank=False), поэтому локальный
             # Qwen-reranker применяется здесь, до оценки доказательств.
             if new_chunks:
+                before_count = len(new_chunks)
                 try:
                     new_chunks, rerank_step = bridge.rerank_chunks(
                         chunks=new_chunks,
                         query=query,
                         top_n=int(config.RERANKER_TOP_N),
                     )
+                    rerank_step.output["before_count"] = before_count
+                    rerank_step.output["after_count"] = len(new_chunks)
+                    rerank_step.output["top_n"] = int(config.RERANKER_TOP_N)
                     _append_step(rerank_step, stage_idx=3)
                 except Exception as exc:  # noqa: BLE001 - реранкер необязателен
                     _record_failure(exc)
@@ -453,17 +776,66 @@ def run_agent(
                     missing_slots=assessment.missing_slots,
                     spec=spec,
                     user_selected_doc_ids=selected_doc_ids,
+                    existing_queries=executed_queries,
                 )
+                followup_step.output["followup_cycle"] = followup_cycles
                 _append_step(followup_step, stage_idx=2)
+                executed_queries.update(t.query for t in tasks)
                 continue
             break
 
-        if bundle is None or not bundle.chunks:
+        evidence_available = bool(bundle is not None and bundle.chunks)
+        evidence_sufficient = (
+            evidence_available
+            and assessment is not None
+            and assessment.sufficiency != Sufficiency.INSUFFICIENT
+        )
+
+        # Технический сбой поиска — отдельное сообщение, не «нет сведений».
+        # Если в другой попытке доказательств достаточно — отвечаем по ним,
+        # деградация остаётся видимой в trace.
+        if technical_retrieval_failure and not evidence_sufficient:
+            error_types = [
+                str(step.output.get("error_type"))
+                for step in trace
+                if step.step == config.STEP_RAG_RETRIEVAL
+                and step.output.get("error_type")
+            ]
+            if not error_types:
+                error_types = ["PartialRetrievalFailure"]
+            return refusal.build_retrieval_error_result(
+                query=query,
+                prior_trace=trace,
+                error_types=error_types,
+                attempts=retrieval_attempt_log,
+                query_spec=spec,
+                missing_info=(
+                    assessment.missing_slots
+                    if assessment
+                    else spec.required_slots
+                ),
+                degradation_reasons=degradation_reasons or ["retrieval_error"],
+                used_history=used_history,
+            )
+
+        if not evidence_available:
+            # Пустая выдача retrieval без исключения — это отдельный случай
+            # «документы не найдены», а не технический сбой и не частичное
+            # покрытие слотов.
+            no_context_reason = (
+                "no_relevant_documents"
+                if not accumulated_chunks
+                else (
+                    assessment.reason
+                    if assessment
+                    else "insufficient_evidence"
+                )
+            )
             return _safe_no_context_refusal(
                 query=query,
                 intent_val=spec.intent,
                 trace=trace,
-                refusal_reason=assessment.reason if assessment else "insufficient_evidence",
+                refusal_reason=no_context_reason,
                 spec=spec,
                 missing_info=assessment.missing_slots if assessment else spec.required_slots,
                 degradation_reasons=degradation_reasons,
