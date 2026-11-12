@@ -27,6 +27,20 @@ from src.generation.types import (
 logger = logging.getLogger(__name__)
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
+_NULL_REFUSAL_VALUES = {"null", "none", "nil", "false", "нет", "n/a", ""}
+
+
+def _normalize_refusal_reason(
+    reason: Optional[str],
+    has_claims: bool,
+    refusal_forbidden: bool,
+) -> Optional[str]:
+    if refusal_forbidden or has_claims or reason is None:
+        return None
+    cleaned = reason.strip()
+    if cleaned.lower() in _NULL_REFUSAL_VALUES:
+        return None
+    return cleaned
 
 
 def _parse_draft_schema(raw_text: str) -> DraftAnswerSchema:
@@ -51,14 +65,6 @@ def _parse_draft_schema(raw_text: str) -> DraftAnswerSchema:
     raise LLMFormatError("No valid JSON object found in generator output")
 
 
-def _filter_low_score_source_ids(
-    source_ids: list[str],
-    low_score_sids: set[str],
-) -> list[str]:
-    strong = [sid for sid in source_ids if sid not in low_score_sids]
-    return strong if strong else []
-
-
 def generate_draft(
     spec: QuerySpec,
     evidence: EvidenceBundle,
@@ -73,12 +79,6 @@ def generate_draft(
     effective_query = query or (
         spec.rewritten_queries_dense[0] if spec.rewritten_queries_dense else ""
     )
-    max_score = max((c.score for c in evidence.chunks), default=0.0)
-    low_score_sids: set[str] = set()
-    if max_score >= 0.05:
-        for idx, ch in enumerate(evidence.chunks, start=config.SOURCE_START_INDEX):
-            if ch.score < 0.05:
-                low_score_sids.add(f"{config.SOURCE_ID_PREFIX}{idx}")
 
     max_attempts = max(1, int(config.MAX_ATTEMPTS_GENERATE_INITIAL))
     retry_feedback = ""
@@ -122,15 +122,12 @@ def generate_draft(
             claims: list[Claim] = []
             for i, c_schema in enumerate(parsed.claims):
                 raw_sids = [s.strip() for s in c_schema.source_ids if s.strip()]
-                clean_sids = _filter_low_score_source_ids(raw_sids, low_score_sids)
-                if not clean_sids and raw_sids and all(s in low_score_sids for s in raw_sids):
-                    continue
                 claims.append(
                     Claim(
                         text=c_schema.text.strip(),
-                        source_ids=clean_sids or raw_sids,
+                        source_ids=raw_sids,
                         slot=c_schema.slot or (spec.required_slots[0] if spec.required_slots else None),
-                        original_idx=len(claims),
+                        original_idx=i,
                     )
                 )
 
@@ -141,7 +138,11 @@ def generate_draft(
                 if note not in missing_info:
                     missing_info.append(note)
 
-            refusal_reason = None if policy.refusal_forbidden else parsed.refusal_reason
+            refusal_reason = _normalize_refusal_reason(
+                reason=parsed.refusal_reason,
+                has_claims=bool(claims),
+                refusal_forbidden=policy.refusal_forbidden,
+            )
 
             draft = DraftAnswer(
                 answer_text=parsed.answer_text.strip(),
@@ -385,12 +386,17 @@ def regenerate_draft(
                 )
             )
 
+        refusal_reason = _normalize_refusal_reason(
+            reason=parsed.refusal_reason,
+            has_claims=bool(new_claims),
+            refusal_forbidden=False,
+        )
         candidate_draft = DraftAnswer(
             answer_text=parsed.answer_text.strip(),
             claims=new_claims,
             assumptions=list(dict.fromkeys(previous.assumptions + parsed.assumptions)),
             missing_info=list(dict.fromkeys(previous.missing_info + parsed.missing_info)),
-            refusal_reason=parsed.refusal_reason,
+            refusal_reason=refusal_reason,
         )
         validated_draft = _enforce_supported_locked(
             new_draft=candidate_draft,
@@ -409,7 +415,7 @@ def regenerate_draft(
             claims=kept_claims,
             assumptions=list(previous.assumptions),
             missing_info=list(previous.missing_info),
-            refusal_reason=previous.refusal_reason,
+            refusal_reason=None if kept_claims else previous.refusal_reason,
         )
 
     latency_ms = round(

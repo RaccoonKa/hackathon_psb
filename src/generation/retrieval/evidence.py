@@ -31,7 +31,7 @@ SLOT_KEYWORDS: dict[str, list[str]] = {
     "accrual_period": ["за каждый день", "день просрочки", "период просрочки", "со дня", "начисляются за"],
     "liability_cap": ["огранич", "ответственност", "реальн", "ущерб", "упущенн", "предел", "совокупн", "не несут", "убытк", "размер ответственности"],
     "rent_amount": ["арендная плата составляет", "рублей в месяц", "включая ндс", "450 000", "размер арендной платы по настоящему"],
-    "payment_deadline": ["не позднее", "числа текущего месяца", "вносится ежемесячно", "срок оплаты", "оплата производится", "календарных дней с даты поставки", "рабочих дней с даты"],
+    "payment_deadline": ["не позднее", "числа текущего месяца", "вносится ежемесячно", "срок оплаты", "оплата производится", "календарных дней", "рабочих дней", "оплачивает товар"],
     "probation_period": ["испытани", "испытательн", "шести месяцев", "трех месяцев", "двух недель"],
     "overtime_limit": ["сверхурочн", "120 часов", "четырех часов", "двух дней подряд"],
     "overtime_pay": ["сверхурочн", "полуторн", "двойн", "первые два часа", "последующие часы"],
@@ -85,18 +85,15 @@ def _extract_substantive_body(chunk: RetrievedChunk) -> str:
 def _detect_retrieval_fallback(chunks: list[RetrievedChunk]) -> bool:
     if not chunks:
         return False
-    raw_scores = [
-        round(c.score - 0.1, 6) if 0.101 <= c.score <= 0.13 else c.score
-        for c in chunks
-    ]
-    max_raw = max(raw_scores)
-    if max_raw >= 0.08:
+    scores = [c.score for c in chunks]
+    max_score = max(scores)
+    if max_score >= 0.1:
         return False
-    if len(raw_scores) >= 2:
-        med = statistics.median(raw_scores)
-        if abs(max_raw - med) <= 0.015:
+    if len(scores) >= 2:
+        med = statistics.median(scores)
+        if abs(max_score - med) <= 0.015:
             return True
-    return max_raw < 0.03
+    return max_score < 0.05
 
 
 @lru_cache(maxsize=1)
@@ -148,38 +145,47 @@ def _detect_contradictions(
     chunks: list[RetrievedChunk],
     slot_map: dict[str, list[str]],
 ) -> list[dict[str, Any]]:
+    # Сравниваем числа только между чанками с одинаковым provision_id (например, старая и новая редакции одного пункта),
+    # чтобы не принимать разные пункты одного договора за противоречие
     by_id = {c.chunk_id: c for c in chunks}
     contradictions: list[dict[str, Any]] = []
 
     for slot, cids in slot_map.items():
         if len(cids) < 2:
             continue
-        for pat_name, pattern in _NUMERIC_CONFLICT_PATTERNS:
-            values_by_chunk: dict[str, set[str]] = {}
-            for cid in cids:
-                ch = by_id.get(cid)
-                if not ch:
-                    continue
-                matches = {
-                    re.sub(r"\s+", "", m)
-                    for m in pattern.findall(ch.text)
-                    if m.strip()
-                }
-                if matches:
-                    values_by_chunk[cid] = matches
+        by_provision: dict[str, list[RetrievedChunk]] = {}
+        for cid in cids:
+            ch = by_id.get(cid)
+            if ch and ch.provision_id:
+                by_provision.setdefault(ch.provision_id, []).append(ch)
 
-            if len(values_by_chunk) >= 2:
-                distinct_sets = list(values_by_chunk.values())
-                first_set = distinct_sets[0]
-                if any(s != first_set for s in distinct_sets[1:]):
-                    contradictions.append(
-                        {
-                            "slot": slot,
-                            "pattern": pat_name,
-                            "chunk_ids": list(values_by_chunk.keys()),
-                            "values": {k: sorted(v) for k, v in values_by_chunk.items()},
-                        }
-                    )
+        for prov_id, group_chunks in by_provision.items():
+            if len(group_chunks) < 2:
+                continue
+            for pat_name, pattern in _NUMERIC_CONFLICT_PATTERNS:
+                values_by_chunk: dict[str, set[str]] = {}
+                for ch in group_chunks:
+                    matches = {
+                        re.sub(r"\s+", "", m)
+                        for m in pattern.findall(ch.text)
+                        if m.strip()
+                    }
+                    if matches:
+                        values_by_chunk[ch.chunk_id] = matches
+
+                if len(values_by_chunk) >= 2:
+                    distinct_sets = list(values_by_chunk.values())
+                    first_set = distinct_sets[0]
+                    if any(s != first_set for s in distinct_sets[1:]):
+                        contradictions.append(
+                            {
+                                "slot": slot,
+                                "provision_id": prov_id,
+                                "pattern": pat_name,
+                                "chunk_ids": list(values_by_chunk.keys()),
+                                "values": {k: sorted(v) for k, v in values_by_chunk.items()},
+                            }
+                        )
     return contradictions
 
 

@@ -15,7 +15,7 @@ _SLOT_SEARCH_EXPANSIONS: dict[str, str] = {
     "accrual_period": "период начисления пеней за каждый день просрочки исполнения обязательств",
     "liability_cap": "ограничение ответственности сторон предел ответственности реальный ущерб упущенная выгода",
     "rent_amount": "размер арендной платы стоимость аренды в месяц рублей НДС пункт 3.1",
-    "payment_deadline": "срок внесения арендной платы оплаты порядок расчетов не позднее 5 числа текущего месяца пункт 3.2",
+    "payment_deadline": "срок оплаты порядок расчетов оплачивает товар в течение календарных рабочих дней не позднее числа месяца",
     "probation_period": "испытательный срок при приеме на работу максимальный срок испытания",
     "overtime_limit": "продолжительность сверхурочной работы лимит часов в год",
     "overtime_pay": "оплата сверхурочной работы первые два часа последующие часы",
@@ -102,24 +102,46 @@ def plan(
     elif intent == "compare":
         if spec.decomposition:
             for sq in spec.decomposition:
+                sq_selected = selected_doc_ids
                 sq_boost = set(boost_doc_ids) if boost_doc_ids else set()
                 if sq.target_doc_raw:
                     resolved_target = resolve_single_entity(sq.target_doc_raw)
                     if resolved_target.document_id:
+                        sq_selected = (
+                            {resolved_target.document_id}
+                            if not user_selected_doc_ids
+                            else (user_selected_doc_ids & {resolved_target.document_id}) or {resolved_target.document_id}
+                        )
                         sq_boost.add(resolved_target.document_id)
-                    else:
+                    elif resolved_target.candidates:
                         sq_boost.update(resolved_target.candidates)
+
+                slot_key = sq.aspect or (spec.required_slots[0] if spec.required_slots else "")
+                expansion = _SLOT_SEARCH_EXPANSIONS.get(slot_key, "")
                 tasks.append(
                     RetrievalTask(
                         query=sq.text,
                         mode="hybrid",
-                        purpose=f"compare:{sq.aspect or 'subquestion'}",
-                        selected_doc_ids=selected_doc_ids,
+                        purpose=f"compare:{slot_key or 'subquestion'}",
+                        selected_doc_ids=sq_selected,
                         boost_doc_ids=sq_boost or None,
                         event_date=spec.event_date,
                         top_k=top_k,
                     )
                 )
+                if expansion:
+                    enriched_bm25 = f"{sq.target_doc_raw or ''} {expansion}".strip()
+                    tasks.append(
+                        RetrievalTask(
+                            query=enriched_bm25,
+                            mode="bm25",
+                            purpose=f"compare_bm25:{slot_key}",
+                            selected_doc_ids=sq_selected,
+                            boost_doc_ids=sq_boost or None,
+                            event_date=spec.event_date,
+                            top_k=top_k,
+                        )
+                    )
         else:
             for q in dense_q[:max_slot_queries]:
                 tasks.append(
@@ -127,6 +149,18 @@ def plan(
                         query=q,
                         mode="dense",
                         purpose="compare_fallback",
+                        selected_doc_ids=selected_doc_ids,
+                        boost_doc_ids=boost_doc_ids,
+                        event_date=spec.event_date,
+                        top_k=top_k,
+                    )
+                )
+            for q in bm25_q[:max_slot_queries]:
+                tasks.append(
+                    RetrievalTask(
+                        query=q,
+                        mode="bm25",
+                        purpose="compare_fallback_bm25",
                         selected_doc_ids=selected_doc_ids,
                         boost_doc_ids=boost_doc_ids,
                         event_date=spec.event_date,

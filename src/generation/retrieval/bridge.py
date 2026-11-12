@@ -85,7 +85,8 @@ def _run_single_task(task: RetrievalTask) -> list[RetrievedChunk]:
         boosted: list[RetrievedChunk] = []
         for ch in chunks:
             if ch.document_id in task.boost_doc_ids:
-                boosted.append(replace(ch, score=min(1.0, round(ch.score + 0.05, 6))))
+                delta = 0.002 if ch.score < 0.1 else 0.05
+                boosted.append(replace(ch, score=min(1.0, round(ch.score + delta, 6))))
             else:
                 boosted.append(ch)
         return boosted
@@ -134,7 +135,7 @@ def retrieve_tasks(
     for chunk_list in task_results:
         for rank_idx, ch in enumerate(chunk_list):
             cid = ch.chunk_id
-            if rank_idx < 2 and cid not in protected_top_ids:
+            if rank_idx < 3 and cid not in protected_top_ids:
                 protected_top_ids.append(cid)
             if cid not in merged_by_id:
                 merged_by_id[cid] = ch
@@ -148,7 +149,9 @@ def retrieve_tasks(
     deduped_map: dict[str, RetrievedChunk] = {}
     for cid, ch in merged_by_id.items():
         if hit_counts[cid] > 1:
-            boosted_score = min(1.0, round(ch.score + 0.1, 6))
+            # Пропорциональный буст в шкале RRF/Reranker, не искажающий порядок на порядок величины
+            increment = 0.0015 if ch.score < 0.1 else 0.05
+            boosted_score = min(1.0, round(ch.score + increment, 6))
             deduped_map[cid] = replace(ch, score=boosted_score)
         else:
             deduped_map[cid] = ch
@@ -156,7 +159,6 @@ def retrieve_tasks(
     sorted_all = sorted(deduped_map.values(), key=lambda c: c.score, reverse=True)
     max_keep = max(int(config.RAG_TOP_K), int(config.RERANKER_TOP_N), 10)
 
-    # Сохраняем top-2 чанка каждой отдельной задачи, чтобы буст общих чанков не вытеснял узкие слоты
     final_chunks: list[RetrievedChunk] = []
     seen_final: set[str] = set()
     for ch in sorted_all:

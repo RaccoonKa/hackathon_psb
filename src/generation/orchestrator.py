@@ -30,6 +30,7 @@ from src.generation.types import (
 logger = logging.getLogger(__name__)
 
 _SOURCE_TAG_PATTERN = re.compile(r"<source>(.*?)</source>", re.DOTALL)
+_NULL_LIKE_REFUSAL = {"null", "none", "nil", "false", "нет", "n/a", ""}
 
 
 def _sanitize_and_extract_citations(
@@ -37,19 +38,13 @@ def _sanitize_and_extract_citations(
     available_sources: dict[str, dict[str, Any]],
 ) -> tuple[str, list[str]]:
     cited_ids: list[str] = []
-    max_score = max(
-        (float(meta.get("score", 0.0)) for meta in available_sources.values()),
-        default=0.0,
-    )
-    min_cite_score = 0.05 if max_score >= 0.2 else 0.005
 
     def _replace_tag(match: re.Match[str]) -> str:
         raw_inner = match.group(1)
         tokens = [t.strip() for t in raw_inner.split(",") if t.strip()]
         valid_tokens: list[str] = []
         for token in tokens:
-            meta = available_sources.get(token)
-            if meta is not None and float(meta.get("score", 0.0)) >= min_cite_score:
+            if token in available_sources:
                 valid_tokens.append(token)
                 if token not in cited_ids:
                     cited_ids.append(token)
@@ -104,20 +99,19 @@ def assemble_final(
         answer=draft.answer_text,
         available_sources=sources,
     )
-    max_score = max(
-        (float(meta.get("score", 0.0)) for meta in sources.values()),
-        default=0.0,
-    )
-    min_cite_score = 0.05 if max_score >= 0.2 else 0.005
 
     for claim in draft.claims:
         for sid in claim.source_ids:
-            if (
-                sid in sources
-                and float(sources[sid].get("score", 0.0)) >= min_cite_score
-                and sid not in cited_ids
-            ):
+            if sid in sources and sid not in cited_ids:
                 cited_ids.append(sid)
+
+    if draft.refusal_reason is not None:
+        if (
+            draft.refusal_reason.strip().lower() in _NULL_LIKE_REFUSAL
+            or bool(cited_ids)
+            or (verification is not None and bool(verification.supported_locked))
+        ):
+            draft.refusal_reason = None
 
     if (
         verification is not None
@@ -446,8 +440,6 @@ def run_agent(
                 continue
             break
 
-        # Пермиссивность на входе: отказываем на стадии [4] только если реально нет чанков;
-        # если чанки найдены, передаём их в генератор и верификатор
         if bundle is None or not bundle.chunks:
             return _safe_no_context_refusal(
                 query=query,

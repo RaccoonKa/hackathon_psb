@@ -262,6 +262,7 @@ _ALLOWED_ANALYSIS_INTENTS = {
     "date_version",
     "checklist",
 }
+_NULL_LIKE_STRINGS = {"null", "none", "nil", "false", "нет", "не применимо", "n/a", ""}
 
 
 class PremiseSchema(BaseModel):
@@ -386,6 +387,16 @@ class DraftAnswerSchema(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     missing_info: list[str] = Field(default_factory=list)
     refusal_reason: Optional[str] = None
+
+    @field_validator("refusal_reason", mode="before")
+    @classmethod
+    def _sanitize_refusal_reason(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if s.lower() in _NULL_LIKE_STRINGS:
+            return None
+        return s
 
 
 class ClaimVerdictSchema(BaseModel):

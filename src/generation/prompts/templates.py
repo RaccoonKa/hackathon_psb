@@ -1,7 +1,7 @@
 PROVISION_LINE_PREFIX: str = "Пункт/Статья:"
 
 CONTEXT_ITEM_TEMPLATE: str = (
-    "[{source_id}] (Score: {score:.3f})\n"
+    "[{source_id}]\n"
     "Документ: {document_title}\n"
     "Раздел: {structure_path_str}\n"
     "Пункт/Статья: {provision_id}\n"

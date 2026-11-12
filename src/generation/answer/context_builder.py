@@ -17,7 +17,6 @@ def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
     )
     rendered = prompts.CONTEXT_ITEM_TEMPLATE.format(
         source_id=source_id,
-        score=chunk.score,
         document_title=chunk.document_title,
         structure_path_str=structure_path_str,
         provision_id=chunk.provision_id or "",

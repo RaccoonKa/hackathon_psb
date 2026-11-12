@@ -1,5 +1,5 @@
 QUERY_ANALYSIS_TEMPERATURE: float = 0.0
-QUERY_ANALYSIS_MAX_TOKENS: int = 2048
+QUERY_ANALYSIS_MAX_TOKENS: int = 4096
 
 QUERY_ANALYSIS_JSON_SCHEMA: str = """{
   "intent": "exact_lookup | semantic | mixed | compare | date_version | checklist",
