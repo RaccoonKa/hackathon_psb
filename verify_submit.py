@@ -21,17 +21,53 @@ from typing import Callable, Optional
 ROOT = Path(__file__).resolve().parent
 MAX_ZIP_BYTES = 128 * 1024 * 1024
 
+# Полный плоский состав выгрузки: базовые модули, вся архитектура generation
+# (orchestration/analysis/answer/llm/planning/policy/prompts/retrieval),
+# индексация, retrieval и служебные файлы.
 REQUIRED_FILES = {
     "solution.py",
     "settings_submit.py",
     "config.py",
     "build_index.py",
+    # --- generation: orchestration / shared ---
     "generation_orchestrator.py",
+    "generation_bailout.py",
+    "generation_errors.py",
+    "generation_refusal.py",
+    "generation_stubs.py",
+    "generation_types.py",
+    # --- generation: analysis ---
+    "generation_analysis_entity_resolver.py",
+    "generation_analysis_prefilter.py",
+    "generation_analysis_query_analysis.py",
+    # --- generation: answer ---
+    "generation_answer_context_builder.py",
+    "generation_answer_generator.py",
+    "generation_answer_verification.py",
+    # --- generation: llm / planning / policy ---
     "generation_llm_client.py",
+    "generation_planning_planner.py",
+    "generation_policy_precheck.py",
+    # --- generation: prompts ---
+    "generation_prompts_templates.py",
+    "generation_prompts_bailout.py",
+    "generation_prompts_evidence.py",
+    "generation_prompts_generator.py",
+    "generation_prompts_query_analysis.py",
+    "generation_prompts_regenerate.py",
+    "generation_prompts_verifier.py",
+    # --- generation: retrieval ---
+    "generation_retrieval_bridge.py",
+    "generation_retrieval_evidence.py",
+    # --- indexing / retrieval ---
     "indexing_parser.py",
     "indexing_chunker.py",
+    "indexing_tokenizer_utils.py",
     "retrieval_hybrid.py",
+    "retrieval_keyword_store.py",
+    "retrieval_reranker.py",
     "retrieval_vector_store.py",
+    # --- служебные файлы ---
     "requirements.txt",
     "README.md",
 }
@@ -328,8 +364,18 @@ assert config.ALLOW_HASH_FALLBACK is True
 assert config.RERANKER_BACKEND in {"api", "transformers"}
 print("local-ok")
 """
+    # Явно задаём локальные дефолты: пользовательский ``.env`` не должен
+    # влиять на проверку контракта (python-dotenv не переопределяет env).
     _expect_ok(
-        _run_python(code, cwd=ROOT, pythonpath=ROOT),
+        _run_python(
+            code,
+            cwd=ROOT,
+            extra_env={
+                "USE_LOCAL_EMBEDDING_MODEL": "true",
+                "ALLOW_HASH_FALLBACK": "true",
+            },
+            pythonpath=ROOT,
+        ),
         "Конфигурация LOCAL",
     )
 
