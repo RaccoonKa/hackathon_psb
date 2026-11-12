@@ -1,7 +1,8 @@
+from src import config
 from src.retrieval.hybrid import detect_query_intent, resolve_allowed_versions_by_date
 from src.retrieval.keyword_store import BM25KeywordStore, tokenize_ru
 from src.retrieval.vector_store import _fallback_embedding, prepare_flat_metadata
-from src.generation.retrieval_bridge import _dict_to_chunk, filter_chunks_by_threshold
+from src.generation.retrieval.bridge import _dict_to_chunk, filter_chunks_by_threshold
 from src.generation.types import RetrievedChunk
 from tests._common import make_chunk_dict, make_retrieved_chunk
 
@@ -259,7 +260,7 @@ def test_dict_to_chunk_missing_structure_and_score():
     ch = _dict_to_chunk(raw)
     assert ch.provision_id is None
     assert ch.structure_path == []
-    assert ch.score == 0.5
+    assert ch.score == config.REAL_RAG_DEFAULT_SCORE
 
 
 def test_filter_passes_above_threshold():

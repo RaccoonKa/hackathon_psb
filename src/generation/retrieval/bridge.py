@@ -365,11 +365,15 @@ def filter_chunks_by_threshold(
     effective_threshold = threshold
     ceiling = getattr(config, "RRF_FALLBACK_SCORE_CEILING", 0.1)
     fallback_thresh = getattr(config, "RRF_FALLBACK_THRESHOLD", 0.005)
-    if 0.0 < max_score < ceiling:
-        effective_threshold = fallback_thresh
+    # Адаптивное снижение порога только для явно заданного ненулевого порога.
+    # threshold=0.0 означает «принять всё» и не должен ужесточаться.
+    if threshold > 0.0 and 0.0 < max_score < ceiling:
+        effective_threshold = min(threshold, fallback_thresh)
 
     passed = bool(chunks) and max_score >= effective_threshold
-    filtered = [c for c in chunks if c.score >= effective_threshold] if passed else []
+    # Порог работает как gate: при прохождении сохраняются все кандидаты,
+    # ранжирование/усечение выполняет реранкер и RAG_TOP_K.
+    filtered = list(chunks) if passed else []
     latency_ms = round(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
         config.LATENCY_ROUND_DIGITS,

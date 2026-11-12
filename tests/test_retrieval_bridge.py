@@ -1,8 +1,8 @@
 from unittest.mock import patch
 
 from src import config
-from src.generation import retrieval_bridge as rb_mod
-from src.generation.retrieval_bridge import (
+from src.generation.retrieval import bridge as rb_mod
+from src.generation.retrieval.bridge import (
     _dict_to_chunk,
     filter_chunks_by_threshold,
     rerank_chunks,
@@ -95,11 +95,21 @@ def test_retrieve_chunks_passes_intent():
     assert mock_hs.call_args.kwargs["intent"] == "exact_lookup"
 
 
-def test_retrieve_chunks_top_k_doubled_for_pool():
+def test_retrieve_chunks_disables_inner_rerank():
+    # Реранкинг выполняется отдельным этапом rerank_chunks (локальный Qwen),
+    # поэтому внутри hybrid_search он должен быть выключен — без двойного реранка.
     with patch.object(rb_mod.config, "USE_STUB_RAG", False), \
          patch.object(rb_mod, "hybrid_search", return_value=[]) as mock_hs:
         retrieve_chunks(query="q", top_k=5)
-    assert mock_hs.call_args.kwargs["top_k"] >= 20
+    assert mock_hs.call_args.kwargs["rerank"] is False
+
+
+def test_retrieve_chunks_passes_top_k_unchanged():
+    # Размер пула (RAG_TOP_K) задаётся планировщиком; мост не масштабирует top_k.
+    with patch.object(rb_mod.config, "USE_STUB_RAG", False), \
+         patch.object(rb_mod, "hybrid_search", return_value=[]) as mock_hs:
+        retrieve_chunks(query="q", top_k=5)
+    assert mock_hs.call_args.kwargs["top_k"] == 5
 
 
 def test_retrieve_chunks_stub_mode():
@@ -121,7 +131,10 @@ def test_retrieve_chunks_trace_output():
 
 
 def test_rerank_chunks_real_mode():
-    chunks = [make_retrieved_chunk(chunk_id="c1")]
+    chunks = [
+        make_retrieved_chunk(chunk_id="c1"),
+        make_retrieved_chunk(chunk_id="c2"),
+    ]
     fake_reranked = [{**make_chunk_dict(chunk_id="c1", score=0.99)}]
     with patch.object(rb_mod.config, "USE_STUB_RERANKER", False), \
          patch.object(rb_mod, "rerank_candidates",
@@ -133,7 +146,10 @@ def test_rerank_chunks_real_mode():
 
 
 def test_rerank_chunks_builds_candidate_dicts():
-    chunks = [make_retrieved_chunk(chunk_id="c1", provision_id="3.2")]
+    chunks = [
+        make_retrieved_chunk(chunk_id="c1", provision_id="3.2"),
+        make_retrieved_chunk(chunk_id="c2"),
+    ]
     with patch.object(rb_mod.config, "USE_STUB_RERANKER", False), \
          patch.object(rb_mod, "rerank_candidates", return_value=[]) as mock_rr:
         rerank_chunks(chunks=chunks, query="q", top_n=3)
@@ -143,15 +159,40 @@ def test_rerank_chunks_builds_candidate_dicts():
 
 
 def test_rerank_chunks_uses_embedding_text():
-    chunks = [make_retrieved_chunk(
-        chunk_id="c1", document_title="Договор",
-        structure_path=["Раздел 1"], text="тело",
-    )]
+    chunks = [
+        make_retrieved_chunk(
+            chunk_id="c1", document_title="Договор",
+            structure_path=["Раздел 1"], text="тело",
+        ),
+        make_retrieved_chunk(chunk_id="c2"),
+    ]
     with patch.object(rb_mod.config, "USE_STUB_RERANKER", False), \
          patch.object(rb_mod, "rerank_candidates", return_value=[]) as mock_rr:
         rerank_chunks(chunks=chunks, query="q", top_n=3)
     passed = mock_rr.call_args.kwargs["candidates"]
     assert "Договор" in passed[0]["embedding_text"]
+
+
+def test_rerank_chunks_single_candidate_passthrough():
+    chunks = [make_retrieved_chunk(chunk_id="c1")]
+    with patch.object(rb_mod.config, "USE_STUB_RERANKER", False), \
+         patch.object(rb_mod, "rerank_candidates") as mock_rr:
+        reranked, step = rerank_chunks(chunks=chunks, query="q", top_n=3)
+    mock_rr.assert_not_called()
+    assert step.input["mode"] == "passthrough"
+    assert reranked == chunks
+
+
+def test_rerank_chunks_empty_result_passthrough():
+    chunks = [
+        make_retrieved_chunk(chunk_id="c1"),
+        make_retrieved_chunk(chunk_id="c2"),
+    ]
+    with patch.object(rb_mod.config, "USE_STUB_RERANKER", False), \
+         patch.object(rb_mod, "rerank_candidates", return_value=[]):
+        reranked, step = rerank_chunks(chunks=chunks, query="q", top_n=3)
+    assert step.input["mode"] == "passthrough"
+    assert [c.chunk_id for c in reranked] == ["c1", "c2"]
 
 
 def test_rerank_chunks_stub_mode():

@@ -3,12 +3,28 @@ from src.generation.types import AgentResult, Intent, RetrievedChunk, TraceStep
 
 
 def test_intent_enum_values():
+    # Легаси-значения сохраняются: ими пользуются solution.py/run_live.py
+    # и INTENT_FALLBACK в config.py.
     assert Intent.EXACT_LOOKUP.value == "exact_lookup"
     assert Intent.SEMANTIC_QUERY.value == "semantic_query"
     assert Intent.MIXED_QUERY.value == "mixed_query"
     assert Intent.OUT_OF_SCOPE.value == "out_of_scope"
     assert Intent.ABOUT_ASSISTANT.value == "about_assistant"
-    assert len(list(Intent)) == 5
+    assert config.INTENT_FALLBACK in set(Intent)
+
+    # Новый analysis-слой использует внутренние канонические значения.
+    assert Intent.SEMANTIC.value == "semantic"
+    assert Intent.MIXED.value == "mixed"
+    assert Intent.COMPARE.value == "compare"
+    assert Intent.DATE_VERSION.value == "date_version"
+    assert Intent.CHECKLIST.value == "checklist"
+    assert Intent.ILLEGAL.value == "illegal"
+    assert Intent.PROMPT_INJECTION.value == "prompt_injection"
+    assert len(list(Intent)) == 12
+
+
+def test_intent_values_unique():
+    assert len({i.value for i in Intent}) == len(list(Intent))
 
 
 def test_retrieved_chunk_frozen():

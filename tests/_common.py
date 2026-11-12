@@ -97,6 +97,72 @@ def make_retrieved_chunk(**kwargs):
     return RetrievedChunk(**data)
 
 
+def make_query_spec(**kwargs):
+    from src.generation.types import Ambiguity, QuerySpec, TaskType
+
+    data = {
+        "intent": "semantic",
+        "task_type": TaskType.EXPLAIN,
+        "entities_raw": [],
+        "entities_resolved": [],
+        "article_refs": [],
+        "dates": [],
+        "event_date": None,
+        "premises": [],
+        "required_slots": ["general"],
+        "assumptions": [],
+        "ambiguity": Ambiguity.LOW,
+        "needs_clarification": False,
+        "decomposition": [],
+        "rewritten_queries_bm25": ["запрос"],
+        "rewritten_queries_dense": ["запрос"],
+        "history_resolved": False,
+        "degradation_reason": None,
+    }
+    data.update(kwargs)
+    return QuerySpec(**data)
+
+
+def make_policy_verdict(**kwargs):
+    from src.generation.types import PolicyVerdict
+
+    data = {
+        "premise_mismatch": False,
+        "premise_details": [],
+        "injection_flagged": False,
+        "refusal_forbidden": False,
+    }
+    data.update(kwargs)
+    return PolicyVerdict(**data)
+
+
+def make_evidence_bundle(**kwargs):
+    from src.generation.types import EvidenceBundle
+
+    data = {
+        "chunks": [],
+        "slot_map": {},
+        "contradictions": [],
+        "version_issues": [],
+    }
+    data.update(kwargs)
+    return EvidenceBundle(**data)
+
+
+def make_verification_report(**kwargs):
+    from src.generation.types import VerificationReport, VerificationVerdict
+
+    data = {
+        "batch_status": [],
+        "citation_errors": [],
+        "injection_signals": [],
+        "supported_locked": [],
+        "final_verdict": VerificationVerdict.ACCEPT,
+    }
+    data.update(kwargs)
+    return VerificationReport(**data)
+
+
 def filler_corpus(n=10, term="срок", base_prefix="doc"):
     chunks = []
     for i in range(n):

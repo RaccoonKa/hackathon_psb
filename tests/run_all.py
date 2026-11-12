@@ -22,17 +22,17 @@ MODULES = [
     "tests.test_keyword_store_deep",
     "tests.test_vector_store",
     "tests.test_vector_store_deep",
-    "tests.test_vector_store_local",
     "tests.test_hybrid",
     "tests.test_hybrid_deep",
     "tests.test_reranker",
-    "tests.test_prompts",
     "tests.test_intent",
     "tests.test_context_builder",
+    "tests.test_generation",
     "tests.test_generator",
     "tests.test_refusal",
     "tests.test_llm_client",
     "tests.test_retrieval_bridge",
+    "tests.test_retrieval",
 ]
 
 

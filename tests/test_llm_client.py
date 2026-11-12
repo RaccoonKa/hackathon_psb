@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
 from src import config
-from src.generation import llm_client as lc_mod
-from src.generation.llm_client import (
+from src.generation.llm import client as lc_mod
+from src.generation.llm.client import (
     _build_chat_model,
     _extract_token_usage,
     _invoke_real_llm,
@@ -11,22 +11,37 @@ from src.generation.llm_client import (
 )
 
 
+def _clear_chat_model_cache():
+    _build_chat_model.cache_clear()
+
+
 def test_build_chat_model_params():
+    _clear_chat_model_cache()
     with patch.object(lc_mod, "ChatOpenAI") as mock:
-        _build_chat_model("m", 0.5, 100)
+        _build_chat_model("m", 0.5, 100, 30.0)
     kwargs = mock.call_args.kwargs
     assert kwargs["model"] == "m"
     assert kwargs["temperature"] == 0.5
     assert kwargs["max_completion_tokens"] == 100
     assert kwargs["max_retries"] == config.MAX_RETRIES
+    assert kwargs["timeout"] == 30.0
 
 
 def test_build_chat_model_uses_config_keys():
+    _clear_chat_model_cache()
     with patch.object(lc_mod, "ChatOpenAI") as mock:
-        _build_chat_model("m", 0.0, 100)
+        _build_chat_model("m-cfg", 0.0, 100, 10.0)
     kwargs = mock.call_args.kwargs
     assert kwargs["api_key"] == config.LLM_API_KEY
     assert kwargs["base_url"] == config.LLM_BASE_URL
+
+
+def test_build_chat_model_cached():
+    _clear_chat_model_cache()
+    with patch.object(lc_mod, "ChatOpenAI") as mock:
+        _build_chat_model("m-cache", 0.1, 10, 5.0)
+        _build_chat_model("m-cache", 0.1, 10, 5.0)
+    assert mock.call_count == 1
 
 
 def test_extract_token_usage_from_usage_metadata():
@@ -98,7 +113,7 @@ def test_invoke_real_llm_string_content():
     with patch.object(lc_mod, "_build_chat_model", return_value=fake_llm):
         content, p, c = _invoke_real_llm(
             messages=[{"role": "user", "content": "hi"}],
-            model="m", temperature=0.0, max_tokens=100,
+            model="m", temperature=0.0, max_tokens=100, timeout=30.0,
         )
     assert content == "Ответ"
     assert p == 10
@@ -115,10 +130,25 @@ def test_invoke_real_llm_list_content():
 
     with patch.object(lc_mod, "_build_chat_model", return_value=fake_llm):
         content, _, _ = _invoke_real_llm(
-            messages=[], model="m", temperature=0.0, max_tokens=100,
+            messages=[], model="m", temperature=0.0, max_tokens=100, timeout=30.0,
         )
     assert isinstance(content, str)
     assert content
+
+
+def test_invoke_real_llm_strips_think_tokens():
+    fake_llm = MagicMock()
+    fake_resp = MagicMock()
+    fake_resp.content = "<think>рассуждение</think>Ответ"
+    fake_resp.usage_metadata = {"input_tokens": 1, "output_tokens": 1}
+    fake_resp.response_metadata = None
+    fake_llm.invoke.return_value = fake_resp
+
+    with patch.object(lc_mod, "_build_chat_model", return_value=fake_llm):
+        content, _, _ = _invoke_real_llm(
+            messages=[], model="m", temperature=0.0, max_tokens=100, timeout=30.0,
+        )
+    assert content == "Ответ"
 
 
 def test_llm_complete_with_usage_real():
