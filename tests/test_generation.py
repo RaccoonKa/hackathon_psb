@@ -389,3 +389,98 @@ def test_llm_complete_mocked():
             max_tokens=100,
         )
     assert text == "Ответ"
+
+
+def test_run_agent_invokes_reranker_before_evidence():
+    """Регрессия: retrieve_tasks вызывает hybrid_search с rerank=False,
+    поэтому оркестратор обязан явно применить rerank_chunks до evidence.assess.
+    """
+    from src.generation import orchestrator as orch_mod
+    from src.generation.retrieval import bridge as bridge_mod
+    from src.generation.retrieval import evidence as evidence_mod
+    from dataclasses import replace
+
+    from src.generation.types import (
+        DraftAnswer,
+        EvidenceAssessment,
+        EvidenceBundle,
+        PolicyVerdict,
+        PreFilterResult,
+        Sufficiency,
+    )
+
+    raw = [
+        make_retrieved_chunk(chunk_id="c1", score=0.02),
+        make_retrieved_chunk(chunk_id="c2", score=0.01),
+    ]
+    # Реранкер возвращает новый порядок и обновлённые score; оркестратор
+    # пересортировывает накопленный пул по score.
+    reranked = [
+        replace(raw[1], score=0.95),
+        replace(raw[0], score=0.85),
+    ]
+    spec = make_query_spec(
+        intent="semantic",
+        event_date="2025-01-01",
+        required_slots=["rent_amount"],
+    )
+    assessment = EvidenceAssessment(
+        covered_slots=["rent_amount"],
+        missing_slots=[],
+        core_slot_covered=True,
+        sufficiency=Sufficiency.SUFFICIENT,
+        degraded_intents=[],
+        reason="all_required_slots_covered",
+    )
+    step = lambda name: TraceStep(step=name, input={}, output={}, latency_ms=0.0)
+
+    with patch.object(
+        orch_mod, "run_prefilter",
+        return_value=(PreFilterResult(False, None, None), step("prefilter")),
+    ), patch.object(
+        orch_mod, "analyze_query", return_value=(spec, step("query_analysis"), False),
+    ), patch.object(
+        bridge_mod, "retrieve_tasks", return_value=(raw, step(config.STEP_RAG_RETRIEVAL)),
+    ), patch.object(
+        bridge_mod, "rerank_chunks", return_value=(reranked, step(config.STEP_RERANKING)),
+    ) as mock_rerank, patch.object(
+        evidence_mod, "assess",
+        return_value=(
+            EvidenceBundle(
+                chunks=reranked,
+                slot_map={"rent_amount": ["c2"]},
+                contradictions=[],
+                version_issues=[],
+            ),
+            assessment,
+            step("assess_evidence"),
+        ),
+    ) as mock_assess, patch.object(
+        orch_mod, "precheck",
+        return_value=(
+            PolicyVerdict(False, [], False, True),
+            step("policy_precheck"),
+        ),
+    ), patch.object(
+        orch_mod, "build_context_and_sources",
+        return_value=({"S1": {"chunk_id": "c2"}}, "ctx", step(config.STEP_CONTEXT_ASSEMBLY)),
+    ), patch.object(
+        orch_mod, "generate_draft",
+        return_value=(
+            DraftAnswer("Ответ", [], [], [], None),
+            step(config.STEP_GENERATION),
+        ),
+    ), patch.object(
+        orch_mod, "verify",
+        return_value=(make_verification_report(), step("verify_draft")),
+    ):
+        result = orch_mod.run_agent("Какой срок оплаты?", event_date="2025-01-01")
+
+    mock_rerank.assert_called_once()
+    rerank_kwargs = mock_rerank.call_args.kwargs
+    assert rerank_kwargs["chunks"] == raw
+    assert rerank_kwargs["query"] == "Какой срок оплаты?"
+    assert rerank_kwargs["top_n"] == config.RERANKER_TOP_N
+    assert mock_assess.call_args.kwargs["chunks"] == reranked
+    assert result.refused is False
+    assert any(s.step == config.STEP_RERANKING for s in result.trace)

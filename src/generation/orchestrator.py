@@ -400,6 +400,24 @@ def run_agent(
                 degradation_reasons.append("retrieval_error")
                 new_chunks = []
 
+            # Реранкинг — отдельный этап после объединения задач: внутри
+            # hybrid_search он отключён (rerank=False), поэтому локальный
+            # Qwen-reranker применяется здесь, до оценки доказательств.
+            if new_chunks:
+                try:
+                    new_chunks, rerank_step = bridge.rerank_chunks(
+                        chunks=new_chunks,
+                        query=query,
+                        top_n=int(config.RERANKER_TOP_N),
+                    )
+                    _append_step(rerank_step, stage_idx=3)
+                except Exception as exc:  # noqa: BLE001 - реранкер необязателен
+                    _record_failure(exc)
+                    degradation_reasons.append("rerank_error")
+                    logger.warning(
+                        "Reranking failed, using retrieval order: %s", exc
+                    )
+
             by_cid = {c.chunk_id: c for c in accumulated_chunks}
             for ch in new_chunks:
                 if ch.chunk_id not in by_cid or ch.score > by_cid[ch.chunk_id].score:
