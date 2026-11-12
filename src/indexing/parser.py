@@ -136,7 +136,10 @@ def parse_dates_and_version(
             content,
             re.IGNORECASE,
         ):
-            window = content[m_until.start(): m_until.end() + 150].lower()
+            line_end = content.find("\n", m_until.end())
+            if line_end == -1:
+                line_end = len(content)
+            window = content[m_until.start(): line_end].lower()
             if any(k in window for k in ["продлева", "пролонгир"]):
                 continue
             effective_to = parse_ru_text_date(m_until.group(1))
@@ -149,7 +152,7 @@ def parse_dates_and_version(
     effective_from = None
 
     m_action_start = re.search(
-        r"(?:начиная\s+с|[Сс])\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4})\s+(?:до\s+подписания|применяется|вступает)",
+        r"(?:начиная\s+с|[Сс])\s+(\d{1,2}\s+[а-яё]+\s+\d{4}|\d{2}\.\d{2}\.\d{4})(?:\s*г\.?)?\s+(?:до\s+подписания|применяется|вступает)",
         clean_head,
         re.IGNORECASE,
     )
@@ -285,6 +288,15 @@ def classify_heading(
         prov_id = f"{art_clean}.прим.{note_num}" if art_clean else f"прим.{note_num}"
         return (4, f"Примечание {note_num}", prov_id)
 
+    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)") — проверяем ДО m_sub!
+    m_paren = re.match(r"^(\d+(?:[\.\-]\d+)*)\)\s*(.*)$", clean)
+    if m_paren and in_article:
+        sub_num = m_paren.group(1).rstrip(".")
+        parent_id = current_part_num or current_art_num
+        parent_clean = parent_id.rstrip(".") if parent_id else ""
+        prov_id = f"{parent_clean}.{sub_num}" if parent_clean else sub_num
+        return (4, f"Подпункт {sub_num}", prov_id)
+
     # Уровень 3+: Цифровые пункты договоров ("3.2.", "1.1", "2.2.3") или части закона с дробью (КоАП "1.1.", "2.1.")
     m_sub = re.match(r"^(\d+\.\d+(?:\.\d+)*)\.?\s*(.*)$", clean)
     if m_sub:
@@ -312,15 +324,6 @@ def classify_heading(
     if m_punkt:
         p_num = m_punkt.group(1).rstrip(".")
         return (3, f"Пункт {p_num}", p_num)
-
-    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)")
-    m_paren = re.match(r"^(\d+(?:[\.\-]\d+)*)\)\s*(.*)$", clean)
-    if m_paren and in_article:
-        sub_num = m_paren.group(1).rstrip(".")
-        parent_id = current_part_num or current_art_num
-        parent_clean = parent_id.rstrip(".") if parent_id else ""
-        prov_id = f"{parent_clean}.{sub_num}" if parent_clean else sub_num
-        return (4, f"Подпункт {sub_num}", prov_id)
 
     return None
 

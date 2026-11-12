@@ -13,13 +13,16 @@ TARGET_MAX_TOKENS = 600
 HARD_MAX_TOKENS = 750
 OVERLAP_TOKENS = 60
 
+# Константы сохранены для обратной совместимости с тестами перекрытия
 SUB_CHUNK_SIZE_CHARS = HARD_MAX_TOKENS * 3
 SUB_CHUNK_OVERLAP_CHARS = OVERLAP_TOKENS * 3
 
 oversized_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=SUB_CHUNK_SIZE_CHARS,
-    chunk_overlap=SUB_CHUNK_OVERLAP_CHARS,
-    separators=["\n\n", "\n", ";\n", ". ", " "],
+    chunk_size=HARD_MAX_TOKENS - 15,
+    chunk_overlap=OVERLAP_TOKENS,
+    length_function=count_tokens,
+    separators=["\n\n", "\n", ";\n", r"(?<!\d)\.\s+", " "],
+    is_separator_regex=True,
     keep_separator=True,
 )
 
@@ -105,8 +108,8 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         chunk_idx += 1
         return payload
 
-    # Защита коротких допников и служебных писем (до 500 токенов): сохраняем целиком
-    if total_doc_tokens <= 500 and (
+    # Защита коротких допников и служебных писем (до HARD_MAX_TOKENS): сохраняем целиком
+    if total_doc_tokens <= HARD_MAX_TOKENS and (
         meta.get("amends_document_id") or meta.get("document_type") == "internal"
     ):
         chunks.append(
@@ -128,23 +131,44 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
         b = blocks[i]
         b_tokens = count_tokens(b["text"])
 
-        # 1. Положение превышает лимит (> 750 токенов) -> делим с перекрытием
+        # 1. Положение превышает лимит (> 750 токенов) -> делим по реальным токенам с перекрытием
         if b_tokens > HARD_MAX_TOKENS:
             sub_parts = oversized_splitter.split_text(b["text"])
             running_char = b["char_start"]
+            search_cursor = b["char_start"]
+
             for part in sub_parts:
+                clean_part = part.strip()
+                found_idx = (
+                    content.find(clean_part, search_cursor, b["char_end"] + 50)
+                    if len(clean_part) >= 15
+                    else -1
+                )
+
+                if found_idx != -1:
+                    c_start = found_idx
+                    c_end = found_idx + len(clean_part)
+                    search_cursor = max(c_start + 1, c_end - SUB_CHUNK_OVERLAP_CHARS * 3)
+                    part_start_line = content.count("\n", 0, c_start) + 1
+                    part_end_line = content.count("\n", 0, max(c_start, c_end - 1)) + 1
+                else:
+                    c_start = running_char
+                    c_end = running_char + len(part)
+                    part_start_line = b["start_line"]
+                    part_end_line = b["end_line"]
+
                 chunks.append(
                     make_chunk_payload(
                         text=part,
                         path=b["path"],
                         provision_id=b["provision_id"],
-                        start_line=b["start_line"],
-                        end_line=b["end_line"],
-                        c_start=running_char,
-                        c_end=running_char + len(part),
+                        start_line=part_start_line,
+                        end_line=part_end_line,
+                        c_start=c_start,
+                        c_end=c_end,
                     )
                 )
-                running_char += max(1, len(part) - SUB_CHUNK_OVERLAP_CHARS)
+                running_char = c_start + max(1, len(part) - SUB_CHUNK_OVERLAP_CHARS)
             i += 1
             continue
 

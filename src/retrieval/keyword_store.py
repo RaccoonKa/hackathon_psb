@@ -16,6 +16,7 @@ class BM25KeywordStore:
         self.chunk_ids: List[str] = []
         self.tokenized_corpus: List[List[str]] = []
         self.bm25: Optional[BM25Okapi] = None
+        self._is_built: bool = False
 
     def build_index(self, chunks: List[Dict[str, Any]]):
         self.chunk_ids = [c["chunk_id"] for c in chunks]
@@ -24,6 +25,12 @@ class BM25KeywordStore:
         self.tokenized_corpus = [
             tokenize_ru(c.get("embedding_text") or c["text"]) for c in chunks
         ]
+        self._is_built = True
+
+        if not self.tokenized_corpus:
+            self.bm25 = None
+            return
+
         self.bm25 = BM25Okapi(self.tokenized_corpus)
 
     def save(self):
@@ -36,6 +43,7 @@ class BM25KeywordStore:
     def load(self):
         with open(BM25_DIR / "bm25.pkl", "rb") as f:
             self.chunk_ids, self.tokenized_corpus, self.bm25 = pickle.load(f)
+        self._is_built = True
 
     def search(
         self,
@@ -43,8 +51,12 @@ class BM25KeywordStore:
         top_k: int = 40,
         allowed_chunk_ids: Optional[Set[str]] = None,
     ) -> List[Tuple[str, float]]:
-        if not self.bm25:
+        if self.bm25 is None:
+            if self._is_built:
+                return []
             self.load()
+            if self.bm25 is None:
+                return []
 
         tokens = tokenize_ru(query)
         if not tokens:
