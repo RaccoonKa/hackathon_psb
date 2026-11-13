@@ -124,9 +124,11 @@ def parse_dialog_transcript(
     return turns[-1]["content"], turns[:-1]
 
 
-def read_questions(data_dir: Path) -> List[Question]:
+def read_questions(data_dir: Path | str) -> List[Question]:
     """Читает questions.csv (UTF-8/BOM), сохраняя ID как строки и порядок."""
-    path = Path(data_dir) / "questions.csv"
+    path = Path(data_dir)
+    if path.is_dir():
+        path = path / "questions.csv"
     if not path.is_file():
         raise SubmissionError(f"Не найден файл вопросов: {path}")
 
@@ -482,24 +484,36 @@ def run(
     data_dir: Optional[Path | str] = None,
     questions: Optional[Sequence[Question]] = None,
     out_path: Optional[Path | str] = None,
+    input_file: Optional[Path | str] = None,
+    skip_index: Optional[bool] = None,
 ) -> List[AnswerRow]:
     """Полный прогон: входные данные, индексы, вопросы, submission.csv."""
     resolved_data_dir = _resolve_data_dir(data_dir)
 
     if questions is None:
-        questions = read_questions(resolved_data_dir)
+        target = input_file or resolved_data_dir
+        questions = read_questions(target)
     if not questions:
         raise SubmissionError(
             "questions.csv не содержит ни одного вопроса"
         )
 
-    prepare_inputs(resolved_data_dir)
-    summary = build_index.build_indexes()
-    logger.info(
-        "Индекс построен один раз: документов=%s, чанков=%s",
-        summary.get("documents"),
-        summary.get("chunks"),
+    should_skip = skip_index if skip_index is not None else (
+        not config.USE_SUBMIT and find_kb_archive(resolved_data_dir) is None
     )
+
+    if not should_skip:
+        prepare_inputs(resolved_data_dir)
+        summary = build_index.build_indexes()
+        logger.info(
+            "Индекс построен один раз: документов=%s, чанков=%s",
+            summary.get("documents"),
+            summary.get("chunks"),
+        )
+    else:
+        logger.info(
+            "Пропуск перестроения индекса: используются существующие индексы"
+        )
 
     rows = process_questions(questions, config.MAX_WORKERS)
 
@@ -509,7 +523,16 @@ def run(
     return rows
 
 
-def main() -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Автоматический сабмит RAG-ассистента")
+    parser.add_argument("--input", default=None, help="Путь к questions.csv или файлу с вопросами")
+    parser.add_argument("--output", default=None, help="Путь для сохранения submission.csv")
+    parser.add_argument("--data-dir", default=None, help="Каталог входных данных")
+    parser.add_argument("--skip-index", action="store_true", default=None, help="Пропустить построение индекса")
+    args = parser.parse_args(argv)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -517,7 +540,7 @@ def main() -> int:
     )
     started = time.perf_counter()
 
-    if not config.USE_SUBMIT:
+    if not config.USE_SUBMIT and not args.input:
         print(
             "[solution] Отказ запуска: solution.py работает в SUBMIT-режиме. "
             "Соберите артефакт командой `python build_submit.py`.",
@@ -525,7 +548,7 @@ def main() -> int:
         )
         return 2
 
-    out_path = Path.cwd() / config.SUBMISSION_FILENAME
+    out_path = Path(args.output) if args.output else Path.cwd() / config.SUBMISSION_FILENAME
     temp_path = out_path.with_name(out_path.name + ".tmp")
 
     try:
@@ -534,8 +557,15 @@ def main() -> int:
         if temp_path.exists():
             temp_path.unlink()
 
-        config.validate_submit_config()
-        rows = run(out_path=out_path)
+        if config.USE_SUBMIT:
+            config.validate_submit_config()
+
+        rows = run(
+            data_dir=args.data_dir,
+            out_path=out_path,
+            input_file=args.input,
+            skip_index=args.skip_index,
+        )
     except config.ConfigError as exc:
         print(f"[solution] Ошибка конфигурации: {exc}", file=sys.stderr)
         return 1
