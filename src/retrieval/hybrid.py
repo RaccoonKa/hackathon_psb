@@ -8,10 +8,12 @@ from src.config import PROCESSED_DATA_DIR
 from src.retrieval.keyword_store import BM25KeywordStore
 from src.retrieval.reranker import rerank_candidates
 from src.retrieval.vector_store import (
+    build_chroma_where_filter,
     expected_embedding_dimension,
     get_chroma_collection,
     get_collection_embedding_dimension,
     get_query_embedding,
+    query_chroma_collection,
     validate_query_embedding_dimension,
 )
 
@@ -278,17 +280,43 @@ def _dense_hits(
     allowed: Set[str],
     date_allowed: Set[str],
     stats: Dict[str, Any],
-    collect_diagnostics: bool,
+    collect_diagnostics: bool = False,
+    chunks_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    selected_doc_ids: Optional[Set[str]] = None,
+    event_date: Optional[str] = None,
 ) -> List[str]:
-    """Векторные кандидаты, отфильтрованные по датам/документам."""
+    """Векторные кандидаты с пре-фильтрацией Chroma where и проверкой по allowed."""
+    if not allowed:
+        stats["dense_candidates_count"] = 0
+        return []
+
     query_vector = get_query_embedding(query)
     collection = get_chroma_collection()
     validate_query_embedding_dimension(collection, query_vector)
 
-    chroma_res = collection.query(
-        query_embeddings=[query_vector],
+    use_where = bool(selected_doc_ids) or bool(event_date and str(event_date).strip())
+    where_filter: Optional[Dict[str, Any]] = None
+    if use_where and chunks_map:
+        allowed_doc_ids = [
+            chunks_map[cid]["document_id"]
+            for cid in allowed
+            if cid in chunks_map and chunks_map[cid].get("document_id")
+        ]
+        allowed_ver_ids = [
+            chunks_map[cid]["version_id"]
+            for cid in allowed
+            if cid in chunks_map and chunks_map[cid].get("version_id")
+        ]
+        where_filter = build_chroma_where_filter(
+            document_ids=allowed_doc_ids,
+            version_ids=allowed_ver_ids,
+        )
+
+    chroma_res = query_chroma_collection(
+        collection=collection,
+        query_vector=query_vector,
         n_results=top_k,
-        include=["documents", "metadatas"],
+        where=where_filter,
     )
 
     ids_outer = chroma_res.get("ids") or [[]]
@@ -413,6 +441,9 @@ def hybrid_search(
         date_allowed=date_allowed,
         stats=stats,
         collect_diagnostics=diagnostics is not None,
+        chunks_map=chunks_map,
+        selected_doc_ids=selected_doc_ids,
+        event_date=event_date,
     )
 
     # 3. Взвешенный RRF
@@ -505,6 +536,9 @@ def dense_search(
         date_allowed=date_allowed,
         stats=stats,
         collect_diagnostics=diagnostics is not None,
+        chunks_map=chunks_map,
+        selected_doc_ids=selected_doc_ids,
+        event_date=event_date,
     )
 
     rrf_scores: Dict[str, float] = {}

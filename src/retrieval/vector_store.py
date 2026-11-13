@@ -256,7 +256,75 @@ def get_chroma_collection():
         )
         return _chroma_collection
 
+def build_chroma_where_filter(
+    document_ids: Optional[List[str]] = None,
+    version_ids: Optional[List[str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Формирует metadata-фильтр ChromaDB по разрешённым document_id и version_id."""
+    clauses: List[Dict[str, Any]] = []
 
+    if document_ids:
+        unique_docs = sorted({str(d) for d in document_ids if d})
+        if len(unique_docs) == 1:
+            clauses.append({"document_id": unique_docs[0]})
+        elif len(unique_docs) > 1:
+            clauses.append({"document_id": {"$in": unique_docs}})
+
+    if version_ids:
+        unique_vers = sorted({str(v) for v in version_ids if v})
+        if len(unique_vers) == 1:
+            clauses.append({"version_id": unique_vers[0]})
+        elif len(unique_vers) > 1:
+            clauses.append({"version_id": {"$in": unique_vers}})
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
+def query_chroma_collection(
+    collection: Any,
+    query_vector: List[float],
+    n_results: int,
+    where: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Выполняет поиск в ChromaDB с пре-фильтрацией по метаданным where."""
+    total_count: Optional[int] = None
+    try:
+        total_count = int(collection.count())
+    except Exception:  # noqa: BLE001
+        total_count = None
+
+    effective_n = max(1, int(n_results))
+    if total_count is not None:
+        if total_count <= 0:
+            return {"ids": [[]], "documents": [[]], "metadatas": [[]]}
+        effective_n = min(effective_n, total_count)
+
+    query_kwargs: Dict[str, Any] = {
+        "query_embeddings": [query_vector],
+        "n_results": effective_n,
+        "include": ["documents", "metadatas"],
+    }
+    if where:
+        query_kwargs["where"] = where
+
+    try:
+        return collection.query(**query_kwargs)
+    except Exception as exc:  # noqa: BLE001
+        if where:
+            logger.warning(
+                "Chroma query с where=%s завершился ошибкой (%s), "
+                "выполняю запрос с пост-фильтрацией по allowed_chunk_ids",
+                where,
+                exc,
+            )
+            query_kwargs.pop("where", None)
+            return collection.query(**query_kwargs)
+        raise
+    
 def expected_embedding_dimension(provider: Optional[str] = None) -> Optional[int]:
     """Ожидаемая размерность векторов для текущего провайдера (или None)."""
     if EMBEDDING_DIMENSION:
