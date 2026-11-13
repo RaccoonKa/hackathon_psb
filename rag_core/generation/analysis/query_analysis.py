@@ -149,6 +149,14 @@ _ANAPHORA_BACKWARD_RE = re.compile(
     re.IGNORECASE,
 )
 
+_TRUE_ANAPHORA_PRONOUNS_RE = re.compile(
+    r"(?:\b(?:по\s+нему|по\s+ней|по\s+ним|к\s+нему|к\s+ней|к\s+ним|в\s+нем|в\s+ней|в\s+них|о\s+нем|о\s+ней|о\s+них|с\s+ним|с\s+ней|с\s+ними)\b"
+    r"|\b(?:этот|эта|это|эти|этого|этой|этому|этим|этом|этих|этими)\s+(?:договор|соглашен|пункт|акт|документ)\b"
+    r"|\b(?:тот|та|то|те|того|той|тому|тем|том|тех|теми)\s+(?:же\s+)?(?:договор|соглашен|пункт|акт|документ)\b"
+    r"|\b(?:ранее|предыдущ\w+|выше\w+|тогда|в\s+тот\s+момент|в\s+то\s+время)\b)",
+    re.IGNORECASE,
+)
+
 _EXPLICIT_LAW_OR_DOC_RE = re.compile(
     r"(?:\b(?:коап|гк|нк|тк|ук)\s+рф\b|\bфз\b|\bфедеральн\w+\s+закон\b|\bзакон\s+(?:рф|о\b)|договор\w*\s+(?:№|номер|[«\"А-Яа-я0-9\-\/])|приказ\w*\s+(?:№|номер))",
     re.IGNORECASE,
@@ -216,12 +224,13 @@ def is_independent_query(query: str) -> bool:
     q = query.strip()
     if not q:
         return False
+    # Если вопрос явно ссылается на закон или конкретный документ и не содержит анафор к прошлому:
+    if _EXPLICIT_LAW_OR_DOC_RE.search(q):
+        if not _TRUE_ANAPHORA_PRONOUNS_RE.search(q):
+            return True
     # Если есть явные анафоры (местоимения, неполные отсылки назад) — запрос зависим
     if _ANAPHORA_BACKWARD_RE.search(q):
         return False
-    # Если вопрос явно ссылается на закон или конкретный новый документ — он самостоятелен
-    if _EXPLICIT_LAW_OR_DOC_RE.search(q):
-        return True
     return False
 
 
