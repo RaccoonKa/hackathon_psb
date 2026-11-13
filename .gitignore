@@ -14,5 +14,4 @@ data/manifests/
 data/processed/
 run.log
 results.txt
-data/submit_test/
 .pytest_cache/
