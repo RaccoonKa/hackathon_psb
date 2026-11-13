@@ -1,12 +1,19 @@
+import datetime
+import json
+import os
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from rag_core.retrieval import hybrid as hybrid_mod
 from rag_core.retrieval.hybrid import (
+    _resolve_check_date,
+    clear_canonical_chunks_cache,
     detect_query_intent,
     load_canonical_chunks_map,
     resolve_allowed_versions_by_date,
 )
-from tests._common import make_chunk_dict
+from tests._common import make_bm25_stats, make_chunk_dict
 
 
 def test_detect_intent_exact_article():
@@ -201,8 +208,10 @@ def test_hybrid_search_returns_candidates():
         def query(self, **kwargs):
             return {"ids": [["c1"]], "documents": [["x"]], "metadatas": [[{}]]}
 
+    bm25_results = [("c1", 5.0), ("c2", 2.0)]
     with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
-         patch.object(hybrid_mod.bm25_store, "search", return_value=[("c1", 5.0), ("c2", 2.0)]), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats",
+                      return_value=(bm25_results, make_bm25_stats(bm25_results))), \
          patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
          patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()):
         results = hybrid_mod.hybrid_search(
@@ -230,14 +239,21 @@ def test_hybrid_search_respects_date_filter():
         def query(self, **kwargs):
             return {"ids": [["old", "new"]], "documents": [["", ""]], "metadatas": [[{}, {}]]}
 
-    def fake_bm25_search(query, top_k, allowed_chunk_ids=None):
+    def fake_bm25_search(
+        query, top_k, allowed_chunk_ids=None, date_allowed_chunk_ids=None,
+    ):
         results = [("old", 5.0), ("new", 3.0)]
         if allowed_chunk_ids is not None:
             results = [(cid, sc) for cid, sc in results if cid in allowed_chunk_ids]
-        return results[:top_k]
+        results = results[:top_k]
+        return results, make_bm25_stats(
+            results,
+            date_allowed=date_allowed_chunk_ids,
+            allowed=allowed_chunk_ids,
+        )
 
     with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
-         patch.object(hybrid_mod.bm25_store, "search", side_effect=fake_bm25_search), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats", side_effect=fake_bm25_search), \
          patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
          patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()):
         results = hybrid_mod.hybrid_search(
@@ -258,8 +274,10 @@ def test_hybrid_search_scores_in_range():
         def query(self, **kwargs):
             return {"ids": [["c1"]], "documents": [["x"]], "metadatas": [[{}]]}
 
+    bm25_results = [("c1", 5.0)]
     with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
-         patch.object(hybrid_mod.bm25_store, "search", return_value=[("c1", 5.0)]), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats",
+                      return_value=(bm25_results, make_bm25_stats(bm25_results))), \
          patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
          patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()):
         results = hybrid_mod.hybrid_search(
@@ -287,15 +305,53 @@ def test_hybrid_search_amendment_bonus():
         def query(self, **kwargs):
             return {"ids": [[]], "documents": [[]], "metadatas": [[]]}
 
+    bm25_results = [("base", 5.0), ("amend", 4.9)]
     with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
-         patch.object(hybrid_mod.bm25_store, "search", return_value=[("base", 5.0), ("amend", 4.9)]), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats",
+                      return_value=(bm25_results, make_bm25_stats(bm25_results))), \
          patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
          patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()):
         results = hybrid_mod.hybrid_search(
-            query="q", top_k=5, event_date="2025-01-01", rerank=False,
+            query="дополнительное соглашение к договору",
+            top_k=5, event_date="2025-01-01", rerank=False,
         )
 
+    # H-2C: boost допсоглашения обусловлен явной релевантностью запроса.
     assert results[0]["chunk_id"] == "amend"
+
+
+def test_hybrid_search_no_amendment_bonus_without_relevance():
+    fake_chunks = {
+        "amend": make_chunk_dict(
+            chunk_id="amend", document_id="amend_1",
+            amends_document_id="contract_x",
+            effective_from="2024-01-01",
+        ),
+        "base": make_chunk_dict(
+            chunk_id="base", document_id="contract_x",
+            effective_from="2024-01-01",
+        ),
+    }
+
+    class FakeCollection:
+        def query(self, **kwargs):
+            return {"ids": [[]], "documents": [[]], "metadatas": [[]]}
+
+    bm25_results = [("base", 5.0), ("amend", 4.9)]
+    with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats",
+                      return_value=(bm25_results, make_bm25_stats(bm25_results))), \
+         patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
+         patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()):
+        results = hybrid_mod.hybrid_search(
+            query="какая претензия к поставщику по качеству товара",
+            top_k=5, event_date="2025-01-01", rerank=False,
+        )
+
+    # Ложное повышение недопустимо: допсоглашение не обгоняет базовый договор
+    # только из-за связи с выбранным документом.
+    assert results[0]["chunk_id"] == "base"
+    assert results[1]["chunk_id"] == "amend"
 
 
 def test_hybrid_search_with_rerank_calls_reranker():
@@ -305,8 +361,10 @@ def test_hybrid_search_with_rerank_calls_reranker():
         def query(self, **kwargs):
             return {"ids": [["c1"]], "documents": [["x"]], "metadatas": [[{}]]}
 
+    bm25_results = [("c1", 5.0)]
     with patch.object(hybrid_mod, "load_canonical_chunks_map", return_value=fake_chunks), \
-         patch.object(hybrid_mod.bm25_store, "search", return_value=[("c1", 5.0)]), \
+         patch.object(hybrid_mod.bm25_store, "search_with_stats",
+                      return_value=(bm25_results, make_bm25_stats(bm25_results))), \
          patch.object(hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024), \
          patch.object(hybrid_mod, "get_chroma_collection", return_value=FakeCollection()), \
          patch.object(hybrid_mod, "rerank_candidates",
@@ -317,3 +375,132 @@ def test_hybrid_search_with_rerank_calls_reranker():
 
     mock_rr.assert_called_once()
     assert results[0]["score"] == 0.99
+
+
+# --- C-4A: извлечение года из запроса --------------------------------------
+
+
+def test_contract_number_year_is_not_check_date():
+    today = datetime.date.today().isoformat()
+    assert _resolve_check_date(None, "Договор № А-08/2024") == today
+    assert _resolve_check_date(None, "Договор № П-17/2024") == today
+    assert _resolve_check_date(None, "Договор № ПТ-05/2023") == today
+
+
+def test_explicit_year_words_are_supported():
+    assert _resolve_check_date(None, "Договор заключён в 2024 году") == "2024-06-01"
+    assert _resolve_check_date(None, "2024 г.") == "2024-06-01"
+    assert _resolve_check_date(None, "2024 год") == "2024-06-01"
+
+
+def test_full_date_year_is_supported():
+    assert _resolve_check_date(None, "Редакция от 15.08.2024") == "2024-06-01"
+
+
+def test_event_date_has_priority_over_contract_number():
+    assert (
+        _resolve_check_date("2023-01-15", "Договор № А-08/2024")
+        == "2023-01-15"
+    )
+
+
+def test_amendment_not_cut_when_query_has_contract_number():
+    # Раньше год 2024 из номера П-17/2024 давал 2024-06-01 и отсекал
+    # допсоглашение с effective_from=2024-09-03.
+    allowed = resolve_allowed_versions_by_date(
+        None, _build_date_map(), query="Договор № П-17/2024"
+    )
+    assert "c_amend" in allowed
+
+
+# --- C-4B: кэш chunks.jsonl ------------------------------------------------
+
+
+def _write_chunks(path, chunk):
+    path.write_text(json.dumps(chunk) + "\n", encoding="utf-8")
+
+
+def test_load_canonical_chunks_map_reads_file_once():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp_path = Path(tmp_name)
+        try:
+            path = tmp_path / "chunks.jsonl"
+            _write_chunks(path, make_chunk_dict(chunk_id="c1"))
+            clear_canonical_chunks_cache()
+
+            with patch.object(hybrid_mod, "PROCESSED_DATA_DIR", tmp_path), \
+                 patch("builtins.open", wraps=open) as mock_open:
+                first = load_canonical_chunks_map()
+                second = load_canonical_chunks_map()
+
+            assert mock_open.call_count == 1
+            assert first == second
+            assert "c1" in first
+        finally:
+            clear_canonical_chunks_cache()
+
+
+def test_cache_invalidated_when_file_changes():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp_path = Path(tmp_name)
+        try:
+            path = tmp_path / "chunks.jsonl"
+            _write_chunks(path, make_chunk_dict(chunk_id="c1"))
+            clear_canonical_chunks_cache()
+
+            with patch.object(hybrid_mod, "PROCESSED_DATA_DIR", tmp_path):
+                assert "c1" in load_canonical_chunks_map()
+
+                # Тот же размер, но другой chunk_id; меняем mtime принудительно.
+                _write_chunks(path, make_chunk_dict(chunk_id="c2"))
+                stat = path.stat()
+                os.utime(
+                    path,
+                    ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000),
+                )
+
+                updated = load_canonical_chunks_map()
+
+            assert "c2" in updated
+            assert "c1" not in updated
+        finally:
+            clear_canonical_chunks_cache()
+
+
+def test_returned_map_is_a_safe_copy():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp_path = Path(tmp_name)
+        try:
+            path = tmp_path / "chunks.jsonl"
+            _write_chunks(path, make_chunk_dict(chunk_id="c1", text="исходный"))
+            clear_canonical_chunks_cache()
+
+            with patch.object(hybrid_mod, "PROCESSED_DATA_DIR", tmp_path):
+                first = load_canonical_chunks_map()
+                first["c1"]["text"] = "испорчено"
+                first["c1"]["structure"]["path"].append("испорчено")
+                second = load_canonical_chunks_map()
+
+            assert second["c1"]["text"] == "исходный"
+            assert second["c1"]["structure"]["path"] == ["Раздел 1"]
+        finally:
+            clear_canonical_chunks_cache()
+
+
+def test_clear_cache_forces_reread():
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp_path = Path(tmp_name)
+        try:
+            path = tmp_path / "chunks.jsonl"
+            _write_chunks(path, make_chunk_dict(chunk_id="c1"))
+            clear_canonical_chunks_cache()
+
+            with patch.object(hybrid_mod, "PROCESSED_DATA_DIR", tmp_path), \
+                 patch("builtins.open", wraps=open) as mock_open:
+                load_canonical_chunks_map()
+                clear_canonical_chunks_cache()
+                load_canonical_chunks_map()
+
+            assert mock_open.call_count == 2
+        finally:
+            clear_canonical_chunks_cache()

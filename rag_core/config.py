@@ -389,11 +389,21 @@ RETRIEVAL_MAX_WORKERS: int = min(
     ),
     8,
 )
-# Общий (не per-task) дедлайн ожидания задач батча.
+# Per-task бюджет выполнения (считается от фактического старта задачи, а не
+# от момента постановки всего батча в пул). Не увеличивает батч-дедлайн
+# искусственно: общий дедлайн батча = максимум per-task дедлайнов.
 RETRIEVAL_TASK_TIMEOUT_S: float = _env_float(
     "RETRIEVAL_TASK_TIMEOUT_S", RETRIEVAL_TIMEOUT_S
 )
-# Ограниченное время ожидания завершения потоков после shutdown.
+# Per-task бюджет ожидания в очереди пула (считается от постановки задачи).
+# По умолчанию равен per-task бюджету выполнения: после warm-up очередь на
+# 4 воркерах практически мгновенная, поэтому отдельного «запаса» не нужно и
+# проблема тайм-аутов не маскируется.
+RETRIEVAL_QUEUE_TIMEOUT_S: float = _env_float(
+    "RETRIEVAL_QUEUE_TIMEOUT_S", RETRIEVAL_TASK_TIMEOUT_S
+)
+# Ограниченное время ожидания завершения потоков после shutdown (и перед
+# созданием нового пула для следующего батча).
 RETRIEVAL_SHUTDOWN_GRACE_S: float = _env_float(
     "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0
 )

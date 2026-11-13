@@ -13,6 +13,7 @@ from rag_core.indexing.chunker import (
     save_canonical_chunks,
 )
 from rag_core.indexing.parser import load_documents_with_metadata
+from rag_core.retrieval.hybrid import clear_canonical_chunks_cache
 from rag_core.retrieval.keyword_store import BM25KeywordStore
 from rag_core.retrieval.vector_store import save_embeddings_to_chroma
 
@@ -51,6 +52,8 @@ def build_indexes() -> dict:
         )
 
     save_canonical_chunks(all_chunks)
+    # Кэш карты чанков не должен возвращать данные прошлой сборки.
+    clear_canonical_chunks_cache()
     print(f"Сформировано {len(all_chunks)} чанков в chunks.jsonl")
 
     print("3. Построение BM25 индекса...")

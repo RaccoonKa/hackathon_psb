@@ -188,6 +188,12 @@ def build_retrieval_error_result(
             "attempt": item.get("attempt"),
             "status": item.get("status", "error"),
             "error_type": item.get("error_type"),
+            "error_message": (
+                str(item.get("error_message"))[:300]
+                if item.get("error_message")
+                else None
+            ),
+            "technical": item.get("technical"),
         }
         for item in (attempts or [])[:10]
     ]
@@ -200,11 +206,13 @@ def build_retrieval_error_result(
         input={
             "query": query,
             "reason": "retrieval_error",
+            "technical_retrieval_failure": True,
             "attempts": attempt_summaries,
         },
         output={
             "refused": True,
             "refusal_kind": "retrieval_error",
+            "technical_retrieval_failure": True,
             "error_types": safe_types,
             "answer_length": len(RESPONSE_RETRIEVAL_ERROR),
         },

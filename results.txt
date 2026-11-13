@@ -8,21 +8,20 @@ RAG ASSISTANT TEST RESULTS
 ======================================================================
 ЗАПРОС 1/1
 ======================================================================
-ВОПРОС: Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?
+ВОПРОС: Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?
 
 ОТВЕТ:
-Предпосылка неверна: по договору аренды № А-08/2024 арендная плата составляет не 500 000, а 450 000 (четыреста пятьдесят тысяч) рублей в месяц, включая НДС <source>S1</source>. Текст договора не содержит обоснования (причины) установленного размера арендной платы — пункт 3.1 лишь фиксирует сумму <source>S1</source>. Арендодателем по договору является ООО «Северный Склад» (ИНН 5047112233) <source>S2</source>.
+Да. В августе 2024 года действовала редакция Регламента от 10.01.2023 (действует с 10.01.2023 по 01.03.2025) <source>S1</source>, пункт 2.4 которой устанавливает, что договоры на сумму свыше 10 000 000 рублей подлежат одобрению генеральным директором до подписания <source>S1</source>. Поскольку 12 млн рублей превышают порог 10 млн, одобрение генерального директора требовалось. Новая редакция с порогом 15 000 000 рублей действует лишь с 01.03.2025 <source>S2</source> и к августу 2024 года не применяется. При этом сумма 12 000 000 рублей не подтверждается текстом найденных документов.
 
 ИСТОЧНИКИ:
-  [S1] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения -> 3. Арендная плата -> Пункт 3.1 | score=0.8959788084030151 | chunk=contract_а-08-2024_v1_0009_65851a01
-  [S2] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения | score=0.7979148030281067 | chunk=contract_а-08-2024_v1_0000_523355cb
-  [S4] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения -> 3. Арендная плата -> Пункт 3.2 | score=0.40334418416023254 | chunk=contract_а-08-2024_v1_0010_3b16c866
+  [S1] РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). | Полный текст документа | score=0.9909713268280029 | chunk=doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667
+  [S2] РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН» | Введение / Общие положения -> 2. Порядок согласования -> Пункт 2.4 | score=0.990648090839386 | chunk=doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e
 
 ИНТЕНТ: semantic
 ОТКАЗ: False | Причина: None
 УВЕРЕННОСТЬ: medium
 ДЕГРАДАЦИИ: ['retrieval_partial_failure']
-ДОПУЩЕНИЯ: ['Под «почему» понимается запрос на объяснение порядка формирования/обоснования размера арендной платы, установленного договором', 'интерпретация: в предоставленных источниках отсутствует пункт, объясняющий причины или порядок определения размера арендной платы, поэтому мотивы установления суммы 450 000 рублей в контексте не раскрыты.']
+ДОПУЩЕНИЯ: ['Не указан конкретный внутренний регламент или устав, регулирующий порядок одобрения сделок.', 'интерпретация: порог 10 000 000 рублей из редакции, действовавшей в августе 2024 года, сопоставлен с указанной пользователем суммой 12 000 000 рублей, что даёт вывод о необходимости одобрения генерального директора.']
 ИСПОЛЬЗОВАНА ИСТОРИЯ: False
 
 ПОЛНЫЙ ТРЕЙС:
@@ -30,14 +29,14 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "prefilter",
     "input": {
-      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?"
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?"
     },
     "output": {
       "triggered": false,
       "template_key": null,
       "reason": null
     },
-    "latency_ms": 0.026,
+    "latency_ms": 0.807,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -50,43 +49,35 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "query_analysis",
     "input": {
-      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
       "event_date": null,
       "attempts": 1
     },
     "output": {
       "intent": "semantic",
-      "task_type": "explain",
+      "task_type": "premise_check",
       "required_slots": [
-        "rent_amount"
+        "approval_process"
       ],
-      "decomposition_count": 1,
-      "premises_count": 1,
+      "decomposition_count": 0,
+      "premises_count": 2,
       "rewritten_bm25": [
-        "договор аренды ООО «Северный Склад» арендная плата размер",
-        "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения"
+        "одобрение генерального директора договор 12 млн рублей август 2024",
+        "порядок одобрения генеральным директором сделки на сумму 12 млн рублей"
       ],
       "rewritten_dense": [
-        "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
-        "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?"
+        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
+        "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?"
       ],
       "event_date": null,
       "degradation_reason": null,
-      "entities": [
-        {
-          "raw": "ООО «Северный Склад»",
-          "document_id": "contract_а-08-2024",
-          "resolved": true
-        }
-      ],
-      "entities_raw": [
-        "ООО «Северный Склад»"
-      ]
+      "entities": [],
+      "entities_raw": []
     },
-    "latency_ms": 6457.138,
+    "latency_ms": 12976.962,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 1381,
-    "completion_tokens": 592,
+    "prompt_tokens": 1382,
+    "completion_tokens": 1677,
     "extra": {},
     "stage_idx": 1,
     "failures_global": 0,
@@ -98,42 +89,40 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "intent": "semantic",
       "required_slots": [
-        "rent_amount"
+        "approval_process"
       ],
       "event_date": null
     },
     "output": {
-      "tasks_count": 5,
+      "tasks_count": 4,
       "tasks": [
         {
           "task_id": "task_0",
-          "query": "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
-          "mode": "dense",
-          "purpose": "semantic_dense"
+          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query"
         },
         {
           "task_id": "task_1",
-          "query": "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
-          "mode": "dense",
-          "purpose": "semantic_dense"
+          "query": "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query"
         },
         {
           "task_id": "task_2",
-          "query": "договор аренды ООО «Северный Склад» арендная плата размер",
-          "mode": "bm25",
-          "purpose": "semantic_bm25"
+          "query": "одобрение генерального директора договор 12 млн рублей август 2024",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query"
         },
         {
           "task_id": "task_3",
-          "query": "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
-          "mode": "bm25",
-          "purpose": "semantic_bm25"
-        },
-        {
-          "task_id": "task_4",
-          "query": "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?",
-          "mode": "dense",
-          "purpose": "subquestion:rent_amount"
+          "query": "порядок одобрения генеральным директором сделки на сумму 12 млн рублей",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query"
         }
       ],
       "limits": {
@@ -143,9 +132,9 @@ RAG ASSISTANT TEST RESULTS
         "task_timeout_s": 20.0,
         "max_followup_cycles": 1
       },
-      "document_type": "rental"
+      "document_type": "unknown"
     },
-    "latency_ms": 0.034,
+    "latency_ms": 0.098,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -158,63 +147,79 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "rag_retrieval",
     "input": {
-      "tasks_count": 5,
+      "tasks_count": 4,
       "queries": [
-        "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
-        "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
-        "договор аренды ООО «Северный Склад» арендная плата размер",
-        "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
-        "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?"
+        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
+        "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
+        "одобрение генерального директора договор 12 млн рублей август 2024",
+        "порядок одобрения генеральным директором сделки на сумму 12 млн рублей"
       ],
       "modes": [
-        "dense",
-        "dense",
-        "bm25",
-        "bm25",
-        "dense"
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query",
+        "semantic_query",
+        "semantic_query",
+        "semantic_query"
       ],
       "attempt": 1
     },
     "output": {
       "chunk_ids": [
+        "contract_п-17-2024_v1_0000_e32d7419",
+        "amend_1_п-17-2024_v1_0000_57fd0d01",
+        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_пт-05-2023_v1_0000_54dc4895",
+        "contract_п-17-2024_v1_0033_17b00617",
         "contract_а-08-2024_v1_0000_523355cb",
-        "contract_а-08-2024_v1_0009_65851a01",
-        "contract_а-08-2024_v1_0008_186eede1",
-        "contract_а-08-2024_v1_0024_9925845c",
-        "contract_а-08-2024_v1_0012_5805988f",
-        "contract_а-08-2024_v1_0002_9b80b7a9",
-        "contract_а-08-2024_v1_0010_3b16c866",
-        "contract_а-08-2024_v1_0003_e9db3073",
-        "contract_а-08-2024_v1_0013_afbcb322",
-        "contract_а-08-2024_v1_0011_2b472ccd"
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0000_6ca2e09c",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
+        "contract_пт-05-2023_v1_0024_2d0e634a"
       ],
       "scores": [
-        0.012975,
-        0.012975,
-        0.012975,
-        0.01279,
-        0.01279,
-        0.012437,
-        0.012437,
-        0.012269,
-        0.012106,
-        0.011794
+        0.032787,
+        0.032258,
+        0.031258,
+        0.031258,
+        0.029644,
+        0.015625,
+        0.015625,
+        0.015152,
+        0.014925,
+        0.014925
       ],
       "count": 10,
       "degraded": true,
       "executor": {
-        "submitted": 5,
-        "completed": 4,
+        "submitted": 4,
+        "started": 4,
+        "completed": 2,
         "failed": 0,
+        "queued": 0,
         "cancelled": 0,
-        "timed_out": 1
+        "timed_out": 2,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 2,
+        "batch_duration_ms": 22037
       },
       "status": "partial",
       "failed_tasks": [
         {
-          "task_id": "task_4",
-          "mode": "dense",
-          "purpose": "subquestion:rent_amount",
+          "task_id": "task_1",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "status": "timeout",
+          "error_type": "TimeoutError"
+        },
+        {
+          "task_id": "task_3",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
           "status": "timeout",
           "error_type": "TimeoutError"
         }
@@ -222,29 +227,31 @@ RAG ASSISTANT TEST RESULTS
       "errors": [
         {
           "type": "TimeoutError",
-          "message": "Задача не завершилась за 20.0 с"
+          "message": "Задача не завершилась за 20.0 с от старта"
+        },
+        {
+          "type": "TimeoutError",
+          "message": "Задача не завершилась за 20.0 с от старта"
         }
       ],
       "tasks": [
         {
           "task_id": "task_0",
-          "mode": "dense",
-          "purpose": "semantic_dense",
-          "query": "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
           "status": "ok",
-          "duration_ms": 18788,
+          "duration_ms": 16482,
           "error_type": null,
           "error_message": null,
           "search": {
-            "selected_doc_ids": [
-              "contract_а-08-2024"
-            ],
-            "allowed_chunk_ids_count": 25,
-            "bm25_candidates_count": 0,
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 282,
+            "bm25_candidates_count": 20,
             "dense_candidates_count": 40,
-            "candidates_before_filters": 40,
-            "candidates_after_date_filter": 27,
-            "candidates_after_document_filter": 25,
+            "candidates_before_filters": 449,
+            "candidates_after_date_filter": 278,
+            "candidates_after_document_filter": 278,
             "final_chunks_count": 10,
             "validity_unknown_count": 0
           },
@@ -259,23 +266,50 @@ RAG ASSISTANT TEST RESULTS
         },
         {
           "task_id": "task_1",
-          "mode": "dense",
-          "purpose": "semantic_dense",
-          "query": "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
+          "status": "timeout",
+          "duration_ms": 20026,
+          "error_type": "TimeoutError",
+          "error_message": "Задача не завершилась за 20.0 с от старта",
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": null,
+            "bm25_candidates_count": null,
+            "dense_candidates_count": null,
+            "candidates_before_filters": null,
+            "candidates_after_date_filter": null,
+            "candidates_after_document_filter": null,
+            "final_chunks_count": null,
+            "validity_unknown_count": null
+          },
+          "embeddings": {
+            "provider": "unknown",
+            "model": null,
+            "dimension": null,
+            "success": null,
+            "fallback_used": null,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_2",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "одобрение генерального директора договор 12 млн рублей август 2024",
           "status": "ok",
-          "duration_ms": 9064,
+          "duration_ms": 8178,
           "error_type": null,
           "error_message": null,
           "search": {
-            "selected_doc_ids": [
-              "contract_а-08-2024"
-            ],
-            "allowed_chunk_ids_count": 25,
-            "bm25_candidates_count": 0,
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 211,
+            "bm25_candidates_count": 20,
             "dense_candidates_count": 40,
-            "candidates_before_filters": 40,
-            "candidates_after_date_filter": 27,
-            "candidates_after_document_filter": 24,
+            "candidates_before_filters": 254,
+            "candidates_after_date_filter": 181,
+            "candidates_after_document_filter": 181,
             "final_chunks_count": 10,
             "validity_unknown_count": 0
           },
@@ -289,114 +323,71 @@ RAG ASSISTANT TEST RESULTS
           }
         },
         {
-          "task_id": "task_2",
-          "mode": "bm25",
-          "purpose": "semantic_bm25",
-          "query": "договор аренды ООО «Северный Склад» арендная плата размер",
-          "status": "ok",
-          "duration_ms": 181,
-          "error_type": null,
-          "error_message": null,
-          "search": {
-            "selected_doc_ids": [
-              "contract_а-08-2024"
-            ],
-            "allowed_chunk_ids_count": 25,
-            "bm25_candidates_count": 25,
-            "dense_candidates_count": 0,
-            "candidates_before_filters": 137,
-            "candidates_after_date_filter": 117,
-            "candidates_after_document_filter": 25,
-            "final_chunks_count": 10,
-            "validity_unknown_count": 0
-          },
-          "embeddings": {
-            "provider": "none",
-            "model": null,
-            "dimension": null,
-            "success": true,
-            "fallback_used": false,
-            "error_type": null
-          }
-        },
-        {
           "task_id": "task_3",
-          "mode": "bm25",
-          "purpose": "semantic_bm25",
-          "query": "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
-          "status": "ok",
-          "duration_ms": 179,
-          "error_type": null,
-          "error_message": null,
-          "search": {
-            "selected_doc_ids": [
-              "contract_а-08-2024"
-            ],
-            "allowed_chunk_ids_count": 25,
-            "bm25_candidates_count": 14,
-            "dense_candidates_count": 0,
-            "candidates_before_filters": 236,
-            "candidates_after_date_filter": 100,
-            "candidates_after_document_filter": 10,
-            "final_chunks_count": 10,
-            "validity_unknown_count": 0
-          },
-          "embeddings": {
-            "provider": "none",
-            "model": null,
-            "dimension": null,
-            "success": true,
-            "fallback_used": false,
-            "error_type": null
-          }
-        },
-        {
-          "task_id": "task_4",
-          "mode": "dense",
-          "purpose": "subquestion:rent_amount",
-          "query": "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "порядок одобрения генеральным директором сделки на сумму 12 млн рублей",
           "status": "timeout",
-          "duration_ms": 20005,
+          "duration_ms": 20031,
           "error_type": "TimeoutError",
-          "error_message": "Задача не завершилась за 20.0 с",
+          "error_message": "Задача не завершилась за 20.0 с от старта",
           "search": {
             "selected_doc_ids": null,
-            "allowed_chunk_ids_count": 0,
-            "bm25_candidates_count": 0,
-            "dense_candidates_count": 0,
-            "candidates_before_filters": 0,
-            "candidates_after_date_filter": 0,
-            "candidates_after_document_filter": 0,
-            "final_chunks_count": 0,
-            "validity_unknown_count": 0
+            "allowed_chunk_ids_count": null,
+            "bm25_candidates_count": null,
+            "dense_candidates_count": null,
+            "candidates_before_filters": null,
+            "candidates_after_date_filter": null,
+            "candidates_after_document_filter": null,
+            "final_chunks_count": null,
+            "validity_unknown_count": null
           },
           "embeddings": {
-            "provider": "none",
+            "provider": "unknown",
             "model": null,
             "dimension": null,
-            "success": true,
-            "fallback_used": false,
+            "success": null,
+            "fallback_used": null,
             "error_type": null
           }
         }
-      ]
+      ],
+      "degradation_reason": "retrieval_partial_failure",
+      "technical_retrieval_failure": true
     },
-    "latency_ms": 27617.822,
+    "latency_ms": 22037.592,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {
       "executor": {
-        "submitted": 5,
-        "completed": 4,
+        "submitted": 4,
+        "started": 4,
+        "completed": 2,
         "failed": 0,
+        "queued": 0,
         "cancelled": 0,
-        "timed_out": 1
+        "timed_out": 2,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 2,
+        "batch_duration_ms": 22037
       },
-      "errors_count": 1,
+      "errors_count": 2,
       "degraded": true,
+      "aggregation": "sum_rrf",
+      "rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 9218
+      },
       "attempt": 1,
-      "status": "partial"
+      "status": "partial",
+      "technical_retrieval_failure": true
     },
     "stage_idx": 3,
     "failures_global": 0,
@@ -406,43 +397,43 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "reranking",
     "input": {
-      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
       "top_n": 5,
       "input_chunk_ids": [
+        "contract_п-17-2024_v1_0000_e32d7419",
+        "amend_1_п-17-2024_v1_0000_57fd0d01",
+        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_пт-05-2023_v1_0000_54dc4895",
+        "contract_п-17-2024_v1_0033_17b00617",
         "contract_а-08-2024_v1_0000_523355cb",
-        "contract_а-08-2024_v1_0009_65851a01",
-        "contract_а-08-2024_v1_0008_186eede1",
-        "contract_а-08-2024_v1_0024_9925845c",
-        "contract_а-08-2024_v1_0012_5805988f",
-        "contract_а-08-2024_v1_0002_9b80b7a9",
-        "contract_а-08-2024_v1_0010_3b16c866",
-        "contract_а-08-2024_v1_0003_e9db3073",
-        "contract_а-08-2024_v1_0013_afbcb322",
-        "contract_а-08-2024_v1_0011_2b472ccd"
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0000_6ca2e09c",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
+        "contract_пт-05-2023_v1_0024_2d0e634a"
       ],
       "mode": "real"
     },
     "output": {
       "chunk_ids": [
-        "contract_а-08-2024_v1_0009_65851a01",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
         "contract_а-08-2024_v1_0000_523355cb",
-        "contract_а-08-2024_v1_0008_186eede1",
-        "contract_а-08-2024_v1_0010_3b16c866",
-        "contract_а-08-2024_v1_0024_9925845c"
+        "contract_п-17-2024_v1_0000_e32d7419",
+        "contract_п-17-2024_v1_0006_786850ed"
       ],
       "scores": [
-        0.8959788084030151,
-        0.7979148030281067,
-        0.4547317922115326,
-        0.40334418416023254,
-        0.40153560042381287
+        0.9909713268280029,
+        0.990648090839386,
+        0.845736026763916,
+        0.6693211793899536,
+        0.38836514949798584
       ],
       "count": 5,
       "before_count": 10,
       "after_count": 5,
       "top_n": 5
     },
-    "latency_ms": 22374.17,
+    "latency_ms": 36685.113,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -456,9 +447,9 @@ RAG ASSISTANT TEST RESULTS
     "step": "assess_evidence",
     "input": {
       "chunks_count": 5,
-      "viable_chunks_count": 4,
+      "viable_chunks_count": 5,
       "required_slots": [
-        "rent_amount"
+        "approval_process"
       ],
       "event_date": null
     },
@@ -466,24 +457,24 @@ RAG ASSISTANT TEST RESULTS
       "sufficiency": "sufficient",
       "reason": "all_required_slots_covered",
       "required_slots": [
-        "rent_amount"
+        "approval_process"
       ],
       "covered_slots": [
-        "rent_amount"
+        "approval_process"
       ],
       "uncovered_slots": [],
       "missing_slots": [],
       "core_slot_covered": true,
       "min_viable_score": 0.005,
-      "checked_chunks_count": 4,
+      "checked_chunks_count": 5,
       "slot_match_counts": {
-        "rent_amount": 1
+        "approval_process": 4
       },
       "retrieval_fallback": false,
       "contradictions_count": 0,
       "version_issues_count": 0
     },
-    "latency_ms": 0.52,
+    "latency_ms": 2.325,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -496,19 +487,19 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "policy_precheck",
     "input": {
-      "premises_count": 1,
+      "premises_count": 2,
       "chunks_count": 5,
       "sufficiency": "sufficient"
     },
     "output": {
       "premise_mismatch": true,
       "premise_details": [
-        "Предпосылка пользователя 'По договору с ООО «Северный Склад» арендная плата составляет 500 000 рублей в месяц' (значение '500000') не подтверждается текстом найденных документов."
+        "Предпосылка пользователя 'Договор на 12 млн рублей' (значение '12000000') не подтверждается текстом найденных документов."
       ],
       "injection_flagged": false,
       "refusal_forbidden": true
     },
-    "latency_ms": 0.775,
+    "latency_ms": 1.439,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -522,11 +513,11 @@ RAG ASSISTANT TEST RESULTS
     "step": "context_assembly",
     "input": {
       "chunk_ids": [
-        "contract_а-08-2024_v1_0009_65851a01",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
         "contract_а-08-2024_v1_0000_523355cb",
-        "contract_а-08-2024_v1_0008_186eede1",
-        "contract_а-08-2024_v1_0010_3b16c866",
-        "contract_а-08-2024_v1_0024_9925845c"
+        "contract_п-17-2024_v1_0000_e32d7419",
+        "contract_п-17-2024_v1_0006_786850ed"
       ]
     },
     "output": {
@@ -537,9 +528,9 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "context_length": 1883
+      "context_length": 3449
     },
-    "latency_ms": 0.093,
+    "latency_ms": 0.395,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -552,21 +543,21 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "generation",
     "input": {
-      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
-      "context_length": 1883,
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
+      "context_length": 3449,
       "attempts": 1
     },
     "output": {
-      "answer_length": 411,
+      "answer_length": 589,
       "claims_count": 3,
       "assumptions_count": 2,
       "missing_info_count": 0,
       "refusal_reason": null
     },
-    "latency_ms": 14757.546,
+    "latency_ms": 7638.973,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 1820,
-    "completion_tokens": 677,
+    "prompt_tokens": 2309,
+    "completion_tokens": 1000,
     "extra": {},
     "stage_idx": 6,
     "failures_global": 0,
@@ -581,23 +572,71 @@ RAG ASSISTANT TEST RESULTS
       "non_core_claims_count": 2
     },
     "output": {
-      "final_verdict": "accept",
+      "final_verdict": "regenerate",
       "supported_locked": [
-        0,
         1,
         2
       ],
       "citation_errors_count": 0,
       "injection_signals_count": 0
     },
-    "latency_ms": 6396.875,
+    "latency_ms": 5015.914,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 1288,
-    "completion_tokens": 386,
+    "prompt_tokens": 1869,
+    "completion_tokens": 636,
     "extra": {},
     "stage_idx": 7,
     "failures_global": 0,
     "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "regenerate_draft",
+    "input": {
+      "supported_locked": [
+        1,
+        2
+      ],
+      "failed_claims_count": 1
+    },
+    "output": {
+      "claims_count": 2,
+      "answer_length": 589
+    },
+    "latency_ms": 13561.876,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 1,
+    "failures_step": 1,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 2,
+      "core_claims_count": 1,
+      "non_core_claims_count": 1
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        1,
+        2
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0
+    },
+    "latency_ms": 3880.926,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 2,
+    "failures_step": 1,
     "degradation": null
   },
   {
@@ -611,15 +650,14 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "answer_length": 411
+      "answer_length": 589
     },
     "output": {
       "refused": false,
-      "sources_count": 3,
+      "sources_count": 2,
       "cited_source_ids": [
         "S1",
-        "S2",
-        "S4"
+        "S2"
       ],
       "confidence": "medium",
       "confidence_reasons": [
@@ -633,20 +671,20 @@ RAG ASSISTANT TEST RESULTS
         "attempts_ok": 0,
         "attempts_partial": 1,
         "attempts_error": 0,
-        "tasks_submitted": 5,
-        "tasks_completed": 4,
+        "tasks_submitted": 4,
+        "tasks_completed": 2,
         "tasks_failed": 0,
         "tasks_cancelled": 0,
-        "tasks_timed_out": 1
+        "tasks_timed_out": 2
       }
     },
-    "latency_ms": 0.317,
+    "latency_ms": 2.585,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {},
     "stage_idx": 8,
-    "failures_global": 0,
+    "failures_global": 2,
     "failures_step": 0,
     "degradation": null
   }

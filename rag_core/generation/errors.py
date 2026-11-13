@@ -27,4 +27,16 @@ class RetrievalTimeoutError(RetrievalError):
 
 
 class RetrievalAPIError(RetrievalError):
+<<<<<<< HEAD
     pass
+=======
+    pass
+
+
+class RetrievalBusyError(RetrievalError):
+    """Предыдущий батч retrieval всё ещё удерживает потоки пула.
+
+    Контролируемая техническая ошибка: новый пул не создаётся, пока живые
+    потоки предыдущего батча могут держать ``_LOCAL_INFERENCE_LOCK``.
+    """
+>>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)

@@ -141,6 +141,9 @@ class RetrievalTask:
     boost_doc_ids: set[str] | None
     event_date: str | None
     top_k: int
+    # H-2A: явный hybrid-intent задачи. ``None`` сохраняет обратную
+    # совместимость — мост тогда выводит intent из ``mode``.
+    intent: str | None = None
 
 
 @dataclass

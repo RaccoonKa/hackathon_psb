@@ -56,33 +56,95 @@ class BM25KeywordStore:
                     self.load()
         return list(self.chunk_ids)
 
+
+    def _search_with_stats_impl(
+        self,
+        query: str,
+        top_k: int,
+        allowed_chunk_ids: Optional[Set[str]],
+        date_allowed_chunk_ids: Optional[Set[str]],
+    ) -> Tuple[List[Tuple[str, float]], Dict[str, int]]:
+        """Общая реализация поиска: один ``get_scores`` и один проход.
+
+        Возвращает результаты (после фильтра по ``allowed_chunk_ids``) и
+        диагностические счётчики, сохраняющие прежний смысл:
+        кандидаты до фильтрации, после фильтра по датам, после фильтра по
+        документам и фактическое число возвращённых результатов.
+        """
+        stats: Dict[str, int] = {
+            "candidates_before_filters": 0,
+            "candidates_after_date_filter": 0,
+            "candidates_after_document_filter": 0,
+            "returned_count": 0,
+        }
+
+        if self.bm25 is None:
+            if self._is_built:
+                return [], stats
+            with self._load_lock:
+                if self.bm25 is None and not self._is_built:
+                    self.load()
+            if self.bm25 is None:
+                return [], stats
+
+        tokens = tokenize_ru(query)
+        if not tokens:
+            return [], stats
+
+        scores = self.bm25.get_scores(tokens)
+
+        candidates_before = 0
+        candidates_after_date = 0
+        candidates_after_document = 0
+        # Фильтрация кандидатов до ранжирования (раздел 4.2 rag.md)
+        scored: List[Tuple[str, float]] = []
+        for cid, sc in zip(self.chunk_ids, scores):
+            if sc <= 0:
+                continue
+            candidates_before += 1
+            if (
+                date_allowed_chunk_ids is None
+                or cid in date_allowed_chunk_ids
+            ):
+                candidates_after_date += 1
+            if allowed_chunk_ids is None or cid in allowed_chunk_ids:
+                candidates_after_document += 1
+                scored.append((cid, float(sc)))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        results = scored[:top_k]
+
+        stats["candidates_before_filters"] = candidates_before
+        stats["candidates_after_date_filter"] = candidates_after_date
+        stats["candidates_after_document_filter"] = candidates_after_document
+        stats["returned_count"] = len(results)
+        return results, stats
+
+    def search_with_stats(
+        self,
+        query: str,
+        top_k: int = 40,
+        allowed_chunk_ids: Optional[Set[str]] = None,
+        date_allowed_chunk_ids: Optional[Set[str]] = None,
+    ) -> Tuple[List[Tuple[str, float]], Dict[str, int]]:
+        """Один вызов BM25 с результатами и диагностикой за один проход."""
+        return self._search_with_stats_impl(
+            query,
+            top_k,
+            allowed_chunk_ids,
+            date_allowed_chunk_ids,
+        )
     def search(
         self,
         query: str,
         top_k: int = 40,
         allowed_chunk_ids: Optional[Set[str]] = None,
     ) -> List[Tuple[str, float]]:
-        if self.bm25 is None:
-            if self._is_built:
-                return []
-            with self._load_lock:
-                if self.bm25 is None and not self._is_built:
-                    self.load()
-            if self.bm25 is None:
-                return []
-
-        tokens = tokenize_ru(query)
-        if not tokens:
-            return []
-
-        scores = self.bm25.get_scores(tokens)
-
-        # Фильтрация кандидатов до ранжирования (раздел 4.2 rag.md)
-        scored = []
-        for cid, sc in zip(self.chunk_ids, scores):
-            if sc > 0:
-                if allowed_chunk_ids is None or cid in allowed_chunk_ids:
-                    scored.append((cid, float(sc)))
-
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return scored[:top_k]
+        """Тонкая обёртка над ``search_with_stats`` (без диагностики дат)."""
+        results, _stats = self._search_with_stats_impl(
+            query,
+            top_k,
+            allowed_chunk_ids,
+            None,
+        )
+        return results
