@@ -1,7 +1,9 @@
+import copy
 import datetime
 import json
 import logging
 import re
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from rag_core.config import PROCESSED_DATA_DIR
@@ -58,7 +60,61 @@ SEARCH_DIAGNOSTICS_KEYS: Tuple[str, ...] = (
     "validity_unknown_count",
 )
 
-_YEAR_RE = re.compile(r"\b(20[12]\d)\b")
+# Год внутри номера договора (``А-08/2024``, ``П-17/2024``, ``ПТ-05/2023``)
+# не является временной привязкой запроса и не должен влиять на дату проверки.
+_CONTRACT_NUMBER_RE = re.compile(
+    r"[А-ЯЁа-яёA-Za-z]+[-\u2013\s]?\d+[^\s/]*/\s*20[12]\d"
+)
+# Полная дата ``dd.mm.yyyy`` / ``dd/mm/yyyy`` — берём из неё только год.
+_DATE_WITH_YEAR_RE = re.compile(r"\b\d{1,2}[./]\d{1,2}[./](20[12]\d)\b")
+# Год с явным словом «год/г.»: «2024 год», «2024 году», «2024 г.».
+_YEAR_WORD_RE = re.compile(
+    r"(20[12]\d)\s*(?:гг?\.?|год(?:у|а|ом|е)?)(?![А-Яа-яЁё0-9])",
+    re.IGNORECASE,
+)
+# Год после временного предлога: «в 2024», «за 2023», «на 2025».
+_YEAR_PREPOSITION_RE = re.compile(
+    r"\b(?:в|во|за|на|с|до|по|к)\s+(20[12]\d)\b",
+    re.IGNORECASE,
+)
+
+# H-2C: boost допсоглашений применяется только при явной релевантности
+# запроса версии/допсоглашению, а не всем чанкам с ``amends_document_id``.
+_AMENDMENT_RELEVANCE_RE = re.compile(
+    r"(?:дополнительн\w*\s+соглашени|доп\.?\s*соглашени|допсоглашени|"
+    r"редакци|изменени|изменён|изменен|в\s+редакции)",
+    re.IGNORECASE,
+)
+_TEMPORAL_OR_VERSION_RE = re.compile(
+    r"(?:\b\d{1,2}[./]\d{1,2}[./]20[12]\d|\b20[12]\d\s*(?:гг?\.?|год)|"
+    r"действующ\w*|актуальн\w*|утратил\w*|в\s+силу)",
+    re.IGNORECASE,
+)
+_AMENDMENT_BOOST_FACTOR = 1.15
+
+
+def should_boost_amendments(
+    query: str, intent: Optional[str] = None
+) -> bool:
+    """Нужно ли повышать допсоглашения для данного запроса.
+
+    Boost допустим только при явной релевантности: маркерах
+    «дополнительное соглашение», «редакция», «изменения» и т.п., либо для
+    намерения ``date_version`` с временной/версионной формулировкой.
+    Один лишь факт связи с выбранным договором (``selected_doc_ids``)
+    основанием не является.
+    """
+    text = (query or "").strip()
+    if not text:
+        return False
+    if _AMENDMENT_RELEVANCE_RE.search(text):
+        return True
+    normalized_intent = str(intent or "").strip().lower()
+    if normalized_intent == "date_version" and _TEMPORAL_OR_VERSION_RE.search(
+        text
+    ):
+        return True
+    return False
 
 
 def detect_query_intent(
@@ -90,14 +146,15 @@ def detect_query_intent(
     return dict(_INTENT_WEIGHTS["semantic_query"])
 
 
-def load_canonical_chunks_map() -> Dict[str, Dict[str, Any]]:
-    """Канонический корпус чанков; ключ и ``chunk_id`` нормализованы в str."""
-    path = PROCESSED_DATA_DIR / "chunks.jsonl"
+@lru_cache(maxsize=8)
+def _read_canonical_chunks_file(
+    path_str: str,
+    _mtime_ns: int,
+    _size: int,
+) -> Dict[str, Dict[str, Any]]:
+    """Читает и разбирает ``chunks.jsonl``; ключ кэша — путь и признак файла."""
     store: Dict[str, Dict[str, Any]] = {}
-    if not path.exists():
-        return store
-
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path_str, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -115,6 +172,57 @@ def load_canonical_chunks_map() -> Dict[str, Dict[str, Any]]:
     return store
 
 
+def clear_canonical_chunks_cache() -> None:
+    """Сбрасывает кэш ``chunks.jsonl`` (вызывается после пересборки индекса)."""
+    _read_canonical_chunks_file.cache_clear()
+
+
+def load_canonical_chunks_map() -> Dict[str, Dict[str, Any]]:
+    """Канонический корпус чанков; ключ и ``chunk_id`` нормализованы в str.
+
+    Файл читается и разбирается не более одного раза для одной пары
+    «путь + признак изменения файла (``mtime_ns``, размер)». Наружу
+    возвращается безопасная копия, чтобы вызовы не мутировали общий кэш.
+    """
+    path = PROCESSED_DATA_DIR / "chunks.jsonl"
+    try:
+        stat = path.stat()
+    except OSError:
+        return {}
+
+    cached = _read_canonical_chunks_file(
+        str(path), stat.st_mtime_ns, stat.st_size
+    )
+    return copy.deepcopy(cached)
+
+
+def _extract_year_from_query(query: str) -> Optional[str]:
+    """Извлекает год только из явных временных указаний в вопросе.
+
+    Номера договоров (``А-08/2024``, ``П-17/2024``, ``ПТ-05/2023``) перед
+    поиском вырезаются, чтобы их год не становился датой проверки.
+    Поддерживаются полная дата (``15.08.2024``), «2024 год/году/г.», а также
+    год после временного предлога («в 2024»). Возвращается первый по позиции.
+    """
+    if not query:
+        return None
+
+    cleaned = _CONTRACT_NUMBER_RE.sub(" ", query)
+    matches: List[Tuple[int, str]] = []
+    for pattern in (
+        _DATE_WITH_YEAR_RE,
+        _YEAR_WORD_RE,
+        _YEAR_PREPOSITION_RE,
+    ):
+        for match in pattern.finditer(cleaned):
+            matches.append((match.start(), match.group(1)))
+
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0])
+    return matches[0][1]
+
+
 def _resolve_check_date(
     event_date: Optional[str], query: str = ""
 ) -> str:
@@ -122,7 +230,8 @@ def _resolve_check_date(
 
     Бизнес-правило трёх состояний:
     1. ``event_date`` передан явно → оцениваем документ на эту дату;
-    2. иначе берём год из вопроса (середина года), если он есть;
+    2. иначе берём год из явных временных указаний в вопросе (середина года),
+       если он есть; год из номера договора датой не считается;
     3. иначе — сегодняшняя дата (``datetime.date.today()``), т.е. считаем,
        что пользователя интересует актуальная на текущий момент редакция.
     Хардкод «даты актуальности базы» не используется.
@@ -130,9 +239,9 @@ def _resolve_check_date(
     if event_date and str(event_date).strip():
         return str(event_date).strip()[:10]
 
-    match = _YEAR_RE.search(query or "")
-    if match:
-        return f"{match.group(1)}-06-01"
+    year = _extract_year_from_query(query or "")
+    if year:
+        return f"{year}-06-01"
 
     return datetime.date.today().isoformat()
 
@@ -250,27 +359,19 @@ def _apply_context_stats(
     )
 
 
-def _count_bm25_candidates(
-    query: str,
-    date_allowed: Set[str],
-    allowed: Set[str],
-    stats: Dict[str, Any],
+def _apply_bm25_stats(
+    stats: Dict[str, Any], bm25_stats: Dict[str, int]
 ) -> None:
-    """Счётчики до/после фильтров по BM25 (диагностика, без влияния на выдачу)."""
-    try:
-        raw_all = bm25_store.search(
-            query, top_k=max(len(allowed) + len(date_allowed), 1),
-            allowed_chunk_ids=None,
-        )
-    except Exception as exc:  # noqa: BLE001 - счётчики не должны ломать поиск
-        logger.debug("BM25 diagnostics failed: %s", exc)
-        return
-    stats["candidates_before_filters"] += len(raw_all)
-    stats["candidates_after_date_filter"] += sum(
-        1 for cid, _ in raw_all if cid in date_allowed
+    """Переносит диагностику единственного BM25-вызова в общие счётчики."""
+    stats["bm25_candidates_count"] = bm25_stats.get("returned_count", 0)
+    stats["candidates_before_filters"] += bm25_stats.get(
+        "candidates_before_filters", 0
     )
-    stats["candidates_after_document_filter"] += sum(
-        1 for cid, _ in raw_all if cid in allowed
+    stats["candidates_after_date_filter"] += bm25_stats.get(
+        "candidates_after_date_filter", 0
+    )
+    stats["candidates_after_document_filter"] += bm25_stats.get(
+        "candidates_after_document_filter", 0
     )
 
 
@@ -338,16 +439,20 @@ def _dense_hits(
 def _build_candidates(
     rrf_scores: Dict[str, float],
     chunks_map: Dict[str, Dict[str, Any]],
+    boost_amendments: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Единый постпроцессинг: приоритет соглашений + лимит пула 40."""
-    # Приоритет актуальных доп. соглашений
-    for cid in rrf_scores:
-        chunk = chunks_map.get(cid)
-        if chunk and chunk.get("amends_document_id"):
-            rrf_scores[cid] *= 1.15
+    """Единый постпроцессинг: условный приоритет соглашений + лимит пула 40."""
+    scored = dict(rrf_scores)
+    if boost_amendments:
+        # H-2C: повышаем только допсоглашения и только когда запрос явно
+        # релевантен версии/допсоглашению (решение принимает вызывающий код).
+        for cid in scored:
+            chunk = chunks_map.get(cid)
+            if chunk and chunk.get("amends_document_id"):
+                scored[cid] *= _AMENDMENT_BOOST_FACTOR
 
     sorted_cids = sorted(
-        rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True
+        scored.keys(), key=lambda x: scored[x], reverse=True
     )[:40]
 
     candidate_chunks: List[Dict[str, Any]] = []
@@ -355,7 +460,7 @@ def _build_candidates(
         chunk = chunks_map.get(cid)
         if chunk is not None:
             chunk_copy = dict(chunk)
-            chunk_copy["score"] = round(float(rrf_scores[cid]), 6)
+            chunk_copy["score"] = round(float(scored[cid]), 6)
             candidate_chunks.append(chunk_copy)
     return candidate_chunks
 
@@ -389,8 +494,11 @@ def _finalize(
     rerank: bool,
     stats: Dict[str, Any],
     diagnostics: Optional[Dict[str, Any]],
+    boost_amendments: bool = False,
 ) -> List[Dict[str, Any]]:
-    candidate_chunks = _build_candidates(rrf_scores, chunks_map)
+    candidate_chunks = _build_candidates(
+        rrf_scores, chunks_map, boost_amendments=boost_amendments
+    )
     if rerank:
         result = rerank_candidates(query, candidate_chunks, top_k=top_k)
     else:
@@ -424,14 +532,14 @@ def hybrid_search(
 
     intent_cfg = detect_query_intent(query, precomputed_intent=intent)
 
-    if diagnostics is not None:
-        _count_bm25_candidates(query, date_allowed, allowed, stats)
-
-    # 1. Поиск BM25
-    bm25_results = bm25_store.search(
-        query, top_k=intent_cfg["bm25_top"], allowed_chunk_ids=allowed
+    # 1. Единственный вызов BM25: результаты и диагностика за один проход.
+    bm25_results, bm25_stats = bm25_store.search_with_stats(
+        query,
+        top_k=intent_cfg["bm25_top"],
+        allowed_chunk_ids=allowed,
+        date_allowed_chunk_ids=date_allowed,
     )
-    stats["bm25_candidates_count"] = len(bm25_results)
+    _apply_bm25_stats(stats, bm25_stats)
 
     # 2. Поиск Dense Vector
     dense_ids = _dense_hits(
@@ -457,6 +565,7 @@ def hybrid_search(
         rerank=rerank,
         stats=stats,
         diagnostics=diagnostics,
+        boost_amendments=should_boost_amendments(query, intent),
     )
 
 
@@ -483,13 +592,14 @@ def bm25_search(
 
     intent_cfg = detect_query_intent(query, precomputed_intent=intent)
 
-    if diagnostics is not None:
-        _count_bm25_candidates(query, date_allowed, allowed, stats)
-
-    bm25_results = bm25_store.search(
-        query, top_k=intent_cfg["bm25_top"], allowed_chunk_ids=allowed
+    # Единственный вызов BM25: результаты и диагностика за один проход.
+    bm25_results, bm25_stats = bm25_store.search_with_stats(
+        query,
+        top_k=intent_cfg["bm25_top"],
+        allowed_chunk_ids=allowed,
+        date_allowed_chunk_ids=date_allowed,
     )
-    stats["bm25_candidates_count"] = len(bm25_results)
+    _apply_bm25_stats(stats, bm25_stats)
 
     rrf_scores: Dict[str, float] = {}
     for rank, (cid, _score) in enumerate(bm25_results):
@@ -503,6 +613,7 @@ def bm25_search(
         rerank=rerank,
         stats=stats,
         diagnostics=diagnostics,
+        boost_amendments=should_boost_amendments(query, intent),
     )
 
 
@@ -553,6 +664,7 @@ def dense_search(
         rerank=rerank,
         stats=stats,
         diagnostics=diagnostics,
+        boost_amendments=should_boost_amendments(query, intent),
     )
 
 

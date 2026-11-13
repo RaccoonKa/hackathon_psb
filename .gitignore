@@ -15,3 +15,4 @@ data/processed/
 run.log
 results.txt
 .pytest_cache/
+results.txt

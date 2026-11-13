@@ -163,6 +163,33 @@ def make_verification_report(**kwargs):
     return VerificationReport(**data)
 
 
+def make_bm25_stats(
+    results,
+    *,
+    candidates_before=None,
+    date_allowed=None,
+    allowed=None,
+):
+    """Диагностика в формате ``search_with_stats`` для моков BM25."""
+    before = len(results) if candidates_before is None else candidates_before
+    after_date = (
+        before
+        if date_allowed is None
+        else sum(1 for cid, _score in results if cid in date_allowed)
+    )
+    after_document = (
+        before
+        if allowed is None
+        else sum(1 for cid, _score in results if cid in allowed)
+    )
+    return {
+        "candidates_before_filters": before,
+        "candidates_after_date_filter": after_date,
+        "candidates_after_document_filter": after_document,
+        "returned_count": len(results),
+    }
+
+
 def filler_corpus(n=10, term="срок", base_prefix="doc"):
     chunks = []
     for i in range(n):

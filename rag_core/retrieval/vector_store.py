@@ -9,6 +9,7 @@ retrieval-задачи не должны одновременно выполня
 import hashlib
 import logging
 import threading
+import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -383,6 +384,49 @@ def get_collection_embedding_dimension(
     return _collection_dimension
 
 
+# Служебные тексты warm-up forward. Не содержат пользовательских данных,
+# секретов и путей; нужны только чтобы прогреть первый forward bge-m3
+# (ленивый импорт CUDA/ядер, аллокации, JIT) до реального поиска.
+_WARMUP_TEXTS: tuple[str, ...] = (
+    "retrieval warmup probe one",
+    "retrieval warmup probe two",
+    "retrieval warmup probe three",
+    "retrieval warmup probe four",
+)
+
+
+def warmup_local_embedding_model() -> Dict[str, Any]:
+    """Один warm-up forward локальной модели тем же путём, что и поиск.
+
+    Вызывается только когда локальная модель уже загружена. Не бросает
+    исключений: при ошибке фиксирует тип и возвращает статус ``error``,
+    чтобы prewarm продолжил работу по существующему fallback-пути.
+    """
+    started = time.perf_counter()
+    try:
+        vectors = compute_embeddings(
+            list(_WARMUP_TEXTS), batch_size=len(_WARMUP_TEXTS)
+        )
+    except Exception as exc:  # noqa: BLE001 - warm-up не фатален
+        return {
+            "status": "error",
+            "warmup_ms": int(
+                round((time.perf_counter() - started) * 1000)
+            ),
+            "error_type": type(exc).__name__,
+            "dimension": None,
+            "texts": len(_WARMUP_TEXTS),
+        }
+    elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+    return {
+        "status": "ok",
+        "warmup_ms": elapsed_ms,
+        "error_type": None,
+        "dimension": len(vectors[0]) if vectors else None,
+        "texts": len(_WARMUP_TEXTS),
+    }
+
+
 def validate_query_embedding_dimension(
     collection: Optional[Any], vector: List[float]
 ) -> None:
@@ -424,6 +468,8 @@ def prewarm_retrieval_backends() -> Dict[str, Any]:
             "collection": "unknown",
             "collection_size": None,
             "dimension": None,
+            "warmup": "skipped",
+            "warmup_ms": None,
             "errors": [],
         }
 
@@ -467,6 +513,31 @@ def prewarm_retrieval_backends() -> Dict[str, Any]:
                     }
                 )
 
+        # Warm-up forward выполняется после загрузки модели и Chroma, но до
+        # создания пула потоков: первый реальный forward станет «горячим».
+        if model is not None:
+            warmup = warmup_local_embedding_model()
+            report["warmup"] = warmup.get("status", "error")
+            report["warmup_ms"] = warmup.get("warmup_ms")
+            report["warmup_dimension"] = warmup.get("dimension")
+            if report["warmup"] != "ok":
+                report["errors"].append(
+                    {
+                        "type": warmup.get("error_type") or "WarmupError",
+                        "message": (
+                            "Warm-up forward локальной модели эмбеддингов "
+                            "не завершился; первый реальный вызов может "
+                            "быть холодным"
+                        ),
+                    }
+                )
+            logger.info(
+                "Retrieval prewarm: warmup=%s warmup_ms=%s texts=%s",
+                report["warmup"],
+                report["warmup_ms"],
+                warmup.get("texts"),
+            )
+
         _prewarm_report = report
         _prewarm_done = True
         if report["errors"]:
@@ -490,16 +561,26 @@ def reset_embedding_diagnostics() -> None:
 
 
 def get_last_embedding_diagnostics() -> Dict[str, Any]:
-    """Диагностика последнего вычисления эмбеддингов в текущем потоке."""
-    default = {
-        "provider": "none",
-        "model": None,
-        "dimension": None,
-        "success": True,
-        "fallback_used": False,
-        "error_type": None,
-    }
-    return dict(getattr(_thread_state, "embedding", default))
+    """Диагностика последнего вычисления эмбеддингов в текущем потоке.
+
+    Если в текущем потоке эмбеддинги ещё не вычислялись, ``success`` и
+    ``measured`` честно сообщают об отсутствии измерения: ``provider:
+    none`` не должен сочетаться с ``success: true``.
+    """
+    recorded = getattr(_thread_state, "embedding", None)
+    if recorded is None:
+        return {
+            "provider": "none",
+            "model": None,
+            "dimension": None,
+            "success": None,
+            "fallback_used": False,
+            "error_type": None,
+            "measured": False,
+        }
+    diagnostics = dict(recorded)
+    diagnostics.setdefault("measured", True)
+    return diagnostics
 
 
 def _validate_embeddings(

@@ -197,3 +197,97 @@ def test_bm25_search_auto_loads_when_none():
             fresh = BM25KeywordStore()
             results = fresh.search("уникальный", top_k=10)
             assert results
+
+
+# --- M-1: search_with_stats (один вызов BM25) ------------------------------
+
+
+def test_search_with_stats_calls_get_scores_once():
+    store = BM25KeywordStore()
+    store.build_index(filler_corpus(n=10, term="уникальный"))
+
+    with patch.object(
+        store.bm25, "get_scores", wraps=store.bm25.get_scores
+    ) as mock_scores:
+        results, stats = store.search_with_stats("уникальный", top_k=10)
+
+    mock_scores.assert_called_once()
+    assert results
+    assert stats["returned_count"] == len(results)
+    assert stats["candidates_before_filters"] >= len(results)
+    # Без фильтров счётчики совпадают с числом кандидатов до фильтрации.
+    assert stats["candidates_after_date_filter"] == stats["candidates_before_filters"]
+    assert (
+        stats["candidates_after_document_filter"]
+        == stats["candidates_before_filters"]
+    )
+
+
+def test_search_with_stats_allowed_filter_counts():
+    store = BM25KeywordStore()
+    store.build_index(filler_corpus(n=10, term="уникальный"))
+
+    results, stats = store.search_with_stats(
+        "уникальный", top_k=10, allowed_chunk_ids={"target"}
+    )
+
+    assert results
+    assert all(cid == "target" for cid, _score in results)
+    assert stats["candidates_before_filters"] >= len(results)
+    assert stats["candidates_after_document_filter"] == len(results)
+    assert stats["returned_count"] == len(results)
+
+
+def test_search_with_stats_empty_allowed_yields_no_results():
+    store = BM25KeywordStore()
+    store.build_index(filler_corpus(n=10, term="уникальный"))
+
+    results, stats = store.search_with_stats(
+        "уникальный", top_k=10, allowed_chunk_ids=set()
+    )
+
+    assert results == []
+    assert stats["candidates_before_filters"] >= 1
+    assert stats["candidates_after_document_filter"] == 0
+    assert stats["returned_count"] == 0
+
+
+def test_search_with_stats_date_filter_is_diagnostic_only():
+    store = BM25KeywordStore()
+    store.build_index(filler_corpus(n=10, term="уникальный"))
+
+    results, stats = store.search_with_stats(
+        "уникальный", top_k=10, date_allowed_chunk_ids=set()
+    )
+
+    # Фильтр по датам в search_with_stats влияет на диагностику, а не на выдачу:
+    # итоговый search() исторически фильтрует только allowed_chunk_ids.
+    assert results
+    assert stats["candidates_before_filters"] >= 1
+    assert stats["candidates_after_date_filter"] == 0
+    assert stats["returned_count"] == len(results)
+
+
+def test_search_with_stats_matches_search_results():
+    store = BM25KeywordStore()
+    store.build_index(filler_corpus(n=10, term="уникальный"))
+
+    with_stats, _ = store.search_with_stats(
+        "уникальный", top_k=10, allowed_chunk_ids={"target"}
+    )
+    wrapper = store.search("уникальный", top_k=10, allowed_chunk_ids={"target"})
+
+    assert with_stats == wrapper
+
+
+def test_search_with_stats_empty_index_returns_zero_counters():
+    store = BM25KeywordStore()
+    store.build_index([])
+
+    results, stats = store.search_with_stats("привет", top_k=10)
+
+    assert results == []
+    assert stats["candidates_before_filters"] == 0
+    assert stats["candidates_after_date_filter"] == 0
+    assert stats["candidates_after_document_filter"] == 0
+    assert stats["returned_count"] == 0

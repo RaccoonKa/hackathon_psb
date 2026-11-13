@@ -11,7 +11,13 @@ from rag_core.generation.analysis.query_analysis import analyze_query
 from rag_core.generation.answer.context_builder import build_context_and_sources
 from rag_core.generation.answer.generator import generate_draft, regenerate_draft
 from rag_core.generation.answer.verification import verify
-from rag_core.generation.errors import OrchestratorError
+from rag_core.generation.errors import (
+    OrchestratorError,
+    RetrievalAPIError,
+    RetrievalBusyError,
+    RetrievalError,
+    RetrievalTimeoutError,
+)
 from rag_core.generation.planning import planner
 from rag_core.generation.policy.precheck import precheck
 from rag_core.generation.prompts import templates
@@ -62,6 +68,65 @@ _EMBEDDING_FIELDS: tuple[str, ...] = (
     "fallback_used",
     "error_type",
 )
+
+# Технические ошибки retrieval: инфраструктурный сбой, а не нехватка
+# доказательств. В этом состоянии (B) followup-расширение поиска не
+# запускается, а отказ сообщает именно о технической ошибке.
+_TECHNICAL_RETRIEVAL_ERROR_TYPES: frozenset[str] = frozenset(
+    {
+        "RetrievalError",
+        "RetrievalTimeoutError",
+        "RetrievalBusyError",
+        "RetrievalAPIError",
+        "BatchDeadlineExceeded",
+        "QueueTimeoutError",
+        "TimeoutError",
+    }
+)
+
+# Явная причина технического отказа в диагностике: не маскируется под
+# обычный ``insufficient``.
+TECHNICAL_RETRIEVAL_FAILURE_REASON: str = "technical_retrieval_failure"
+
+
+def _is_technical_retrieval_error(exc: BaseException) -> bool:
+    """Технический ли это сбой поиска (а не пустая/неполная выдача).
+
+    Любое исключение из ``bridge.retrieve_tasks`` — инфраструктурное:
+    поиск не завершился. Проверка по типу нужна для явного разделения
+    известных классов (``RetrievalTimeoutError``, ``RetrievalBusyError``,
+    ``RetrievalAPIError``, ``BatchDeadlineExceeded``) и прочих ошибок.
+    """
+    if isinstance(
+        exc,
+        (
+            RetrievalError,
+            RetrievalTimeoutError,
+            RetrievalBusyError,
+            RetrievalAPIError,
+        ),
+    ):
+        return True
+    return type(exc).__name__ in _TECHNICAL_RETRIEVAL_ERROR_TYPES
+
+
+def _collect_retrieval_error_types(trace: list[TraceStep]) -> list[str]:
+    """Собирает типы ошибок всех попыток retrieval из trace."""
+    types: set[str] = set()
+    for step in trace:
+        if step.step != config.STEP_RAG_RETRIEVAL:
+            continue
+        output = step.output or {}
+        error_type = output.get("error_type")
+        if error_type:
+            types.add(str(error_type))
+        for error in output.get("errors") or []:
+            if isinstance(error, dict) and error.get("type"):
+                types.add(str(error["type"]))
+        for failed in output.get("failed_tasks") or []:
+            if isinstance(failed, dict) and failed.get("error_type"):
+                types.add(str(failed["error_type"]))
+    return sorted(types)
 
 
 def _trace_level() -> str:
@@ -193,7 +258,12 @@ def _enrich_retrieval_step(
         }
     )
     if degraded:
+        # Частичный сбой задач retrieval — тоже техническая ошибка:
+        # при неполном покрытии слотов followup по ней не запускается.
         step.degradation = "retrieval_partial_failure"
+        step.output["degradation_reason"] = "retrieval_partial_failure"
+        step.output["technical_retrieval_failure"] = True
+        step.extra["technical_retrieval_failure"] = True
     return step
 
 
@@ -221,6 +291,7 @@ def _build_retrieval_error_step(
         "executor": executor,
         "degraded": True,
         "degradation_reason": "retrieval_error",
+        "technical_retrieval_failure": True,
         "error_type": error_type,
         "error_message": _safe_message(str(exc)),
         "error_types": sorted(
@@ -260,6 +331,7 @@ def _build_retrieval_error_step(
             "attempt": attempt,
             "status": "error",
             "error_type": error_type,
+            "technical_retrieval_failure": True,
         },
     )
 
@@ -669,6 +741,8 @@ def run_agent(
         assessment = None
         retrieval_attempt = 0
         retrieval_attempt_log: list[dict[str, Any]] = []
+        # Состояние B: технический сбой retrieval. Флаг запрещает обычный
+        # followup и переводит итог в контролируемый технический отказ.
         technical_retrieval_failure = False
         executed_queries: set[str] = {t.query for t in tasks}
 
@@ -696,29 +770,45 @@ def run_agent(
                 )
                 _append_step(err_step, stage_idx=3)
                 technical_retrieval_failure = True
+                error_type = type(exc).__name__
+                safe_error_message = _safe_message(str(exc))
                 retrieval_attempt_log.append(
                     {
                         "attempt": retrieval_attempt,
                         "status": "error",
-                        "error_type": type(exc).__name__,
+                        "error_type": error_type,
+                        "error_message": safe_error_message,
+                        "technical": _is_technical_retrieval_error(exc),
                         "executor": dict(diagnostics.get("executor") or {}),
                     }
                 )
                 new_chunks = []
                 logger.warning(
-                    "Retrieval attempt %d failed: %s",
+                    "Retrieval attempt %d failed (technical=%s): %s",
                     retrieval_attempt,
-                    type(exc).__name__,
+                    _is_technical_retrieval_error(exc),
+                    error_type,
                 )
             else:
                 partial = bool(diagnostics.get("degraded"))
+                partial_error_type: str | None = None
                 if partial:
+                    # Частичный сбой задач retrieval — тоже техническая
+                    # ошибка: followup по ней не запускается.
                     technical_retrieval_failure = True
+                    partial_errors = list(diagnostics.get("errors") or [])
+                    if partial_errors:
+                        partial_error_type = str(
+                            (partial_errors[0] or {}).get("type")
+                            or "PartialRetrievalFailure"
+                        )
                 retrieval_attempt_log.append(
                     {
                         "attempt": retrieval_attempt,
                         "status": "partial" if partial else "ok",
-                        "error_type": None,
+                        "error_type": partial_error_type,
+                        "error_message": None,
+                        "technical": partial,
                         "executor": dict(diagnostics.get("executor") or {}),
                     }
                 )
@@ -772,11 +862,25 @@ def run_agent(
             )
             _append_step(ev_step, stage_idx=4)
 
+            # Состояние A (поиск завершился, покрытие слотов неполное) —
+            # followup допустим. Состояние B (техническая ошибка поиска) —
+            # followup запрещён: он лишь повторит падающий retrieval и выдаст
+            # инфраструктурный сбой за нехватку доказательств.
+            followup_allowed = not technical_retrieval_failure
+            if not followup_allowed:
+                logger.warning(
+                    "Followup suppressed after technical retrieval failure "
+                    "(attempt=%d, chunks=%d)",
+                    retrieval_attempt,
+                    len(accumulated_chunks),
+                )
+
             if (
                 (
                     assessment.sufficiency == Sufficiency.INSUFFICIENT
                     or bool(assessment.missing_slots)
                 )
+                and followup_allowed
                 and followup_cycles < int(config.MAX_FOLLOWUP_RETRIEVAL_CYCLES)
                 and not _budget_or_deadline_exceeded()
             ):
@@ -801,17 +905,18 @@ def run_agent(
         )
 
         # Технический сбой поиска — отдельное сообщение, не «нет сведений».
-        # Если в другой попытке доказательств достаточно — отвечаем по ним,
-        # деградация остаётся видимой в trace.
+        # Частичные результаты (degraded) не выбрасываются: они уже прошли
+        # Evidence, и если доказательств достаточно — отвечаем по ним,
+        # оставляя деградацию видимой в trace. Если доказательств
+        # недостаточно — возвращаем контролируемый технический отказ с
+        # точной причиной (тип и сообщение ошибки) в trace.
         if technical_retrieval_failure and not evidence_sufficient:
-            error_types = [
-                str(step.output.get("error_type"))
-                for step in trace
-                if step.step == config.STEP_RAG_RETRIEVAL
-                and step.output.get("error_type")
-            ]
+            error_types = _collect_retrieval_error_types(trace)
             if not error_types:
                 error_types = ["PartialRetrievalFailure"]
+            refusal_degradations = list(degradation_reasons)
+            if TECHNICAL_RETRIEVAL_FAILURE_REASON not in refusal_degradations:
+                refusal_degradations.append(TECHNICAL_RETRIEVAL_FAILURE_REASON)
             return refusal.build_retrieval_error_result(
                 query=query,
                 prior_trace=trace,
@@ -823,7 +928,7 @@ def run_agent(
                     if assessment
                     else spec.required_slots
                 ),
-                degradation_reasons=degradation_reasons or ["retrieval_error"],
+                degradation_reasons=refusal_degradations,
                 used_history=used_history,
             )
 

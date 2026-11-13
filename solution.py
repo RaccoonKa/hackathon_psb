@@ -26,10 +26,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from rag_core import config
+from rag_core import config
 import build_index
 from rag_core.generation.orchestrator import run_agent
 from rag_core.generation.answer.context_builder import replace_source_tags
 from rag_core.indexing.parser import safe_extract_zip
+from rag_core.retrieval.vector_store import prewarm_retrieval_backends
 
 logger = logging.getLogger(__name__)
 
@@ -498,22 +500,29 @@ def run(
             "questions.csv не содержит ни одного вопроса"
         )
 
-    should_skip = skip_index if skip_index is not None else (
-        not config.USE_SUBMIT and find_kb_archive(resolved_data_dir) is None
+    prepare_inputs(resolved_data_dir)
+    summary = build_index.build_indexes()
+    logger.info(
+        "Индекс построен один раз: документов=%s, чанков=%s",
+        summary.get("documents"),
+        summary.get("chunks"),
     )
 
-    if not should_skip:
-        prepare_inputs(resolved_data_dir)
-        summary = build_index.build_indexes()
+    # Prewarm после построения индекса и до первого вопроса: модель
+    # эмбеддингов и коллекция Chroma загружаются (и делают warm-up forward)
+    # вне батча retrieval, чтобы cold start не ловил per-task тайм-аут.
+    try:
+        prewarm_report = prewarm_retrieval_backends()
         logger.info(
-            "Индекс построен один раз: документов=%s, чанков=%s",
-            summary.get("documents"),
-            summary.get("chunks"),
+            "Retrieval prewarm: local_model=%s, collection=%s, "
+            "warmup=%s (%s ms)",
+            prewarm_report.get("local_model"),
+            prewarm_report.get("collection"),
+            prewarm_report.get("warmup"),
+            prewarm_report.get("warmup_ms"),
         )
-    else:
-        logger.info(
-            "Пропуск перестроения индекса: используются существующие индексы"
-        )
+    except Exception as exc:  # noqa: BLE001 - prewarm не фатален
+        logger.warning("Retrieval prewarm failed: %s", exc)
 
     rows = process_questions(questions, config.MAX_WORKERS)
 

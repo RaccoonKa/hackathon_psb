@@ -11,12 +11,13 @@ os.environ["USE_STUB_LLM"] = "false"
 os.environ["LLM_MODE"] = "real"
 
 from rag_core.generation.orchestrator import run_agent
-from rag_core.generation.answer.context_builder import replace_source_tags 
+from rag_core.generation.answer.context_builder import replace_source_tags
+from rag_core.retrieval.vector_store import prewarm_retrieval_backends
 
 NEED_FILE = True
-NEED_SOURCES = False
-NEED_INTENT = False
-NEED_TRACE = False
+NEED_SOURCES = True
+NEED_INTENT = True
+NEED_TRACE = True
 FULL_TEST_QUERRY = False
 
 RESULTS_FILE = Path(__file__).resolve().parent / "results.txt"
@@ -415,13 +416,28 @@ QUERY_HORROR = [
 QUERY = QUERY_HORROR if FULL_TEST_QUERRY else QUERY
 
 QUERY = [
-    "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+    "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
 ]
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")
     print("Работают реальные модели поиска и генерации.")
     print("Введите 'exit', 'quit' или 'выход' для завершения.\n")
+
+    # Prewarm на старте CLI: модель эмбеддингов, коллекция Chroma и один
+    # warm-up forward выполняются до первого запроса, чтобы cold start
+    # (~11 с) не попадал в первый retrieval-батч и не приводил к timeout.
+    try:
+        prewarm_report = prewarm_retrieval_backends()
+        print(
+            "🔥 Prewarm retrieval: "
+            f"model={prewarm_report.get('local_model')}, "
+            f"collection={prewarm_report.get('collection')}, "
+            f"warmup={prewarm_report.get('warmup')} "
+            f"({prewarm_report.get('warmup_ms')} мс)"
+        )
+    except Exception as exc:  # noqa: BLE001 - prewarm не фатален
+        print(f"⚠️  Prewarm retrieval не выполнен: {exc}")
 
     full_run = []
 

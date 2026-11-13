@@ -30,7 +30,7 @@ from rag_core.retrieval.hybrid import (
     load_canonical_chunks_map,
     resolve_allowed_versions_by_date,
 )
-from tests._common import make_chunk_dict, make_query_spec
+from tests._common import make_bm25_stats, make_chunk_dict, make_query_spec
 
 ROOT = Path(__file__).resolve().parent.parent
 CHUNKS_PATH = ROOT / "data" / "processed" / "chunks.jsonl"
@@ -235,7 +235,9 @@ def test_bm25_mode_does_not_touch_dense_channel():
         "get_chroma_collection",
         side_effect=AssertionError("Chroma не должна вызываться в mode=bm25"),
     ), patch.object(
-        hybrid_mod.bm25_store, "search", return_value=fake_bm25
+        hybrid_mod.bm25_store,
+        "search_with_stats",
+        return_value=(fake_bm25, make_bm25_stats(fake_bm25)),
     ):
         chunks, _step = bridge_mod.retrieve_tasks(
             [_task("bm25")], diagnostics_out=diagnostics
@@ -285,6 +287,9 @@ def test_dense_mode_does_not_touch_bm25_channel():
         "validate_query_embedding_dimension",
         return_value=None,
     ):
+        fake_bm25_store.search_with_stats.side_effect = AssertionError(
+            "BM25 не должен вызываться в mode=dense"
+        )
         fake_bm25_store.search.side_effect = AssertionError(
             "BM25 не должен вызываться в mode=dense"
         )
@@ -349,7 +354,9 @@ def test_hybrid_search_rrf_dedup_and_amendment_priority():
     with patch.object(
         hybrid_mod, "load_canonical_chunks_map", return_value=chunks_map
     ), patch.object(
-        hybrid_mod.bm25_store, "search", return_value=bm25_results
+        hybrid_mod.bm25_store,
+        "search_with_stats",
+        return_value=(bm25_results, make_bm25_stats(bm25_results)),
     ), patch.object(
         hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024
     ), patch.object(
@@ -360,7 +367,7 @@ def test_hybrid_search_rrf_dedup_and_amendment_priority():
         hybrid_mod, "validate_query_embedding_dimension", return_value=None
     ):
         results = hybrid_search(
-            "срок оплаты аренды",
+            "дополнительное соглашение срок оплаты аренды",
             top_k=10,
             intent="mixed_query",
             rerank=False,
@@ -396,7 +403,9 @@ def test_hybrid_search_candidate_pool_is_limited_to_40():
     with patch.object(
         hybrid_mod, "load_canonical_chunks_map", return_value=chunks_map
     ), patch.object(
-        hybrid_mod.bm25_store, "search", return_value=bm25_results
+        hybrid_mod.bm25_store,
+        "search_with_stats",
+        return_value=(bm25_results, make_bm25_stats(bm25_results)),
     ), patch.object(
         hybrid_mod, "get_query_embedding", return_value=[0.0] * 1024
     ), patch.object(

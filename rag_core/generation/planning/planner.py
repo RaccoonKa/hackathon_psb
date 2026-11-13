@@ -101,6 +101,40 @@ def _normalize_for_dedup(text: str) -> str:
     return " ".join((text or "").lower().split()).strip(" ?!.,;:")
 
 
+# H-2A: единый маппинг intent анализа → hybrid-intent поиска.
+# compare/date_version/checklist используют смешанные веса, поскольку
+# требуют и точных, и смысловых совпадений.
+_HYBRID_INTENT_MAP: dict[str, str] = {
+    "exact_lookup": "exact_lookup",
+    "mixed": "mixed_query",
+    "mixed_query": "mixed_query",
+    "semantic": "semantic_query",
+    "semantic_query": "semantic_query",
+    "compare": "mixed_query",
+    "date_version": "mixed_query",
+    "checklist": "mixed_query",
+}
+
+
+def _hybrid_intent(intent: str | None) -> str:
+    """Возвращает hybrid-intent; неизвестное значение → ``mixed_query``."""
+    return _HYBRID_INTENT_MAP.get((intent or "").strip().lower(), "mixed_query")
+
+
+def _unique_queries(*groups) -> list[str]:
+    """Объединяет группы запросов без дублей (нормализация регистра/пробелов)."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for group in groups:
+        for query in group:
+            key = _normalize_for_dedup(query)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(query)
+    return result
+
+
 def plan(
     spec: QuerySpec,
     user_selected_doc_ids: set[str] | None = None,
@@ -117,53 +151,37 @@ def plan(
     max_slot_queries = max(2, min(4, len(spec.required_slots) + 1))
 
     intent = spec.intent
+    hybrid_intent = _hybrid_intent(intent)
+
     if intent == "exact_lookup":
-        for q in bm25_q[:max_slot_queries]:
+        # H-2A: один hybrid вместо отдельных bm25+dense на те же запросы.
+        for q in _unique_queries(bm25_q[:max_slot_queries], dense_q[:1]):
             tasks.append(
                 RetrievalTask(
                     query=q,
-                    mode="bm25",
-                    purpose="exact_lookup_bm25",
+                    mode="hybrid",
+                    purpose="exact_lookup_hybrid",
                     selected_doc_ids=selected_doc_ids,
                     boost_doc_ids=boost_doc_ids,
                     event_date=spec.event_date,
                     top_k=top_k,
+                    intent=hybrid_intent,
                 )
             )
-        tasks.append(
-            RetrievalTask(
-                query=dense_q[0],
-                mode="dense",
-                purpose="exact_lookup_dense",
-                selected_doc_ids=selected_doc_ids,
-                boost_doc_ids=boost_doc_ids,
-                event_date=spec.event_date,
-                top_k=top_k,
-            )
-        )
     elif intent in {"mixed", "mixed_query"}:
-        for q in bm25_q[:max_slot_queries]:
+        for q in _unique_queries(
+            bm25_q[:max_slot_queries], dense_q[:max_slot_queries]
+        ):
             tasks.append(
                 RetrievalTask(
                     query=q,
-                    mode="bm25",
-                    purpose="mixed_bm25",
+                    mode="hybrid",
+                    purpose="mixed_hybrid",
                     selected_doc_ids=selected_doc_ids,
                     boost_doc_ids=boost_doc_ids,
                     event_date=spec.event_date,
                     top_k=top_k,
-                )
-            )
-        for q in dense_q[:max_slot_queries]:
-            tasks.append(
-                RetrievalTask(
-                    query=q,
-                    mode="dense",
-                    purpose="mixed_dense",
-                    selected_doc_ids=selected_doc_ids,
-                    boost_doc_ids=boost_doc_ids,
-                    event_date=spec.event_date,
-                    top_k=top_k,
+                    intent=hybrid_intent,
                 )
             )
     elif intent == "compare":
@@ -194,6 +212,7 @@ def plan(
                         boost_doc_ids=sq_boost or None,
                         event_date=spec.event_date,
                         top_k=top_k,
+                        intent=hybrid_intent,
                     )
                 )
                 if expansion:
@@ -207,59 +226,43 @@ def plan(
                             boost_doc_ids=sq_boost or None,
                             event_date=spec.event_date,
                             top_k=top_k,
+                            intent=hybrid_intent,
                         )
                     )
         else:
-            for q in dense_q[:max_slot_queries]:
+            for q in _unique_queries(
+                dense_q[:max_slot_queries], bm25_q[:max_slot_queries]
+            ):
                 tasks.append(
                     RetrievalTask(
                         query=q,
-                        mode="dense",
-                        purpose="compare_fallback",
+                        mode="hybrid",
+                        purpose="compare_fallback_hybrid",
                         selected_doc_ids=selected_doc_ids,
                         boost_doc_ids=boost_doc_ids,
                         event_date=spec.event_date,
                         top_k=top_k,
-                    )
-                )
-            for q in bm25_q[:max_slot_queries]:
-                tasks.append(
-                    RetrievalTask(
-                        query=q,
-                        mode="bm25",
-                        purpose="compare_fallback_bm25",
-                        selected_doc_ids=selected_doc_ids,
-                        boost_doc_ids=boost_doc_ids,
-                        event_date=spec.event_date,
-                        top_k=top_k,
+                        intent=hybrid_intent,
                     )
                 )
     elif intent == "date_version":
-        tasks.append(
-            RetrievalTask(
-                query=bm25_q[0],
-                mode="bm25",
-                purpose="date_version_bm25",
-                selected_doc_ids=selected_doc_ids,
-                boost_doc_ids=boost_doc_ids,
-                event_date=spec.event_date,
-                top_k=top_k,
-            )
-        )
-        for q in dense_q[:max_slot_queries]:
+        for q in _unique_queries(bm25_q[:1], dense_q[:max_slot_queries]):
             tasks.append(
                 RetrievalTask(
                     query=q,
-                    mode="dense",
-                    purpose="date_version_dense",
+                    mode="hybrid",
+                    purpose="date_version_hybrid",
                     selected_doc_ids=selected_doc_ids,
                     boost_doc_ids=boost_doc_ids,
                     event_date=spec.event_date,
                     top_k=top_k,
+                    intent=hybrid_intent,
                 )
             )
         entity_prefix = " ".join(spec.entities_raw)
         amendment_query = f"{entity_prefix} родительский договор дополнительное соглашение редакция изменения".strip()
+        # Отдельный лексический канал осознанно сохранён: явные маркеры
+        # допсоглашения/редакции нужны, чтобы найти родительский договор.
         tasks.append(
             RetrievalTask(
                 query=amendment_query,
@@ -269,50 +272,45 @@ def plan(
                 boost_doc_ids=boost_doc_ids,
                 event_date=None,
                 top_k=top_k,
+                intent=hybrid_intent,
             )
         )
     elif intent == "checklist":
-        for q in dense_q[:max_slot_queries]:
+        for q in _unique_queries(dense_q[:max_slot_queries]):
             tasks.append(
                 RetrievalTask(
                     query=q,
-                    mode="dense",
-                    purpose="checklist_steps",
+                    mode="hybrid",
+                    purpose="checklist_hybrid",
                     selected_doc_ids=selected_doc_ids,
                     boost_doc_ids=boost_doc_ids,
                     event_date=spec.event_date,
                     top_k=top_k,
+                    intent=hybrid_intent,
                 )
             )
     else:
-        for q in dense_q[:max_slot_queries]:
+        for q in _unique_queries(
+            dense_q[:max_slot_queries], bm25_q[:max_slot_queries]
+        ):
             tasks.append(
                 RetrievalTask(
                     query=q,
-                    mode="dense",
-                    purpose="semantic_dense",
+                    mode="hybrid",
+                    purpose="semantic_hybrid",
                     selected_doc_ids=selected_doc_ids,
                     boost_doc_ids=boost_doc_ids,
                     event_date=spec.event_date,
                     top_k=top_k,
-                )
-            )
-        for q in bm25_q[:max_slot_queries]:
-            tasks.append(
-                RetrievalTask(
-                    query=q,
-                    mode="bm25",
-                    purpose="semantic_bm25",
-                    selected_doc_ids=selected_doc_ids,
-                    boost_doc_ids=boost_doc_ids,
-                    event_date=spec.event_date,
-                    top_k=top_k,
+                    intent=hybrid_intent,
                 )
             )
         if spec.decomposition:
-            existing_queries = {t.query.lower() for t in tasks}
+            existing_queries = {_normalize_for_dedup(t.query) for t in tasks}
             for sq in spec.decomposition[:3]:
-                if sq.text.lower() not in existing_queries:
+                key = _normalize_for_dedup(sq.text)
+                if key and key not in existing_queries:
+                    existing_queries.add(key)
                     tasks.append(
                         RetrievalTask(
                             query=sq.text,
@@ -322,6 +320,7 @@ def plan(
                             boost_doc_ids=boost_doc_ids,
                             event_date=spec.event_date,
                             top_k=top_k,
+                            intent=hybrid_intent,
                         )
                     )
 
@@ -344,6 +343,7 @@ def plan(
                     "query": t.query,
                     "mode": t.mode,
                     "purpose": t.purpose,
+                    "intent": t.intent,
                 }
                 for idx, t in enumerate(tasks)
             ],
