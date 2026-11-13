@@ -299,6 +299,7 @@ _ALLOWED_ANALYSIS_INTENTS = {
     "compare",
     "date_version",
     "checklist",
+    "out_of_scope",
 }
 _NULL_LIKE_STRINGS = {"null", "none", "nil", "false", "нет", "не применимо", "n/a", ""}
 
@@ -334,8 +335,8 @@ class QueryAnalysisSchema(BaseModel):
     ambiguity: Ambiguity = Ambiguity.LOW
     needs_clarification: bool = False
     decomposition: list[SubQuestionSchema] = Field(default_factory=list)
-    rewritten_queries_bm25: list[str]
-    rewritten_queries_dense: list[str]
+    rewritten_queries_bm25: list[str] = Field(default_factory=list)
+    rewritten_queries_dense: list[str] = Field(default_factory=list)
 
     @field_validator("intent")
     @classmethod
@@ -381,11 +382,8 @@ class QueryAnalysisSchema(BaseModel):
 
     @field_validator("rewritten_queries_bm25", "rewritten_queries_dense")
     @classmethod
-    def _validate_non_empty_queries(cls, v: list[str]) -> list[str]:
-        non_empty = [q.strip() for q in v if q and q.strip()]
-        if not non_empty:
-            raise ValueError("Rewritten queries list must not be empty")
-        return non_empty
+    def _clean_queries(cls, v: list[str]) -> list[str]:
+        return [q.strip() for q in v if q and q.strip()]
 
     @field_validator("needs_clarification", mode="after")
     @classmethod

@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
+from unittest.mock import patch
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -19,6 +20,9 @@ os.environ.setdefault("TRACE_DETAIL_LEVEL", "off")
 
 from rag_core import config
 from rag_core.generation.analysis.query_analysis import analyze_query
+import rag_core.generation.analysis.query_analysis as qa_module
+import rag_core.generation.prompts.history as history_prompts
+import rag_core.generation.prompts.query_analysis as qa_prompts
 
 
 TEST_TEMP = float(os.environ.get("REWRITE_TEST_TEMP", "0.0"))
@@ -31,12 +35,76 @@ ONLY_CATEGORIES = {
     for c in (os.environ.get("REWRITE_TEST_ONLY", "") or "").split(",")
     if c.strip()
 }
+RAW_OUTPUT_MAX_CHARS = int(
+    os.environ.get("REWRITE_TEST_RAW_MAX_CHARS", "20000")
+)
+
+
+_RAW_LOG: list[dict[str, Any]] = []
+
+
+def _detect_stage(messages: list[dict]) -> str:
+    if not messages:
+        return "unknown"
+    system_content = str(messages[0].get("content") or "")
+    history_prefix = history_prompts.HISTORY_RESOLUTION_SYSTEM[:80]
+    analysis_prefix = qa_prompts.QUERY_ANALYSIS_SYSTEM[:80]
+    if system_content.startswith(history_prefix):
+        return "history_resolution"
+    if system_content.startswith(analysis_prefix):
+        return "query_analysis"
+    return "unknown"
+
+
+def _install_raw_recorder() -> Any:
+    original = qa_module.llm_complete_with_usage
+
+    def _recording_llm(messages, **kwargs):
+        stage = _detect_stage(messages)
+        started = time.perf_counter()
+        entry: dict[str, Any] = {
+            "stage": stage,
+            "model": kwargs.get("model"),
+            "temperature": kwargs.get("temperature"),
+            "max_tokens": kwargs.get("max_tokens"),
+            "timeout": kwargs.get("timeout"),
+            "system_prompt": str((messages[0] if messages else {}).get("content") or ""),
+            "user_prompt": str((messages[1] if len(messages) > 1 else {}).get("content") or ""),
+        }
+        try:
+            text, p_tok, c_tok = original(messages, **kwargs)
+        except Exception as exc:
+            elapsed = round((time.perf_counter() - started) * 1000, 1)
+            entry["ok"] = False
+            entry["error_type"] = type(exc).__name__
+            entry["error_message"] = str(exc)[:500]
+            entry["elapsed_ms"] = elapsed
+            _RAW_LOG.append(entry)
+            raise
+
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        raw_text = text if isinstance(text, str) else str(text)
+        truncated = False
+        if RAW_OUTPUT_MAX_CHARS > 0 and len(raw_text) > RAW_OUTPUT_MAX_CHARS:
+            raw_text = raw_text[:RAW_OUTPUT_MAX_CHARS]
+            truncated = True
+
+        entry["ok"] = True
+        entry["raw_output"] = raw_text
+        entry["raw_output_truncated"] = truncated
+        entry["raw_output_length"] = len(text) if isinstance(text, str) else len(raw_text)
+        entry["prompt_tokens"] = p_tok
+        entry["completion_tokens"] = c_tok
+        entry["elapsed_ms"] = elapsed
+        _RAW_LOG.append(entry)
+        return text, p_tok, c_tok
+
+    return patch.object(
+        qa_module, "llm_complete_with_usage", side_effect=_recording_llm
+    )
 
 
 def _monkeypatch_temperatures(temp: float) -> None:
-    import rag_core.generation.prompts.history as history_prompts
-    import rag_core.generation.prompts.query_analysis as qa_prompts
-
     qa_prompts.QUERY_ANALYSIS_TEMPERATURE = temp
     history_prompts.HISTORY_RESOLUTION_TEMPERATURE = temp
 
@@ -236,7 +304,6 @@ def _format_history(history: Optional[list[dict]]) -> str:
 
 
 def _stability(values: list[Optional[str]]) -> dict[str, Any]:
-    """Оценивает стабильность строкового ряда по прогонам."""
     non_empty = [v for v in values if v]
     if not non_empty:
         return {"unique": 0, "level": "empty", "variants": []}
@@ -252,17 +319,18 @@ def _stability(values: list[Optional[str]]) -> dict[str, Any]:
 
 
 def _run_case_once(case: dict[str, Any]) -> dict[str, Any]:
-    """Один вызов analyze_query для кейса."""
     query: str = case["query"]
     history = case.get("history")
 
+    _RAW_LOG.clear()
     start = time.perf_counter()
     try:
-        spec, step, used = analyze_query(
-            query=query,
-            chat_history=history,
-            timeout=CALL_TIMEOUT,
-        )
+        with _install_raw_recorder():
+            spec, step, used = analyze_query(
+                query=query,
+                chat_history=history,
+                timeout=CALL_TIMEOUT,
+            )
         error: Optional[str] = None
     except Exception as exc:
         spec = None
@@ -270,6 +338,8 @@ def _run_case_once(case: dict[str, Any]) -> dict[str, Any]:
         used = False
         error = f"{type(exc).__name__}: {exc}"
     elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
+    raw_calls = list(_RAW_LOG)
+    _RAW_LOG.clear()
 
     if spec is None:
         return {
@@ -287,9 +357,19 @@ def _run_case_once(case: dict[str, Any]) -> dict[str, Any]:
             "degradation": None,
             "prompt_tokens": 0,
             "completion_tokens": 0,
+            "task_type": None,
+            "article_refs": [],
+            "dates": [],
+            "assumptions": [],
+            "ambiguity": None,
+            "decomposition": [],
+            "premises": [],
+            "attempts": None,
+            "raw_llm_calls": raw_calls,
         }
 
     effective_query = (step.input or {}).get("query") if step else None
+    attempts = (step.input or {}).get("attempts") if step else None
 
     return {
         "ok": True,
@@ -306,6 +386,30 @@ def _run_case_once(case: dict[str, Any]) -> dict[str, Any]:
         "degradation": spec.degradation_reason,
         "prompt_tokens": step.prompt_tokens if step else 0,
         "completion_tokens": step.completion_tokens if step else 0,
+        "task_type": spec.task_type.value if spec.task_type else None,
+        "article_refs": list(spec.article_refs),
+        "dates": list(spec.dates),
+        "assumptions": list(spec.assumptions),
+        "ambiguity": spec.ambiguity.value if spec.ambiguity else None,
+        "decomposition": [
+            {
+                "text": sq.text,
+                "target_doc_raw": sq.target_doc_raw,
+                "aspect": sq.aspect,
+            }
+            for sq in spec.decomposition
+        ],
+        "premises": [
+            {
+                "text": p.text,
+                "kind": p.kind,
+                "value": p.value,
+                "verified": p.verified,
+            }
+            for p in spec.premises
+        ],
+        "attempts": attempts,
+        "raw_llm_calls": raw_calls,
     }
 
 
@@ -329,6 +433,9 @@ def _run_case(case: dict[str, Any], case_idx: int, total: int) -> dict[str, Any]
         if not r["ok"]:
             print(f"  run {r_idx}/{REPEATS}: ERROR ({r['elapsed_ms']} мс) "
                   f"← {r['error']}")
+            for call in r.get("raw_llm_calls", []):
+                print(f"    [raw {call.get('stage')}] ok={call.get('ok')} "
+                      f"error={call.get('error_type')}")
             continue
 
         eff = _shorten(r["effective_query"], 260)
@@ -345,6 +452,12 @@ def _run_case(case: dict[str, Any], case_idx: int, total: int) -> dict[str, Any]
             f"{r['elapsed_ms']}мс"
         )
         print(f"           {extra}")
+        raw_summary = ", ".join(
+            f"{c.get('stage')}={'ok' if c.get('ok') else 'err'}"
+            f"({c.get('completion_tokens')}/{c.get('elapsed_ms')}ms)"
+            for c in r.get("raw_llm_calls", [])
+        )
+        print(f"           raw_calls: {raw_summary or '(none)'}")
 
     effective_values = [r["effective_query"] for r in runs]
     bm25_values = [
@@ -412,6 +525,9 @@ def main() -> None:
     print(f"Тест-температура:{TEST_TEMP}")
     print(f"Таймаут вызова:  {CALL_TIMEOUT} с")
     print(f"Повторов/кейс:   {REPEATS}")
+    print(f"QUERY_ANALYSIS_MAX_TOKENS:   {qa_prompts.QUERY_ANALYSIS_MAX_TOKENS}")
+    print(f"HISTORY_RESOLUTION_MAX_TOKENS: {history_prompts.HISTORY_RESOLUTION_MAX_TOKENS}")
+    print(f"RAW_OUTPUT_MAX_CHARS:        {RAW_OUTPUT_MAX_CHARS}")
 
     if config.USE_STUB_LLM or config.LLM_MODE == config.LLM_MODE_STUB:
         print("\n⚠️  USE_STUB_LLM=true или LLM_MODE=stub.")
@@ -527,6 +643,9 @@ def main() -> None:
             "repeats": REPEATS,
             "timeout_s": CALL_TIMEOUT,
             "total_elapsed_s": round(total_elapsed, 1),
+            "query_analysis_max_tokens": qa_prompts.QUERY_ANALYSIS_MAX_TOKENS,
+            "history_resolution_max_tokens": history_prompts.HISTORY_RESOLUTION_MAX_TOKENS,
+            "raw_output_max_chars": RAW_OUTPUT_MAX_CHARS,
         },
         "results": [
             {

@@ -1814,3 +1814,207 @@ def test_end_to_end_analyze_plan_followup():
     )
     assert followup_tasks
     assert all("penalty" in t.purpose for t in followup_tasks)
+
+
+def test_infer_penalty_peney():
+    assert "penalty" in _infer_slots_by_regex("какой размер пеней за просрочку")
+
+
+def test_infer_penalty_penyah():
+    assert "penalty" in _infer_slots_by_regex("требование о пенях по договору")
+
+
+def test_infer_penalty_penyami():
+    assert "penalty" in _infer_slots_by_regex("взыскание пенями за каждый день")
+
+
+def test_infer_penalty_penyam():
+    assert "penalty" in _infer_slots_by_regex("порядок начисления пеням")
+
+
+def test_infer_penalty_peneyu():
+    assert "penalty" in _infer_slots_by_regex("уплата пенею")
+
+
+def test_infer_penalty_for_rent_overdue_does_not_trigger_rent_amount():
+    slots = _infer_slots_by_regex("Какой размер пеней за просрочку арендной платы?")
+    assert slots == ["penalty"]
+
+
+def test_sanitize_slots_penalty_peney_kept_and_rent_stripped():
+    result = _sanitize_required_slots(
+        "Какой размер пеней за просрочку арендной платы?",
+        ["rent_amount"],
+    )
+    assert result == ["penalty"]
+
+
+def test_ensure_slot_queries_penalty_not_blocked_by_rent_amount():
+    query = (
+        "Какая арендная плата по договору с ООО «Северный Склад», "
+        "до какого числа её вносить и какой размер пеней за просрочку?"
+    )
+    slots = ["rent_amount", "payment_deadline", "penalty"]
+    bm25, dense = _ensure_slot_queries(
+        query,
+        ["ООО «Северный Склад»"],
+        slots,
+        [query],
+        [query],
+    )
+    assert len(dense) == 4
+    assert len(bm25) == 4
+
+    dense_joined = " ".join(dense).lower()
+    bm25_joined = " ".join(bm25).lower()
+
+    for slot in slots:
+        expected_template = _SLOT_QUERY_TEMPLATES[slot].lower()
+        assert expected_template in dense_joined
+        assert expected_template in bm25_joined
+
+    for marker in ("ежемесячной платы", "порядок расчетов", "неустойки"):
+        assert marker in dense_joined
+        assert marker in bm25_joined
+
+
+def test_ensure_slot_queries_idempotent_across_repeated_calls():
+    query = "Какая арендная плата и какой размер пеней?"
+    slots = ["rent_amount", "payment_deadline", "penalty"]
+    bm25_1, dense_1 = _ensure_slot_queries(query, [], slots, [query], [query])
+    bm25_2, dense_2 = _ensure_slot_queries(query, [], slots, bm25_1, dense_1)
+    assert dense_2 == dense_1
+    assert bm25_2 == bm25_1
+
+
+def test_ensure_decomposition_single_question_with_trailing_mark_empty():
+    result = _ensure_decomposition(
+        "Какая арендная плата?",
+        [],
+        ["rent_amount"],
+        [],
+    )
+    assert result == []
+
+
+def test_ensure_decomposition_compound_i_kakaya():
+    result = _ensure_decomposition(
+        "До какого числа вносить оплату и какая ответственность за просрочку?",
+        [],
+        ["payment_deadline"],
+        [],
+    )
+    assert len(result) == 2
+    assert result[1].text.startswith("какая ответственность")
+
+
+
+# ---------------------------------------------------------------------------
+# Регрессионные тесты: отсутствие захардкоженных артефактов в шаблонах (Bug D)
+# ---------------------------------------------------------------------------
+
+def test_slot_templates_have_no_hardcoded_clause_numbers_or_roles():
+    forbidden_fragments = (
+        "пункт 3.1",
+        "пункт 3.2",
+        "пункт 3.5",
+        "пункт 5.1",
+        "5 числа",
+        "450 000",
+        "главный бухгалтер",
+    )
+    for slot, template in _SLOT_QUERY_TEMPLATES.items():
+        low = template.lower()
+        for fragment in forbidden_fragments:
+            assert fragment not in low, f"Hardcoded '{fragment}' found in template '{slot}'"
+
+
+def test_ensure_slot_queries_probation_period_is_role_agnostic():
+    _, dense = _ensure_slot_queries(
+        "А что по статье 70 ТК РФ?",
+        ["ТК РФ"],
+        ["probation_period"],
+        ["статья 70 ТК РФ"],
+        ["статья 70 ТК РФ"],
+    )
+    joined = " ".join(dense).lower()
+    assert "испыта" in joined
+    assert "бухгалтер" not in joined
+
+
+def test_ensure_slot_queries_payment_deadline_neutral_for_supply_contract():
+    bm25, dense = _ensure_slot_queries(
+        "Какой срок оплаты по договору поставки № ПТ-05/2023?",
+        ["ПТ-05/2023"],
+        ["payment_deadline"],
+        ["договор поставки ПТ-05/2023"],
+        ["договор поставки ПТ-05/2023"],
+    )
+    joined = " ".join(bm25 + dense).lower()
+    assert "срок оплаты" in joined
+    assert "аренд" not in joined
+
+
+# ---------------------------------------------------------------------------
+# Регрессионные тесты: Bug E (law context), дедуп LLM-слотов, даты «месяц+год»
+# ---------------------------------------------------------------------------
+
+def test_ensure_slot_queries_law_context_uses_administrative_penalty_template():
+    bm25, dense = _ensure_slot_queries(
+        "Какой штраф по статье 13.11 КоАП РФ?",
+        ["КоАП РФ"],
+        ["penalty"],
+        ["общий запрос"],
+        ["общий запрос"],
+    )
+    joined = " ".join(bm25 + dense).lower()
+    assert "административного штрафа" in joined
+    assert "обязательств" not in joined
+    assert "пеней" not in joined
+
+
+def test_ensure_slot_queries_exact_lookup_skips_unanchored_canonical_when_refs_covered():
+    llm_bm25 = [
+        "статья 13.11 КоАП РФ штраф обработка персональных данных",
+        "статья 13.11 КоАП РФ размер административного штрафа",
+    ]
+    llm_dense = list(llm_bm25)
+    bm25, dense = _ensure_slot_queries(
+        "Какие штрафы по ст. 13.11 КоАП РФ за обработку персональных данных без согласия?",
+        ["КоАП РФ"],
+        ["penalty", "consent_withdrawal"],
+        llm_bm25,
+        llm_dense,
+        intent="exact_lookup",
+        article_refs=["13.11"],
+    )
+    assert bm25 == llm_bm25
+    assert dense == llm_dense
+
+
+def test_ensure_slot_queries_skips_canonical_when_llm_covered_each_slot():
+    query = "Какая арендная плата по договору с ООО «Северный Склад», до какого числа её вносить и какой размер пеней?"
+    llm_queries = [
+        "договор аренды ООО «Северный Склад» арендная плата срок внесения пени за просрочку",
+        "арендная плата размер договор аренды ООО «Северный Склад»",
+        "срок внесения арендной платы до какого числа договор аренды ООО «Северный Склад»",
+        "размер пеней за просрочку арендной платы договор аренды ООО «Северный Склад»",
+    ]
+    bm25, dense = _ensure_slot_queries(
+        query,
+        ["ООО «Северный Склад»"],
+        ["rent_amount", "payment_deadline", "penalty"],
+        llm_queries,
+        llm_queries,
+    )
+    assert bm25 == llm_queries
+    assert dense == llm_queries
+
+
+def test_dates_month_and_year_without_day():
+    assert extract_dates_from_text("договор на 12 млн руб. в августе 2024 года") == ["2024-08-01"]
+    assert extract_dates_from_text("по состоянию на май 2025") == ["2025-05-01"]
+
+
+def test_dates_day_month_year_not_duplicated_by_month_year():
+    assert extract_dates_from_text("с 15 августа 2024 года") == ["2024-08-15"]

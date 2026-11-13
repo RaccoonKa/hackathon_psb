@@ -39,7 +39,11 @@ _EXPLICIT_POINT_OR_QUOTE_RE = re.compile(
 _ISO_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _RU_DATE_RE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b")
 _TEXT_DATE_RE = re.compile(
-    r"\b(\d{1,2})\s+(январ\w*|феврал\w*|март\w*|апрел\w*|ма[яе]|июн\w*|июл\w*|август\w*|сентябр\w*|октябр\w*|ноябр\w*|декабр\w*)\s+(20\d{2})(?:\s*(?:года|г\.?))?\b",
+    r"\b(\d{1,2})\s+(январ\w*|феврал\w*|март\w*|апрел\w*|ма(?:й|я|е|ю|ем)|июн\w*|июл\w*|август\w*|сентябр\w*|октябр\w*|ноябр\w*|декабр\w*)\s+(20\d{2})(?:\s*(?:года|году|г\.?))?\b",
+    re.IGNORECASE,
+)
+_MONTH_YEAR_RE = re.compile(
+    r"\b(январ\w*|феврал\w*|март\w*|апрел\w*|ма(?:й|я|е|ю|ем)|июн\w*|июл\w*|август\w*|сентябр\w*|октябр\w*|ноябр\w*|декабр\w*)\s+(20\d{2})(?:\s*(?:года|году|г\.?))?\b",
     re.IGNORECASE,
 )
 _RU_MONTH_MAP: dict[str, str] = {
@@ -57,17 +61,34 @@ _RU_MONTH_MAP: dict[str, str] = {
     "декабр": "12",
 }
 
+_PENALTY_STEM_PATTERN = r"\bпен(?:я|и|е|ю|ей|ею|ям|ями|ях)\b"
+_PENALTY_RE = re.compile(
+    rf"{_PENALTY_STEM_PATTERN}|неустойк\w+|штраф\w*",
+    re.IGNORECASE,
+)
+
 _NON_AMOUNT_RENT_MENTIONS_RE = re.compile(
-    r"(?:просрочк\w*|срок\w*\s+(?:внесени\w*|оплат\w*|уплат\w*)|дата\s+(?:внесени\w*|оплат\w*)|до\s+какого\s+числа\s+[^\?]*?внес\w*|пен[яиюей]\s+за\s+[^\?]*?)\s+арендн\w+\s+плат\w*",
+    rf"(?:просрочк\w*|срок\w*\s+(?:внесени\w*|оплат\w*|уплат\w*)|дата\s+(?:внесени\w*|оплат\w*)|до\s+какого\s+числа\s+[^\?]*?внес\w*|{_PENALTY_STEM_PATTERN}\s+за\s+[^\?]*?)\s+арендн\w+\s+плат\w*(?:\s+(?:в\s+размере\s+|составляющую\s+)?\d[\d\s]*\s*(?:руб\w*|₽|тыс\.?|млн\.?))?",
+    re.IGNORECASE,
+)
+
+_PAYMENT_TERMS_RE = re.compile(
+    r"(?:услови\w*\s+(?:оплат\w*|расчет\w*)|поряд\w*\s+(?:оплат\w*|расчет\w*)|как\s+(?:оплачива\w*|производит\w*\s+оплат\w*|вносит\w*\s+оплат\w*))",
     re.IGNORECASE,
 )
 
 _SLOT_DETECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("security_deposit", re.compile(r"обеспечительн\w+\s+платеж|гарантийн\w+\s+взнос|депозит\w*", re.IGNORECASE)),
-    ("penalty", re.compile(r"\bпен[яиюей]\b|неустойк\w+|штраф\w*", re.IGNORECASE)),
+    ("penalty", _PENALTY_RE),
     ("accrual_period", re.compile(r"за\s+какой\s+период|период\s+начислен|с\s+какого\s+момента\s+начисля", re.IGNORECASE)),
     ("liability_cap", re.compile(r"ограничен\w*\s+(?:ли\s+)?ответственност|чем\s+(?:именно\s+)?ограничен|предел\w*\s+ответственност", re.IGNORECASE)),
-    ("payment_deadline", re.compile(r"до\s+какого\s+числа|срок\w*\s+(?:оплат\w*|внесени\w*|расчет\w*)|когда\s+(?:нужно\s+)?(?:оплач|вноси)", re.IGNORECASE)),
+    (
+        "payment_deadline",
+        re.compile(
+            r"до\s+какого\s+числа|срок\w*\s+(?:оплат\w*|внесени\w*|расчет\w*)|когда\s+(?:нужно\s+)?(?:оплач|вноси)|услови\w*\s+(?:оплат\w*|расчет\w*)|поряд\w*\s+(?:оплат\w*|расчет\w*)",
+            re.IGNORECASE,
+        ),
+    ),
     ("probation_period", re.compile(r"испытательн\w+\s+срок|срок\w*\s+испытани", re.IGNORECASE)),
     ("overtime_limit", re.compile(r"сколько\s+часов\s+сверхурочн|продолжительност\w+\s+сверхурочн|120\s+часов", re.IGNORECASE)),
     ("overtime_pay", re.compile(r"оплач\w+\s+сверхурочн|оплат\w+\s+сверхурочн", re.IGNORECASE)),
@@ -80,35 +101,90 @@ _SLOT_DETECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("prepayment", re.compile(r"\bаванс\w*|\bпредоплат\w*", re.IGNORECASE)),
     ("return_procedure", re.compile(r"сдать\s+ключ|возврат\w*\s+помещен|оформля\w+\s+акт", re.IGNORECASE)),
     ("document_handover", re.compile(r"оригинал\w*\s+договор|переда\w+\s+в\s+юр\w*отдел|из\s+архива", re.IGNORECASE)),
-    ("consent_withdrawal", re.compile(r"отозвал\w*\s+согласи|персональн\w+\s+данн|удалить\s+вообще\s+вс[её]", re.IGNORECASE)),
+    (
+        "consent_withdrawal",
+        re.compile(
+            r"отзыв\w*\s+согласи|отозв\w+\s+согласи|прекра\w+\s+обработк\w+\s+персональн|удалить\s+(?:персональн\w+\s+данн\w*|вообще\s+вс[её])",
+            re.IGNORECASE,
+        ),
+    ),
     ("seasonal_work", re.compile(r"сезонн\w+\s+работ|срочн\w+\s+трудов\w+\s+договор", re.IGNORECASE)),
 ]
 
 _SLOT_QUERY_TEMPLATES: dict[str, str] = {
-    "security_deposit": "размер обеспечительного платежа при подписании договора месячной арендной платы пункт 3.5",
-    "penalty": "размер пеней неустойки процент за просрочку исполнения обязательств пункт 5.1",
-    "accrual_period": "период начисления пеней за каждый день просрочки исполнения обязательств",
-    "liability_cap": "ограничение ответственности сторон предел ответственности реальный ущерб упущенная выгода",
-    "rent_amount": "размер арендной платы составляет рублей в месяц включая НДС пункт 3.1",
-    "payment_deadline": "срок внесения арендной платы оплаты не позднее 5 числа текущего месяца порядок расчетов пункт 3.2",
-    "probation_period": "максимальный срок испытания при приеме на работу главный бухгалтер",
-    "overtime_limit": "продолжительность сверхурочной работы лимит часов в год",
-    "overtime_pay": "размер оплаты сверхурочной работы первые два часа последующие часы",
-    "approval_process": "порядок согласования договоров одобрение генеральным директором сумма порог",
-    "termination": "порядок расторжения прекращения договора уведомление",
-    "tax_rate": "налоговая ставка НДС налог на прибыль",
-    "delivery_terms": "адрес доставки стоимость упаковки и доставки в цену товара",
-    "acceptance_terms": "срок приемки товара по качеству претензия акт о выявленных недостатках",
-    "warranty_period": "гарантийный срок на товар гарантийный талон производителя",
-    "prepayment": "условия предоплаты оплата авансом счет поставщика",
-    "return_procedure": "возврат помещения при прекращении договора аренды акт возврата передача ключей",
-    "document_handover": "выдача и передача оригиналов договоров в юридический отдел срок рабочих дней",
-    "consent_withdrawal": "отзыв согласия на обработку персональных данных продолжение обработки без согласия",
-    "seasonal_work": "срочный трудовой договор для выполнения сезонных работ",
+    "security_deposit": "размер обеспечительного платежа условия внесения и возврата депозита",
+    "penalty": "размер штрафа пеней неустойки за нарушение",
+    "accrual_period": "период начисления пеней неустойки за каждый день просрочки",
+    "liability_cap": "ограничение ответственности сторон предел возмещения реального ущерба и убытков",
+    "rent_amount": "размер арендной платы сумма ежемесячной платы за аренду",
+    "payment_deadline": "срок внесения арендной платы порядок расчетов дата оплаты",
+    "probation_period": "испытательный срок при приеме на работу продолжительность испытания",
+    "overtime_limit": "продолжительность сверхурочной работы предельный лимит часов",
+    "overtime_pay": "размер оплаты сверхурочной работы повышенная оплата часов",
+    "approval_process": "порядок согласования договоров одобрение руководителем пороговая сумма",
+    "termination": "порядок расторжения прекращения договора односторонний отказ уведомление",
+    "tax_rate": "налоговая ставка НДС налог на прибыль условия применения",
+    "effective_date": "срок действия редакция вступает в силу дополнительное соглашение",
+    "delivery_terms": "условия и адрес доставки распределение расходов на упаковку и перевозку",
+    "acceptance_terms": "порядок и срок приемки товара по качеству претензия акт о недостатках",
+    "warranty_period": "гарантийный срок на товар условия и порядок исчисления гарантии",
+    "prepayment": "условия предоплаты и авансового платежа порядок расчетов",
+    "return_procedure": "порядок возврата имущества помещения при прекращении договора по акту",
+    "document_handover": "выдача и передача оригиналов договоров в юридический отдел срок",
+    "consent_withdrawal": "отзыв согласия на обработку персональных данных прекращение обработки",
+    "seasonal_work": "срочный трудовой договор для выполнения сезонных работ условия",
 }
 
+_PAYMENT_DEADLINE_NEUTRAL_TEMPLATE = "срок оплаты порядок расчетов дата внесения платежа"
+_NON_RENTAL_CONTEXT_RE = re.compile(r"\b(?:поставк\w*|товар\w*|услуг\w*|подряд\w*)\b", re.IGNORECASE)
+_LAW_CONTEXT_RE = re.compile(
+    r"(?:\b(?:коап|гк|нк|тк|ук)\s+рф\b|\bфз\b|федеральн\w+\s+закон|кодекс\w*|стать[яеиюй]\s*\d+|\bст\.\s*\d+)",
+    re.IGNORECASE,
+)
+_LAW_SLOT_OVERRIDES: dict[str, str] = {
+    "penalty": "размер административного штрафа ответственности санкции за нарушение",
+}
+
+_SLOT_DEDUP_STOP_STEMS = frozenset({"пункт", "догов", "сторо"})
+_SLOT_TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
+
+_SLOT_DISCRIMINATIVE_STEMS: dict[str, frozenset[str]] = {
+    "security_deposit": frozenset({"обесп", "депоз", "гаран"}),
+    "penalty": frozenset({"пеней", "пеня", "пени", "пеням", "пенях", "неуст", "штраф", "санкц"}),
+    "accrual_period": frozenset({"перио", "начис", "кажды", "момен"}),
+    "liability_cap": frozenset({"огран", "преде", "реаль", "упуще", "убытк"}),
+    "rent_amount": frozenset({"разме", "сумм", "стоим", "ежеме"}),
+    "payment_deadline": frozenset({"срок", "внесе", "вноси", "оплат", "расче", "числ", "дат", "поздн"}),
+    "probation_period": frozenset({"испыт"}),
+    "overtime_limit": frozenset({"сверх", "лимит", "продо", "часов"}),
+    "overtime_pay": frozenset({"сверх", "оплат", "повыш", "полут", "двойн"}),
+    "approval_process": frozenset({"согла", "одобр", "визир", "порог"}),
+    "termination": frozenset({"расто", "прекр", "отказ", "уведо"}),
+    "tax_rate": frozenset({"налог", "ставк", "ндс", "прибы"}),
+    "effective_date": frozenset({"редак", "вступ", "дейст", "силу", "согла"}),
+    "delivery_terms": frozenset({"доста", "упако", "перев", "адрес"}),
+    "acceptance_terms": frozenset({"прием", "качес", "прете", "недос"}),
+    "warranty_period": frozenset({"гаран"}),
+    "prepayment": frozenset({"аванс", "предо"}),
+    "return_procedure": frozenset({"возвр", "ключ", "помещ"}),
+    "document_handover": frozenset({"ориги", "архив", "переч", "выдач"}),
+    "consent_withdrawal": frozenset({"отзыв", "персо", "данн", "обраб"}),
+    "seasonal_work": frozenset({"сезон", "срочн"}),
+}
+
+_QUESTION_WORD_PATTERN = (
+    r"(?:какой|какая|какое|какие|каков\w*|сколько|когда|где|куда|откуда|"
+    r"почему|зачем|чем|кто|что|кого|кому|кем|ч[её]м|ли)\b"
+)
+
 _COMPOUND_SPLIT_RE = re.compile(
-    r"(?:\?\s*(?:Если\s+да,?\s*то\s+|А\s+)|\s+и\s+(?:за\s+какой|до\s+какого|в\s+каком|какой|сколько|как\s+|чем\s+|срок\s+))",
+    r'(?:'
+    r'\?\s+(?=(?:если\s+да\b|а\s+|и\s+|также\s+|[^?()\[\]«»"]*\?))'
+    r'|'
+    r'\?\s+(?=[а-яёa-z][^?()\[\]«»"]*\b' + _QUESTION_WORD_PATTERN + r')'
+    r'|'
+    r'\s+и\s+(?=(?:за\s+какой|до\s+какого|в\s+каком|в\s+какой|какой|какая|какое|какие|каков\w*|сколько|как\s+|чем\s+|срок\s+))'
+    r')',
     re.IGNORECASE,
 )
 
@@ -122,7 +198,12 @@ def _asks_rent_amount(query: str) -> bool:
     stripped = _NON_AMOUNT_RENT_MENTIONS_RE.sub(" ", query.lower())
     return bool(
         re.search(
-            r"(?:какая|каков\w*|размер\w*|стоимост\w*|сколько|почему)\s+арендн\w+\s+плат|арендн\w+\s+плат\w*\s+\d",
+            r"(?:"
+            r"(?:стоимост\w*|цен\w*|сумм\w*|размер\w*)\s+(?:ежемесячн\w+\s+)?аренд(?:ы|е|у|ой|н\w+\s+плат\w*)"
+            r"|(?:какая|каков\w*|сколько|поч[её]м|почему|верно\s+ли|правда\s+ли)\s+(?:стоит\s+|составляет\s+|будет\s+|установлена\s+|равна\s+)?(?:ежемесячн\w+\s+)?аренд(?:а|ы|е|у|ой|н\w+\s+плат\w*)"
+            r"|аренд(?:а|н\w+\s+плат\w*)\s+(?:стоит|обойд[её]тся|составляет)\b"
+            r"|арендн\w+\s+плат\w*\s+(?:составляет\s+)?\d[\d\s]{2,}\s*(?:руб|₽|тыс|млн)[^\?\n]*\?"
+            r")",
             stripped,
         )
     )
@@ -135,7 +216,7 @@ _RESOLVED_PREFIX_RE = re.compile(
 
 
 _INJECTION_TOKENS_RE = re.compile(
-    r"(?:<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
+    r"(?:<\|im_start\|>|<\|im_end\|>|[INST]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
     re.IGNORECASE,
 )
 
@@ -163,8 +244,16 @@ _EXPLICIT_LAW_OR_DOC_RE = re.compile(
 )
 
 
+def _ru_month_to_num(month_str: str) -> str | None:
+    low = month_str.lower()
+    for prefix, num in _RU_MONTH_MAP.items():
+        if low.startswith(prefix):
+            return num
+    return None
+
+
 def extract_dates_from_text(text: str) -> list[str]:
-    """Извлекает даты в формате YYYY-MM-DD из текста (ISO, DD.MM.YYYY или текстовый месяц)."""
+    """Извлекает даты в формате YYYY-MM-DD из текста (ISO, DD.MM.YYYY, текстовый день/месяц/год или месяц/год)."""
     dates: list[str] = []
     if not text:
         return dates
@@ -178,20 +267,39 @@ def extract_dates_from_text(text: str) -> list[str]:
                 dates.append(iso)
         except ValueError:
             pass
+
+    text_date_matches: list[tuple[int, str]] = []
+    matched_spans: list[tuple[int, int]] = []
+
     for match in _TEXT_DATE_RE.finditer(text):
-        day_str, month_str, year_str = match.group(1), match.group(2).lower(), match.group(3)
-        month_num = None
-        for prefix, num in _RU_MONTH_MAP.items():
-            if month_str.startswith(prefix):
-                month_num = num
-                break
+        day_str, month_str, year_str = match.group(1), match.group(2), match.group(3)
+        month_num = _ru_month_to_num(month_str)
         if month_num:
             try:
                 iso = f"{year_str}-{int(month_num):02d}-{int(day_str):02d}"
-                if iso not in dates:
-                    dates.append(iso)
+                text_date_matches.append((match.start(), iso))
+                matched_spans.append(match.span())
             except ValueError:
                 pass
+
+    for match in _MONTH_YEAR_RE.finditer(text):
+        start, end = match.span()
+        if any(not (end <= s_start or start >= s_end) for s_start, s_end in matched_spans):
+            continue
+        month_str, year_str = match.group(1), match.group(2)
+        month_num = _ru_month_to_num(month_str)
+        if month_num:
+            try:
+                iso = f"{year_str}-{int(month_num):02d}-01"
+                text_date_matches.append((start, iso))
+            except ValueError:
+                pass
+
+    text_date_matches.sort(key=lambda item: item[0])
+    for _, iso in text_date_matches:
+        if iso not in dates:
+            dates.append(iso)
+
     return dates
 
 
@@ -199,7 +307,6 @@ def extract_date_from_history(history: list[dict] | None) -> str | None:
     """Извлекает дату события из последних реплик диалога (от новых к старым)."""
     if not history:
         return None
-    # Сначала проверяем реплики пользователя от самых свежих к старым
     for turn in reversed(history):
         if not isinstance(turn, dict):
             continue
@@ -208,7 +315,6 @@ def extract_date_from_history(history: list[dict] | None) -> str | None:
             dates = extract_dates_from_text(content)
             if dates:
                 return dates[0]
-    # Если в репликах пользователя нет, проверяем все реплики (включая ассистента)
     for turn in reversed(history):
         if not isinstance(turn, dict):
             continue
@@ -224,11 +330,9 @@ def is_independent_query(query: str) -> bool:
     q = query.strip()
     if not q:
         return False
-    # Если вопрос явно ссылается на закон или конкретный документ и не содержит анафор к прошлому:
     if _EXPLICIT_LAW_OR_DOC_RE.search(q):
         if not _TRUE_ANAPHORA_PRONOUNS_RE.search(q):
             return True
-    # Если есть явные анафоры (местоимения, неполные отсылки назад) — запрос зависим
     if _ANAPHORA_BACKWARD_RE.search(q):
         return False
     return False
@@ -245,11 +349,9 @@ def _format_history_turns(history: list[dict]) -> list[str]:
         content = str(turn.get("content") or "").strip()
         if not content:
             continue
-        # Защита от prompt injection control tokens
         content = _INJECTION_TOKENS_RE.sub("", content).strip()
         if len(content) > max_chars:
             content = content[:max_chars].rstrip() + "..."
-        # Заменяем переносы строк пробелами для защиты структуры промпта
         content = " ".join(content.split())
         role_raw = str(turn.get("role") or "user").strip().lower()
         role_label = "Пользователь" if role_raw == "user" else "Ассистент"
@@ -267,7 +369,6 @@ def _resolve_history_with_usage(
     if not history:
         return query, False, 0, 0
 
-    # Детекция смены темы / самостоятельного вопроса без анафор
     if is_independent_query(query):
         return query, False, 0, 0
 
@@ -384,15 +485,20 @@ def _sanitize_required_slots(query: str, llm_slots: list[str]) -> list[str]:
     q_lower = query.lower()
 
     asks_rent = _asks_rent_amount(query)
-    asks_payment_deadline = bool(
+    has_payment_terms = bool(_PAYMENT_TERMS_RE.search(q_lower))
+    asks_payment_deadline = has_payment_terms or bool(
         re.search(
             r"до\s+какого\s+числа|срок\w*\s+(?:оплат\w*|внесени\w*|расчет\w*)|когда\s+(?:нужно\s+)?(?:оплач|вноси)",
             q_lower,
         )
     )
-    asks_penalty = bool(re.search(r"\bпен[яиюей]\b|неустойк\w+|штраф\w*", q_lower))
-    asks_prepayment = bool(re.search(r"\bаванс\w*|\bпредоплат\w*", q_lower))
-    asks_security_deposit = bool(re.search(r"обеспечительн\w+\s+платеж|депозит\w*", q_lower))
+    asks_penalty = bool(_PENALTY_RE.search(q_lower))
+    asks_prepayment = has_payment_terms or bool(
+        re.search(r"\bаванс\w*|\bпредоплат\w*", q_lower)
+    )
+    asks_security_deposit = bool(
+        re.search(r"обеспечительн\w+\s+платеж|депозит\w*", q_lower)
+    )
 
     cleaned: list[str] = []
     for slot in llm_slots:
@@ -419,12 +525,88 @@ def _sanitize_required_slots(query: str, llm_slots: list[str]) -> list[str]:
     return cleaned if cleaned else ["general"]
 
 
+def _resolve_slot_template(
+    slot: str,
+    query: str,
+    entities_raw: list[str],
+    article_refs: list[str] | None = None,
+) -> str:
+    context_text = f"{query} {' '.join(entities_raw)}"
+    if article_refs or _LAW_CONTEXT_RE.search(context_text):
+        if slot in _LAW_SLOT_OVERRIDES:
+            return _LAW_SLOT_OVERRIDES[slot]
+    if slot == "payment_deadline":
+        if "аренд" not in context_text.lower() and _NON_RENTAL_CONTEXT_RE.search(context_text):
+            return _PAYMENT_DEADLINE_NEUTRAL_TEMPLATE
+    return _SLOT_QUERY_TEMPLATES.get(slot, slot.replace("_", " "))
+
+
+def _extract_slot_stems(text: str) -> set[str]:
+    tokens = _SLOT_TOKEN_RE.findall((text or "").lower())
+    stems = {
+        tok[:5]
+        for tok in tokens
+        if len(tok) >= 4 and tok[:5] not in _SLOT_DEDUP_STOP_STEMS
+    }
+    return stems if stems else {tok for tok in tokens if tok}
+
+
+def _query_matches_slot(slot: str, slot_terms: str, q_stems: set[str]) -> bool:
+    if not q_stems:
+        return False
+    if slot == "rent_amount":
+        has_rent_context = bool(q_stems & {"аренд", "плат"})
+        has_amount_anchor = bool(q_stems & _SLOT_DISCRIMINATIVE_STEMS["rent_amount"])
+        is_other_rent_aspect = bool(
+            q_stems & (_SLOT_DISCRIMINATIVE_STEMS["penalty"] | {"проср", "внесе", "вноси", "числ"})
+        )
+        return has_rent_context and has_amount_anchor and not is_other_rent_aspect
+    if slot == "penalty":
+        return bool(q_stems & _SLOT_DISCRIMINATIVE_STEMS["penalty"])
+
+    anchors = _SLOT_DISCRIMINATIVE_STEMS.get(slot)
+    if anchors is not None:
+        return bool(q_stems & anchors)
+
+    slot_stems = _extract_slot_stems(slot_terms)
+    return bool(slot_stems and len(slot_stems & q_stems) >= min(2, len(slot_stems)))
+
+
+def _is_slot_covered(
+    slot: str,
+    slot_terms: str,
+    queries: list[str],
+    raw_query: str,
+    active_slots_count: int,
+) -> bool:
+    slot_terms_norm = " ".join(slot_terms.lower().split())
+    for q in queries:
+        if slot_terms_norm and slot_terms_norm in " ".join(q.lower().split()):
+            return True
+
+    if len(queries) == 1 and active_slots_count >= 2:
+        return False
+
+    raw_query_norm = " ".join(raw_query.lower().split())
+    for q in queries:
+        q_norm = " ".join(q.lower().split())
+        if active_slots_count >= 2 and q_norm == raw_query_norm:
+            continue
+        q_stems = _extract_slot_stems(q)
+        if _query_matches_slot(slot, slot_terms, q_stems):
+            return True
+
+    return False
+
+
 def _ensure_slot_queries(
     query: str,
     entities_raw: list[str],
     required_slots: list[str],
     bm25_queries: list[str],
     dense_queries: list[str],
+    intent: str | None = None,
+    article_refs: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     exact_tokens = _CONTRACT_NUM_RE.findall(query)
     entity_prefix = " ".join(entities_raw or exact_tokens).strip()
@@ -451,21 +633,25 @@ def _ensure_slot_queries(
         if missing_tokens:
             out_bm25[0] = f"{out_bm25[0]} {' '.join(missing_tokens)}".strip()
 
-    for slot in required_slots:
-        if slot == "general":
-            continue
-        slot_terms = _SLOT_QUERY_TEMPLATES.get(slot, slot.replace("_", " "))
-        key_tokens = [w for w in slot_terms.split() if len(w) >= 4][:3]
+    if (intent or "").strip().lower() == "exact_lookup" and article_refs:
+        refs_lower = [r.strip().lower() for r in article_refs if r and r.strip()]
+        if refs_lower and out_bm25 and out_dense:
+            bm25_low = " ".join(out_bm25).lower()
+            dense_low = " ".join(out_dense).lower()
+            if all(r in bm25_low for r in refs_lower) and all(r in dense_low for r in refs_lower):
+                return out_bm25, out_dense
 
-        dense_joined = " ".join(out_dense).lower()
-        if not any(tok[:5] in dense_joined for tok in key_tokens):
-            slot_q = f"{entity_prefix} {slot_terms}".strip()
-            out_dense.append(slot_q)
+    active_slots = [s for s in required_slots if s != "general"]
+    active_count = len(active_slots)
 
-        bm25_joined = " ".join(out_bm25).lower()
-        if not any(tok[:5] in bm25_joined for tok in key_tokens):
-            slot_bm25 = f"{entity_prefix} {slot_terms}".strip()
-            out_bm25.append(slot_bm25)
+    for slot in active_slots:
+        slot_terms = _resolve_slot_template(slot, query, entities_raw, article_refs)
+
+        if not _is_slot_covered(slot, slot_terms, out_dense, query, active_count):
+            out_dense.append(f"{entity_prefix} {slot_terms}".strip())
+
+        if not _is_slot_covered(slot, slot_terms, out_bm25, query, active_count):
+            out_bm25.append(f"{entity_prefix} {slot_terms}".strip())
 
     return out_bm25 or [query], out_dense or [query]
 
@@ -485,7 +671,7 @@ def _ensure_decomposition(
     if len(real_slots) >= 2:
         built: list[SubQuestion] = []
         for slot in real_slots:
-            desc = _SLOT_QUERY_TEMPLATES.get(slot, slot)
+            desc = _resolve_slot_template(slot, query, entities_raw)
             q_text = f"{target_doc + ': ' if target_doc else ''}{desc}"
             built.append(
                 SubQuestion(text=q_text.strip(), target_doc_raw=target_doc, aspect=slot)
@@ -495,9 +681,7 @@ def _ensure_decomposition(
     if _COMPOUND_SPLIT_RE.search(query):
         parts = [
             p.strip(" ?.")
-            for p in re.split(
-                r"\?\s*|\s+и\s+(?=за\s+какой|до\s+какого|чем\s+|срок\s+)", query
-            )
+            for p in _COMPOUND_SPLIT_RE.split(query)
             if p.strip(" ?.")
         ]
         if len(parts) >= 2:
@@ -529,11 +713,39 @@ def _augment_premises(query: str, premises: list[Premise]) -> list[Premise]:
     return extracted
 
 
+def _filter_assistant_injected_premises(
+    premises: list[Premise],
+    raw_query: str,
+    chat_history: list[dict] | None,
+    used_history: bool,
+) -> list[Premise]:
+    """Отбрасывает числовые предпосылки, привнесённые при резолве истории только из ответов ассистента."""
+    if not premises or not used_history:
+        return premises
+
+    user_texts = [raw_query]
+    for turn in chat_history or []:
+        if isinstance(turn, dict) and str(turn.get("role") or "").strip().lower() == "user":
+            user_texts.append(str(turn.get("content") or ""))
+    user_corpus_compact = re.sub(r"\s+", "", " ".join(user_texts).lower())
+
+    filtered: list[Premise] = []
+    for premise in premises:
+        val = (premise.value or premise.text or "").strip()
+        digits_compact = re.sub(r"\s+", "", "".join(re.findall(r"\d[\d\s]*", val)))
+        if digits_compact and premise.kind in {"amount", "term", "rate"}:
+            if digits_compact not in user_corpus_compact:
+                continue
+        filtered.append(premise)
+    return filtered
+
+
 def _build_regex_fallback_spec(
     query: str,
     event_date: str | None,
     history_resolved: bool,
     chat_history: list[dict] | None = None,
+    raw_query: str | None = None,
 ) -> QuerySpec:
     entities_raw: list[str] = []
     for m in _QUOTED_ENTITY_RE.findall(query):
@@ -558,10 +770,21 @@ def _build_regex_fallback_spec(
     entities_resolved = resolve_entities(entities_raw)
     required_slots = _infer_slots_by_regex(query)
     bm25_q, dense_q = _ensure_slot_queries(
-        query, entities_raw, required_slots, [query], [query]
+        query,
+        entities_raw,
+        required_slots,
+        [query],
+        [query],
+        intent="semantic",
+        article_refs=article_refs,
     )
     decomposition = _ensure_decomposition(query, entities_raw, required_slots, [])
-    premises = _augment_premises(query, [])
+    premises = _filter_assistant_injected_premises(
+        _augment_premises(query, []),
+        raw_query if raw_query is not None else query,
+        chat_history,
+        history_resolved,
+    )
 
     return QuerySpec(
         intent="semantic",
@@ -668,32 +891,58 @@ def analyze_query(
             required_slots = _sanitize_required_slots(
                 effective_query, list(parsed.required_slots)
             )
-            bm25_queries, dense_queries = _ensure_slot_queries(
-                effective_query,
-                list(parsed.entities_raw),
-                required_slots,
-                list(parsed.rewritten_queries_bm25),
-                list(parsed.rewritten_queries_dense),
+            raw_bm25 = [q.strip() for q in parsed.rewritten_queries_bm25 if q and q.strip()]
+            raw_dense = [q.strip() for q in parsed.rewritten_queries_dense if q and q.strip()]
+            has_active_slots = any(s != "general" for s in required_slots)
+
+            is_off_topic = sanitized_intent == "out_of_scope" or (
+                not raw_bm25
+                and not raw_dense
+                and not has_active_slots
+                and not parsed.article_refs
+                and not parsed.entities_raw
             )
-            raw_decomp = [
-                SubQuestion(
-                    text=sq.text,
-                    target_doc_raw=sq.target_doc_raw,
-                    aspect=sq.aspect,
+
+            if is_off_topic:
+                sanitized_intent = "out_of_scope"
+                bm25_queries = []
+                dense_queries = []
+                decomposition = []
+            else:
+                bm25_queries, dense_queries = _ensure_slot_queries(
+                    effective_query,
+                    list(parsed.entities_raw),
+                    required_slots,
+                    raw_bm25,
+                    raw_dense,
+                    intent=sanitized_intent,
+                    article_refs=list(parsed.article_refs),
                 )
-                for sq in parsed.decomposition
-            ]
-            decomposition = _ensure_decomposition(
-                effective_query,
-                list(parsed.entities_raw),
-                required_slots,
-                raw_decomp,
-            )
+                raw_decomp = [
+                    SubQuestion(
+                        text=sq.text,
+                        target_doc_raw=sq.target_doc_raw,
+                        aspect=sq.aspect,
+                    )
+                    for sq in parsed.decomposition
+                ]
+                decomposition = _ensure_decomposition(
+                    effective_query,
+                    list(parsed.entities_raw),
+                    required_slots,
+                    raw_decomp,
+                )
+
             raw_premises = [
                 Premise(text=p.text, kind=p.kind, value=p.value, verified=False)
                 for p in parsed.premises
             ]
-            premises = _augment_premises(effective_query, raw_premises)
+            premises = _filter_assistant_injected_premises(
+                _augment_premises(effective_query, raw_premises),
+                query,
+                chat_history,
+                used_history,
+            )
 
             entities_resolved = resolve_entities(parsed.entities_raw)
             effective_event_date = event_date or parsed.event_date or (
@@ -788,6 +1037,7 @@ def analyze_query(
         event_date=event_date,
         history_resolved=used_history,
         chat_history=chat_history,
+        raw_query=query,
     )
     fallback_spec = _apply_date_version_degradation(fallback_spec)
     latency_ms = round(
