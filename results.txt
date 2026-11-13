@@ -1,0 +1,653 @@
+RAG ASSISTANT TEST RESULTS
+
+Всего запросов: 1
+
+######################################################################
+
+
+======================================================================
+ЗАПРОС 1/1
+======================================================================
+ВОПРОС: Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?
+
+ОТВЕТ:
+Предпосылка неверна: по договору аренды № А-08/2024 арендная плата составляет не 500 000, а 450 000 (четыреста пятьдесят тысяч) рублей в месяц, включая НДС <source>S1</source>. Текст договора не содержит обоснования (причины) установленного размера арендной платы — пункт 3.1 лишь фиксирует сумму <source>S1</source>. Арендодателем по договору является ООО «Северный Склад» (ИНН 5047112233) <source>S2</source>.
+
+ИСТОЧНИКИ:
+  [S1] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения -> 3. Арендная плата -> Пункт 3.1 | score=0.8959788084030151 | chunk=contract_а-08-2024_v1_0009_65851a01
+  [S2] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения | score=0.7979148030281067 | chunk=contract_а-08-2024_v1_0000_523355cb
+  [S4] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | Введение / Общие положения -> 3. Арендная плата -> Пункт 3.2 | score=0.40334418416023254 | chunk=contract_а-08-2024_v1_0010_3b16c866
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: medium
+ДЕГРАДАЦИИ: ['retrieval_partial_failure']
+ДОПУЩЕНИЯ: ['Под «почему» понимается запрос на объяснение порядка формирования/обоснования размера арендной платы, установленного договором', 'интерпретация: в предоставленных источниках отсутствует пункт, объясняющий причины или порядок определения размера арендной платы, поэтому мотивы установления суммы 450 000 рублей в контексте не раскрыты.']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.026,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "explain",
+      "required_slots": [
+        "rent_amount"
+      ],
+      "decomposition_count": 1,
+      "premises_count": 1,
+      "rewritten_bm25": [
+        "договор аренды ООО «Северный Склад» арендная плата размер",
+        "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения"
+      ],
+      "rewritten_dense": [
+        "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
+        "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [
+        {
+          "raw": "ООО «Северный Склад»",
+          "document_id": "contract_а-08-2024",
+          "resolved": true
+        }
+      ],
+      "entities_raw": [
+        "ООО «Северный Склад»"
+      ]
+    },
+    "latency_ms": 6457.138,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1381,
+    "completion_tokens": 592,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "rent_amount"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 5,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
+          "mode": "dense",
+          "purpose": "semantic_dense"
+        },
+        {
+          "task_id": "task_1",
+          "query": "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
+          "mode": "dense",
+          "purpose": "semantic_dense"
+        },
+        {
+          "task_id": "task_2",
+          "query": "договор аренды ООО «Северный Склад» арендная плата размер",
+          "mode": "bm25",
+          "purpose": "semantic_bm25"
+        },
+        {
+          "task_id": "task_3",
+          "query": "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
+          "mode": "bm25",
+          "purpose": "semantic_bm25"
+        },
+        {
+          "task_id": "task_4",
+          "query": "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?",
+          "mode": "dense",
+          "purpose": "subquestion:rent_amount"
+        }
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "max_workers": 4,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "rental"
+    },
+    "latency_ms": 0.034,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 5,
+      "queries": [
+        "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
+        "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
+        "договор аренды ООО «Северный Склад» арендная плата размер",
+        "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
+        "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?"
+      ],
+      "modes": [
+        "dense",
+        "dense",
+        "bm25",
+        "bm25",
+        "dense"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0000_523355cb",
+        "contract_а-08-2024_v1_0009_65851a01",
+        "contract_а-08-2024_v1_0008_186eede1",
+        "contract_а-08-2024_v1_0024_9925845c",
+        "contract_а-08-2024_v1_0012_5805988f",
+        "contract_а-08-2024_v1_0002_9b80b7a9",
+        "contract_а-08-2024_v1_0010_3b16c866",
+        "contract_а-08-2024_v1_0003_e9db3073",
+        "contract_а-08-2024_v1_0013_afbcb322",
+        "contract_а-08-2024_v1_0011_2b472ccd"
+      ],
+      "scores": [
+        0.012975,
+        0.012975,
+        0.012975,
+        0.01279,
+        0.01279,
+        0.012437,
+        0.012437,
+        0.012269,
+        0.012106,
+        0.011794
+      ],
+      "count": 10,
+      "degraded": true,
+      "executor": {
+        "submitted": 5,
+        "completed": 4,
+        "failed": 0,
+        "cancelled": 0,
+        "timed_out": 1
+      },
+      "status": "partial",
+      "failed_tasks": [
+        {
+          "task_id": "task_4",
+          "mode": "dense",
+          "purpose": "subquestion:rent_amount",
+          "status": "timeout",
+          "error_type": "TimeoutError"
+        }
+      ],
+      "errors": [
+        {
+          "type": "TimeoutError",
+          "message": "Задача не завершилась за 20.0 с"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "dense",
+          "purpose": "semantic_dense",
+          "query": "Каким образом определяется и чем обоснован размер арендной платы по договору аренды с ООО «Северный Склад»?",
+          "status": "ok",
+          "duration_ms": 18788,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 25,
+            "bm25_candidates_count": 0,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 40,
+            "candidates_after_date_filter": 27,
+            "candidates_after_document_filter": 25,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_1",
+          "mode": "dense",
+          "purpose": "semantic_dense",
+          "query": "Какой размер арендной платы установлен договором аренды с ООО «Северный Склад» и как он рассчитывается (фиксированная сумма, порядок изменения)?",
+          "status": "ok",
+          "duration_ms": 9064,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 25,
+            "bm25_candidates_count": 0,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 40,
+            "candidates_after_date_filter": 27,
+            "candidates_after_document_filter": 24,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_2",
+          "mode": "bm25",
+          "purpose": "semantic_bm25",
+          "query": "договор аренды ООО «Северный Склад» арендная плата размер",
+          "status": "ok",
+          "duration_ms": 181,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 25,
+            "bm25_candidates_count": 25,
+            "dense_candidates_count": 0,
+            "candidates_before_filters": 137,
+            "candidates_after_date_filter": 117,
+            "candidates_after_document_filter": 25,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "none",
+            "model": null,
+            "dimension": null,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_3",
+          "mode": "bm25",
+          "purpose": "semantic_bm25",
+          "query": "ООО «Северный Склад» арендная плата 500 000 рублей в месяц порядок определения",
+          "status": "ok",
+          "duration_ms": 179,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 25,
+            "bm25_candidates_count": 14,
+            "dense_candidates_count": 0,
+            "candidates_before_filters": 236,
+            "candidates_after_date_filter": 100,
+            "candidates_after_document_filter": 10,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "none",
+            "model": null,
+            "dimension": null,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_4",
+          "mode": "dense",
+          "purpose": "subquestion:rent_amount",
+          "query": "Каков размер арендной платы и порядок её определения по договору аренды с ООО «Северный Склад»?",
+          "status": "timeout",
+          "duration_ms": 20005,
+          "error_type": "TimeoutError",
+          "error_message": "Задача не завершилась за 20.0 с",
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 0,
+            "bm25_candidates_count": 0,
+            "dense_candidates_count": 0,
+            "candidates_before_filters": 0,
+            "candidates_after_date_filter": 0,
+            "candidates_after_document_filter": 0,
+            "final_chunks_count": 0,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "none",
+            "model": null,
+            "dimension": null,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 27617.822,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 5,
+        "completed": 4,
+        "failed": 0,
+        "cancelled": 0,
+        "timed_out": 1
+      },
+      "errors_count": 1,
+      "degraded": true,
+      "attempt": 1,
+      "status": "partial"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": "retrieval_partial_failure"
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_а-08-2024_v1_0000_523355cb",
+        "contract_а-08-2024_v1_0009_65851a01",
+        "contract_а-08-2024_v1_0008_186eede1",
+        "contract_а-08-2024_v1_0024_9925845c",
+        "contract_а-08-2024_v1_0012_5805988f",
+        "contract_а-08-2024_v1_0002_9b80b7a9",
+        "contract_а-08-2024_v1_0010_3b16c866",
+        "contract_а-08-2024_v1_0003_e9db3073",
+        "contract_а-08-2024_v1_0013_afbcb322",
+        "contract_а-08-2024_v1_0011_2b472ccd"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0009_65851a01",
+        "contract_а-08-2024_v1_0000_523355cb",
+        "contract_а-08-2024_v1_0008_186eede1",
+        "contract_а-08-2024_v1_0010_3b16c866",
+        "contract_а-08-2024_v1_0024_9925845c"
+      ],
+      "scores": [
+        0.8959788084030151,
+        0.7979148030281067,
+        0.4547317922115326,
+        0.40334418416023254,
+        0.40153560042381287
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5
+    },
+    "latency_ms": 22374.17,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 4,
+      "required_slots": [
+        "rent_amount"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "required_slots": [
+        "rent_amount"
+      ],
+      "covered_slots": [
+        "rent_amount"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 4,
+      "slot_match_counts": {
+        "rent_amount": 1
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0
+    },
+    "latency_ms": 0.52,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 1,
+      "chunks_count": 5,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": true,
+      "premise_details": [
+        "Предпосылка пользователя 'По договору с ООО «Северный Склад» арендная плата составляет 500 000 рублей в месяц' (значение '500000') не подтверждается текстом найденных документов."
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 0.775,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0009_65851a01",
+        "contract_а-08-2024_v1_0000_523355cb",
+        "contract_а-08-2024_v1_0008_186eede1",
+        "contract_а-08-2024_v1_0010_3b16c866",
+        "contract_а-08-2024_v1_0024_9925845c"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 1883
+    },
+    "latency_ms": 0.093,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "context_length": 1883,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 411,
+      "claims_count": 3,
+      "assumptions_count": 2,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 14757.546,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1820,
+    "completion_tokens": 677,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 3,
+      "core_claims_count": 1,
+      "non_core_claims_count": 2
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1,
+        2
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0
+    },
+    "latency_ms": 6396.875,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1288,
+    "completion_tokens": 386,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 411
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 3,
+      "cited_source_ids": [
+        "S1",
+        "S2",
+        "S4"
+      ],
+      "confidence": "medium",
+      "confidence_reasons": [
+        "degradation:retrieval_partial_failure"
+      ],
+      "degradation_reasons": [
+        "retrieval_partial_failure"
+      ],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 0,
+        "attempts_partial": 1,
+        "attempts_error": 0,
+        "tasks_submitted": 5,
+        "tasks_completed": 4,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 1
+      }
+    },
+    "latency_ms": 0.317,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]

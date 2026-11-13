@@ -11,6 +11,7 @@ os.environ["USE_STUB_LLM"] = "false"
 os.environ["LLM_MODE"] = "real"
 
 from src.generation.orchestrator import run_agent
+from src.generation.answer.context_builder import replace_source_tags 
 
 NEED_FILE = True
 NEED_SOURCES = False
@@ -55,13 +56,14 @@ def serialize_result(result, query: str) -> dict:
 
 def exec(query: str) -> dict:
     result = run_agent(query)
+    answer = replace_source_tags(result.final_answer, result.sources or {})
 
     print("\n" + "=" * 60)
     if NEED_INTENT:
         print(f"🎯 ИНТЕНТ: {result.intent}")
         print(f"🚫 ОТКАЗ (Refused): {result.refused}")
         print("\n💡 ОТВЕТ:")
-    print(result.final_answer)
+    print(answer) 
 
     if NEED_SOURCES:
         print("\n📚 ИСТОЧНИКИ:")
@@ -411,6 +413,10 @@ QUERY_HORROR = [
     "Какой МРОТ с 2026 года?",
 ]
 QUERY = QUERY_HORROR if FULL_TEST_QUERRY else QUERY
+
+QUERY = [
+    "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+]
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")

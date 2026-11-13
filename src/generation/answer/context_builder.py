@@ -1,5 +1,6 @@
 import logging
 import time
+import re  
 from typing import Any
 from src import config
 from src.generation.prompts import templates as prompts
@@ -107,3 +108,127 @@ def build_context_and_sources(
     )
     logger.debug("Assembled context string:\n%s", context_str)
     return sources, context_str, step
+
+_SOURCE_TAG_RE = re.compile(r"<source>(.*?)</source>", re.DOTALL)
+
+_SKIP_STRUCTURE_ITEMS = {
+    "введение / общие положения",
+    "введение",
+}
+
+
+def _parse_source_ids(raw_ids: str) -> list[str]:
+    return [sid.strip() for sid in (raw_ids or "").split(",") if sid.strip()]
+
+
+def _is_covered_by_title(structure_item: str, title_lower: str) -> bool:
+    """True, если элемент structure_path уже «растворён» в document_title.
+
+    Работает не по подстроке, а по значимым токенам: заголовок
+    «…Статья 70. ТК РФ Испытание при приеме на работу…» перекрывает
+    структуру «Статья 70. Испытание при приеме на работу».
+    """
+    text = structure_item.lower().strip()
+    if not text:
+        return True
+    if text in title_lower:
+        return True
+    tokens = [t for t in re.findall(r"[a-zа-яё0-9]+", text) if len(t) >= 4]
+    if not tokens:
+        return False
+    return all(t in title_lower for t in tokens)
+
+
+def format_source_label(metadata: dict | None) -> str:
+    if not isinstance(metadata, dict):
+        return ""
+
+    title = str(metadata.get("document_title") or "").strip()
+    structure_path = metadata.get("structure_path") or []
+    title_lower = title.lower()
+
+    extras: list[str] = []
+    for item in structure_path:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if text.lower() in _SKIP_STRUCTURE_ITEMS:      # «Введение / Общие положения»
+            continue
+        if _is_covered_by_title(text, title_lower):    # уже есть в заголовке
+            continue
+        if text not in extras:
+            extras.append(text)
+
+    parts: list[str] = []
+    if title:
+        parts.append(title)
+    parts.extend(extras)
+    return ", ".join(parts)
+
+
+def replace_source_tags(answer: str, sources: dict | None) -> str:
+    """Инлайн — только для уникальных источников; повторяющиеся — в конце.
+
+    - источник встречается 1 раз   → ``[Источник: <label>]`` на месте;
+    - источник встречается ≥2 раз  → все инлайн-теги удаляются, а сам
+      источник один раз попадает в блок ``Источники:`` в конце ответа;
+    - id отсутствует в ``sources`` → тег удаляется.
+    """
+    if not isinstance(answer, str) or "<source>" not in answer:
+        return answer
+    if not isinstance(sources, dict):
+        sources = {}
+
+    # 1. Сколько раз каждый источник упомянут во всём ответе
+    mention_count: dict[str, int] = {}
+    for match in _SOURCE_TAG_RE.finditer(answer):
+        for sid in _parse_source_ids(match.group(1)):
+            mention_count[sid] = mention_count.get(sid, 0) + 1
+
+    repeated_ids = {sid for sid, n in mention_count.items() if n >= 2}
+
+    # 2. Инлайн: оставляем только источники с единственным упоминанием
+    def _sub_inline(match: re.Match) -> str:
+        labels: list[str] = []
+        for sid in _parse_source_ids(match.group(1)):
+            if sid in repeated_ids:
+                continue
+            label = format_source_label(sources.get(sid) or {})
+            if label and label not in labels:
+                labels.append(label)
+        if not labels:
+            return ""
+        return "[Источник: " + "; ".join(labels) + "]"
+
+    cleaned = _SOURCE_TAG_RE.sub(_sub_inline, answer)
+
+    # 3. Блок "Источники:" в конце — только для повторяющихся
+    if repeated_ids:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for match in _SOURCE_TAG_RE.finditer(answer):   # порядок первого упоминания
+            for sid in _parse_source_ids(match.group(1)):
+                if sid in repeated_ids and sid not in seen:
+                    seen.add(sid)
+                    ordered.append(sid)
+
+        end_labels: list[str] = []
+        for sid in ordered:
+            label = format_source_label(sources.get(sid) or {})
+            if label and label not in end_labels:
+                end_labels.append(label)
+
+        if end_labels:
+            # Чистим "пробелы перед точкой/запятой" и "двойные пробелы",
+            # оставшиеся после удаления инлайн-тегов.
+            cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
+            cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+            cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+            cleaned = cleaned.rstrip()
+
+            block = "\n\nИсточники:\n" + "\n".join(
+                f"- {label}" for label in end_labels
+            )
+            cleaned = cleaned + block
+
+    return cleaned
