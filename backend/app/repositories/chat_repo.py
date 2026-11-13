@@ -57,12 +57,45 @@ def _to_message_read(message: Message) -> MessageRead:
         if isinstance(raw_sources, list):
             sources = [SourceCitation.model_validate(item) for item in raw_sources]
 
+    trace: list[dict] = []
+    if message.trace_json:
+        try:
+            raw_trace = json.loads(message.trace_json)
+        except json.JSONDecodeError:
+            raw_trace = []
+        if isinstance(raw_trace, list):
+            trace = [item for item in raw_trace if isinstance(item, dict)]
+
+    confidence: str | None = None
+    assumptions: list[str] = []
+    missing_info: list[str] = []
+    refusal_reason: str | None = None
+    if message.meta_json:
+        try:
+            raw_meta = json.loads(message.meta_json)
+        except json.JSONDecodeError:
+            raw_meta = {}
+        if isinstance(raw_meta, dict):
+            confidence = raw_meta.get("confidence")
+            raw_assumptions = raw_meta.get("assumptions")
+            if isinstance(raw_assumptions, list):
+                assumptions = [str(x) for x in raw_assumptions]
+            raw_missing_info = raw_meta.get("missing_info")
+            if isinstance(raw_missing_info, list):
+                missing_info = [str(x) for x in raw_missing_info]
+            refusal_reason = raw_meta.get("refusal_reason")
+
     return MessageRead(
         id=message.id,
         chat_id=message.chat_id,
         role=cast(Literal["user", "assistant"], message.role),
         content=message.content,
         sources=sources,
+        trace=trace,
+        confidence=confidence,
+        assumptions=assumptions,
+        missing_info=missing_info,
+        refusal_reason=refusal_reason,
         intent=message.intent,
         refused=message.refused,
         clarification_needed=message.clarification_needed,
@@ -158,6 +191,8 @@ class ChatRepository:
         intent: str | None = None,
         refused: bool = False,
         clarification_needed: bool = False,
+        trace: list[dict] | None = None,
+        meta: dict | None = None,
     ) -> MessageRead | None:
         """Append a message to a chat, updating `updated_at` and auto-titling if needed."""
         with self._session_factory() as session:
@@ -175,12 +210,20 @@ class ChatRepository:
                     now = latest_utc + timedelta(microseconds=1)
 
             sources_payload = [source.model_dump() for source in (sources or [])]
+            trace_json = (
+                json.dumps(trace, ensure_ascii=False) if trace is not None else None
+            )
+            meta_json = (
+                json.dumps(meta, ensure_ascii=False) if meta is not None else None
+            )
             message = Message(
                 id=str(uuid.uuid4()),
                 chat_id=chat_id,
                 role=role,
                 content=content,
                 sources_json=json.dumps(sources_payload, ensure_ascii=False),
+                trace_json=trace_json,
+                meta_json=meta_json,
                 intent=intent,
                 refused=refused,
                 clarification_needed=clarification_needed,

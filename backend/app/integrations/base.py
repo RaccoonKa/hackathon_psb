@@ -25,11 +25,21 @@ class AssistantReply:
     refused: bool = False
     intent: str | None = None
     clarification_needed: bool = False
+    trace: list[dict] = field(default_factory=list)
+    confidence: str | None = None
+    assumptions: list[str] = field(default_factory=list)
+    missing_info: list[str] = field(default_factory=list)
+    refusal_reason: str | None = None
 
 
 class AssistantPort(Protocol):
     """Port interface decoupling services from direct LLM or RAG backends."""
 
-    async def generate_reply(self, history: list[ChatTurn]) -> AssistantReply:
+    async def generate_reply(
+        self,
+        history: list[ChatTurn],
+        event_date: str | None = None,
+        selected_doc_ids: set[str] | None = None,
+    ) -> AssistantReply:
         """Generate an assistant reply from chronological conversation turns."""
         ...

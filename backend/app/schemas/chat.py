@@ -13,12 +13,14 @@ MAX_MESSAGE_LENGTH = 10_000
 class SourceCitation(BaseModel):
     """Structured citation pointing to a source document provision."""
 
+    source_id: str | None = None
     document_id: str
     version_id: str | None = None
     document_title: str
     provision_id: str | None = None
     structure_path: list[str] = Field(default_factory=list)
-    excerpt: str
+    excerpt: str = ""
+    page: int | None = None
     char_start: int | None = None
     char_end: int | None = None
     score: float | None = None
@@ -60,6 +62,8 @@ class MessageCreate(BaseModel):
     """Request payload for posting a new user message."""
 
     content: str
+    event_date: str | None = None
+    selected_doc_ids: list[str] | None = None
 
     @field_validator("content")
     @classmethod
@@ -82,6 +86,11 @@ class MessageRead(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     sources: list[SourceCitation] = Field(default_factory=list)
+    trace: list[dict] = Field(default_factory=list)
+    confidence: str | None = None
+    assumptions: list[str] = Field(default_factory=list)
+    missing_info: list[str] = Field(default_factory=list)
+    refusal_reason: str | None = None
     intent: str | None = None
     refused: bool = False
     clarification_needed: bool = False

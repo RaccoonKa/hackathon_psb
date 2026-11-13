@@ -63,7 +63,12 @@ class FakeAssistant:
         self.queued_replies: list[AssistantReply] = []
         self.reply_factory: Callable[[list[ChatTurn]], AssistantReply] | None = None
 
-    async def generate_reply(self, history: list[ChatTurn]) -> AssistantReply:
+    async def generate_reply(
+        self,
+        history: list[ChatTurn],
+        event_date: str | None = None,
+        selected_doc_ids: set[str] | None = None,
+    ) -> AssistantReply:
         snapshot = list(history)
         self.calls.append(snapshot)
 

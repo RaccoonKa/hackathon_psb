@@ -1,30 +1,36 @@
 services:
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     env_file:
       - path: .env
         required: false
     environment:
-      ASSISTANT_BACKEND: ${ASSISTANT_BACKEND:-direct_llm}
+      ASSISTANT_BACKEND: ${ASSISTANT_BACKEND:-rag}
       DATABASE_URL: ${DATABASE_URL:-sqlite:///./storage/chat.db}
       DATA_DIR: ${DATA_DIR:-/app/data}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      PYTHONPATH: "/app:/app/backend"
+      USE_LOCAL_EMBEDDING_MODEL: "false"
+      ALLOW_HASH_FALLBACK: "false"
+      ENABLE_MEMORY: "true"
     volumes:
       - ./storage:/app/storage
-      - ./data:/app/data:ro
+      - ./data/raw:/app/data/raw:ro
+      - ./data/processed:/app/data/processed
+      - ./data/manifests:/app/data/manifests
     healthcheck:
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)",
         ]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 20s

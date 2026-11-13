@@ -28,12 +28,12 @@ class TestHealthEndpoint:
     def test_health_ok_when_llm_configured(self, client: TestClient) -> None:
         response = client.get("/api/health")
         assert response.status_code == 200
-        assert response.json() == {
-            "status": "ok",
-            "database": "ok",
-            "assistant_backend": "direct_llm",
-            "llm_configured": True,
-        }
+        payload = response.json()
+        assert payload["status"] == "ok"
+        assert payload["database"] == "ok"
+        assert payload["assistant_backend"] == "direct_llm"
+        assert payload["llm_configured"] is True
+        assert payload["rag_ready"] is True
 
     @pytest.mark.parametrize("api_key", ["", "your-api-key-here"])
     def test_health_reports_unconfigured_llm(

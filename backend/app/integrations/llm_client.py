@@ -69,7 +69,12 @@ class DirectLLMBackend:
         self._http_client = http_client
         self._settings = settings
 
-    async def generate_reply(self, history: list[ChatTurn]) -> AssistantReply:
+    async def generate_reply(
+        self,
+        history: list[ChatTurn],
+        event_date: str | None = None,
+        selected_doc_ids: set[str] | None = None,
+    ) -> AssistantReply:
         """Send conversation history to the configured LLM endpoint and parse the reply."""
         if not self._settings.llm_configured:
             raise LLMNotConfiguredError(

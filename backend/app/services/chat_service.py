@@ -51,7 +51,13 @@ class ChatService:
         if not deleted:
             raise NotFoundError(f"Chat '{chat_id}' not found")
 
-    async def send_message(self, chat_id: str, content: str) -> SendMessageResponse:
+    async def send_message(
+        self,
+        chat_id: str,
+        content: str,
+        event_date: str | None = None,
+        selected_doc_ids: list[str] | None = None,
+    ) -> SendMessageResponse:
         """Persist a user message, generate an assistant reply, and persist the reply."""
         chat = await asyncio.to_thread(self._chat_repo.get_chat, chat_id)
         if chat is None:
@@ -75,7 +81,19 @@ class ChatService:
             ChatTurn(role=msg.role, content=msg.content) for msg in recent_messages
         ]
 
-        reply = await self._assistant.generate_reply(history)
+        selected_docs_set = set(selected_doc_ids) if selected_doc_ids else None
+        reply = await self._assistant.generate_reply(
+            history,
+            event_date=event_date,
+            selected_doc_ids=selected_docs_set,
+        )
+
+        assistant_meta = {
+            "confidence": reply.confidence,
+            "assumptions": reply.assumptions,
+            "missing_info": reply.missing_info,
+            "refusal_reason": reply.refusal_reason,
+        }
 
         assistant_message = await asyncio.to_thread(
             self._chat_repo.add_message,
@@ -86,6 +104,8 @@ class ChatService:
             intent=reply.intent,
             refused=reply.refused,
             clarification_needed=reply.clarification_needed,
+            trace=reply.trace,
+            meta=assistant_meta,
         )
         if assistant_message is None:
             raise NotFoundError(f"Chat '{chat_id}' not found")

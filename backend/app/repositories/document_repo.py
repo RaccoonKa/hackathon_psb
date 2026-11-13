@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
-import xml.etree.ElementTree as ET
-import zipfile
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,15 +14,25 @@ from typing import Any
 from ..core.exceptions import NotFoundError
 from ..schemas.document import DocumentDetail, DocumentSummary
 
+_repo_root = Path(__file__).resolve().parents[3]
+if str(_repo_root) not in sys.path and (_repo_root / "src").is_dir():
+    sys.path.insert(0, str(_repo_root))
+
+from src.indexing.parser import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    calculate_source_hash,
+    clean_garant_headers,
+    extract_text_from_file,
+)
+
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx"}
+_SUPPORTED_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS
 _SAFE_DOC_ID_RE = re.compile(r"^[0-9A-Za-zА-Яа-яЁё._-]+$")
 _DISALLOWED_ID_CHARS_RE = re.compile(r"[^0-9A-Za-zА-Яа-яЁё._-]+")
 _DECORATIVE_LINE_RE = re.compile(r"^[-=*_~#\s]+$")
 _TITLE_MAX_LEN = 200
 _SHORT_HASH_LEN = 8
-_DOCX_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 @dataclass(frozen=True)
@@ -60,59 +68,16 @@ def _sanitize_document_id(raw_id: str, fallback_hash: str) -> str:
     return sanitized
 
 
-def _extract_docx_text(path: Path) -> str:
-    try:
-        with zipfile.ZipFile(path, "r") as archive:
-            if "word/document.xml" not in archive.namelist():
-                return ""
-            xml_bytes = archive.read("word/document.xml")
-    except (zipfile.BadZipFile, OSError):
-        return ""
-
-    try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
-        return ""
-
-    p_tag = f"{_DOCX_W_NS}p"
-    t_tag = f"{_DOCX_W_NS}t"
-    tab_tag = f"{_DOCX_W_NS}tab"
-    br_tag = f"{_DOCX_W_NS}br"
-    cr_tag = f"{_DOCX_W_NS}cr"
-
-    paragraphs: list[str] = []
-    for paragraph in root.iter(p_tag):
-        parts: list[str] = []
-        for elem in paragraph.iter():
-            if elem.tag == t_tag and elem.text:
-                parts.append(elem.text)
-            elif elem.tag == tab_tag:
-                parts.append("\t")
-            elif elem.tag in (br_tag, cr_tag):
-                parts.append("\n")
-        text = "".join(parts).strip()
-        if text:
-            paragraphs.append(text)
-    return "\n".join(paragraphs)
-
-
-def _read_text_and_digest(path: Path) -> tuple[str, str]:
-    if path.suffix.lower() == ".docx":
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        return _extract_docx_text(path), digest
-
-    try:
-        content = path.read_text(encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        content = path.read_text(encoding="utf-8", errors="replace")
-
-    try:
-        raw_text = path.read_text(encoding="utf-8")
-        digest = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
-    except UnicodeDecodeError:
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-
-    return content, digest
+def _clean_extracted_title(
+    title_candidate: str | None, cleaned_content: str, path: Path
+) -> str:
+    if title_candidate and title_candidate.strip():
+        cleaned = re.split(r"\s*[-=*_~#]{3,}\s*", title_candidate.strip())[0].strip()
+        if "\n" in cleaned:
+            cleaned = cleaned.splitlines()[0].strip()
+        if cleaned:
+            return cleaned[:_TITLE_MAX_LEN]
+    return _extract_title(cleaned_content, path)
 
 
 def _extract_title(content: str, path: Path) -> str:
@@ -201,38 +166,82 @@ class DocumentRepository:
         parsed_files: list[_ParsedFile] = []
 
         for path in files:
-            content, hex_digest = _read_text_and_digest(path)
-            source_hash = f"sha256:{hex_digest}"
+            suffix = path.suffix.lower()
+            raw_bytes = path.read_bytes() if suffix in {".docx", ".pdf"} else None
+            try:
+                raw_content, _ = extract_text_from_file(path)
+            except UnicodeDecodeError:
+                try:
+                    raw_content = path.read_text(encoding="utf-8", errors="replace")
+                except Exception as exc:
+                    logger.warning("Failed to decode text from %s: %s", path, exc)
+                    continue
+            except Exception as exc:
+                logger.warning("Failed to extract text from %s: %s", path, exc)
+                continue
+
+            if not raw_content or not raw_content.strip():
+                continue
+
+            cleaned_content, extracted_title, _ = clean_garant_headers(raw_content)
+            if not cleaned_content.strip():
+                cleaned_content = raw_content
+
+            source_hash = calculate_source_hash(raw_content, raw_bytes=raw_bytes)
+            hex_digest = (
+                source_hash.split(":", 1)[1]
+                if ":" in source_hash
+                else source_hash
+            )
+
             manifest_entry = manifest_by_hash.get(source_hash)
 
-            raw_doc_id = (
-                manifest_entry.get("document_id")
-                if manifest_entry and isinstance(manifest_entry.get("document_id"), str)
-                else path.stem
-            )
+            if manifest_entry:
+                raw_doc_id = (
+                    manifest_entry.get("document_id")
+                    if isinstance(manifest_entry.get("document_id"), str)
+                    else path.stem
+                )
+                version_id = (
+                    manifest_entry.get("version_id")
+                    if isinstance(manifest_entry.get("version_id"), str)
+                    else None
+                )
+                amends_document_id = (
+                    manifest_entry.get("amends_document_id")
+                    if isinstance(manifest_entry.get("amends_document_id"), str)
+                    else None
+                )
+                cand_title = (
+                    manifest_entry.get("title")
+                    or manifest_entry.get("document_title")
+                )
+                if isinstance(cand_title, str) and cand_title.strip():
+                    title = cand_title.strip()[:_TITLE_MAX_LEN]
+                else:
+                    title = _clean_extracted_title(
+                        extracted_title, cleaned_content, path
+                    )
+            else:
+                raw_doc_id = path.stem
+                version_id = None
+                amends_document_id = None
+                title = _clean_extracted_title(
+                    extracted_title, cleaned_content, path
+                )
+
             base_id = _sanitize_document_id(
                 raw_doc_id,
                 fallback_hash=hex_digest[:_SHORT_HASH_LEN],
-            )
-            version_id = (
-                manifest_entry.get("version_id")
-                if manifest_entry and isinstance(manifest_entry.get("version_id"), str)
-                else None
-            )
-            amends_document_id = (
-                manifest_entry.get("amends_document_id")
-                if manifest_entry
-                and isinstance(manifest_entry.get("amends_document_id"), str)
-                else None
             )
 
             parsed_files.append(
                 _ParsedFile(
                     filename=path.relative_to(raw_dir).as_posix(),
-                    content=content,
+                    content=cleaned_content,
                     hex_digest=hex_digest,
                     base_id=base_id,
-                    title=_extract_title(content, path),
+                    title=title,
                     version_id=version_id,
                     amends_document_id=amends_document_id,
                 )
@@ -250,10 +259,10 @@ class DocumentRepository:
                 doc_id = item.base_id
 
             if doc_id in used_ids:
-                suffix = 2
-                while f"{item.base_id}__{short_hash}_{suffix}" in used_ids:
-                    suffix += 1
-                doc_id = f"{item.base_id}__{short_hash}_{suffix}"
+                suffix_idx = 2
+                while f"{item.base_id}__{short_hash}_{suffix_idx}" in used_ids:
+                    suffix_idx += 1
+                doc_id = f"{item.base_id}__{short_hash}_{suffix_idx}"
 
             used_ids.add(doc_id)
             documents.append(

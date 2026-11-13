@@ -53,7 +53,12 @@ async def send_chat_message(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> SendMessageResponse:
     """Submit a user message and return both user and assistant messages."""
-    return await chat_service.send_message(chat_id, payload.content)
+    return await chat_service.send_message(
+        chat_id,
+        payload.content,
+        event_date=payload.event_date,
+        selected_doc_ids=payload.selected_doc_ids,
+    )
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -42,6 +42,15 @@ def get_assistant_port(
     settings: Settings = Depends(get_app_settings),
 ) -> AssistantPort:
     """Construct the active `AssistantPort` implementation for the request."""
+    if settings.assistant_backend == "rag":
+        rag_adapter = getattr(request.app.state, "rag_adapter", None)
+        if rag_adapter is None:
+            from ..integrations.rag_adapter import RAGAssistantAdapter
+
+            rag_adapter = RAGAssistantAdapter()
+            request.app.state.rag_adapter = rag_adapter
+        return rag_adapter
+
     return DirectLLMBackend(
         http_client=request.app.state.http_client,
         settings=settings,

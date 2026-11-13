@@ -65,6 +65,8 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    trace_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    meta_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     intent: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     refused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     clarification_needed: Mapped[bool] = mapped_column(
