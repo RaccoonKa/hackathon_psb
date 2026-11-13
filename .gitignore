@@ -1,7 +1,33 @@
-﻿.venv/
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Local storage & databases
+storage/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
 __pycache__/
 *.pyc
-.env
-storage/chroma_db/
-storage/bm25_index/
-data/raw/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ML models & artifacts
+/models/
+/model/
+
+# Frontend & OS
+node_modules/
+.DS_Store
+Thumbs.db
