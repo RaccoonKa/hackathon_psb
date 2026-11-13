@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "document_id": "doc_мрот_ст1_действующая",
+    "version_id": "doc_мрот_ст1_действующая_v1",
+    "document_title": "Статья 1. Федеральный закон от 19.06.2000 N 82-ФЗ \"О минимальном размере оплаты труда\"",
+    "document_type": "law",
+    "scope": "global",
+    "chat_id": null,
+    "created_by": "system",
+    "source_filename": "законы__МРОТ_ст1_действующая.txt",
+    "source_hash": "sha256:a487d40fa1afb4ff37be1fc4a773a93d16e275c1314a06ed316073ee72936d83",
+    "published_at": "2025-12-09",
+    "effective_from": "2025-12-09",
+    "effective_to": null,
+    "effective_dates_known": true,
+    "ingested_at": "2026-11-11T14:17:39Z",
+    "amends_document_id": null,
+    "parser_version": "txt-parser-2.0",
+    "chunker_version": "structural-1.0"
+  },
+  "total_characters": 1832,
+  "total_blocks_found": 2,
+  "blocks_preview": [
+    {
+      "provision_id": null,
+      "path": [
+        "Введение / Общие положения"
+      ],
+      "start_line": 1,
+      "end_line": 2,
+      "char_length": 87,
+      "text_sample": "Статья 1 изменена с 9 декабря 2025 г. - Федеральный закон от 28 ноября 2025 г. N 429-ФЗ..."
+    },
+    {
+      "provision_id": "1.",
+      "path": [
+        "Введение / Общие положения",
+        "Статья 1. Установить минимальный размер оплаты труда с 1 января 2026 года в сумме 27 093 рубля в месяц"
+      ],
+      "start_line": 3,
+      "end_line": 15,
+      "char_length": 1742,
+      "text_sample": "Статья 1. Установить минимальный размер оплаты труда с 1 января 2026 года в сумме 27 093 рубля в месяц.  Минимальный размер оплаты труда на очередной год устана..."
+    }
+  ]
+}

@@ -1,9 +1,9 @@
-from src import config
-from src.retrieval.hybrid import detect_query_intent, resolve_allowed_versions_by_date
-from src.retrieval.keyword_store import BM25KeywordStore, tokenize_ru
-from src.retrieval.vector_store import _fallback_embedding, prepare_flat_metadata
-from src.generation.retrieval.bridge import _dict_to_chunk, filter_chunks_by_threshold
-from src.generation.types import RetrievedChunk
+from rag_core import config
+from rag_core.retrieval.hybrid import detect_query_intent, resolve_allowed_versions_by_date
+from rag_core.retrieval.keyword_store import BM25KeywordStore, tokenize_ru
+from rag_core.retrieval.vector_store import _fallback_embedding, prepare_flat_metadata
+from rag_core.generation.retrieval.bridge import _dict_to_chunk, filter_chunks_by_threshold
+from rag_core.generation.types import RetrievedChunk
 from tests._common import make_chunk_dict, make_retrieved_chunk
 
 

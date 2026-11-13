@@ -38,6 +38,9 @@ MODULES = [
     "tests.test_regression_embeddings",
     "tests.test_regression_orchestrator",
     "tests.test_regression_integration_contract",
+    "tests.test_dialog_coreference",
+    "tests.test_dialog_generation",
+    "tests.test_dialog_scenarios",
 ]
 
 

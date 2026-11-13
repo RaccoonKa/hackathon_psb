@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.retrieval import hybrid as hybrid_mod
+from rag_core.retrieval import hybrid as hybrid_mod
 from tests._common import make_chunk_dict
 
 

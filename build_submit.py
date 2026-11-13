@@ -4,7 +4,7 @@
 Скрипт:
 1. проверяет единственный переключатель `USE_SUBMIT` в settings_submit.py;
 2. полностью пересоздаёт submit/ (только внутри корня проекта);
-3. копирует runtime-модули и переписывает импорты `src.*` через AST;
+3. копирует runtime-модули и переписывает импорты `rag_core.*` через AST;
 4. формирует submit/settings_submit.py со значением True;
 5. формирует requirements.txt и README.md;
 6. проверяет сборку и при --zip создаёт ZIP с файлами в корне архива.
@@ -31,85 +31,88 @@ MAX_ZIP_BYTES = 128 * 1024 * 1024
 
 # source -> target в плоской сборке
 MODULE_SOURCES: List[Tuple[str, str]] = [
-    ("src/config.py", "config.py"),
+    ("rag_core/config.py", "config.py"),
     # --- orchestration / shared ---
-    ("src/generation/orchestrator.py", "generation_orchestrator.py"),
-    ("src/generation/bailout.py", "generation_bailout.py"),
-    ("src/generation/errors.py", "generation_errors.py"),
-    ("src/generation/refusal.py", "generation_refusal.py"),
-    ("src/generation/stubs.py", "generation_stubs.py"),
-    ("src/generation/types.py", "generation_types.py"),
+    ("rag_core/generation/orchestrator.py", "generation_orchestrator.py"),
+    ("rag_core/generation/bailout.py", "generation_bailout.py"),
+    ("rag_core/generation/errors.py", "generation_errors.py"),
+    ("rag_core/generation/refusal.py", "generation_refusal.py"),
+    ("rag_core/generation/stubs.py", "generation_stubs.py"),
+    ("rag_core/generation/types.py", "generation_types.py"),
     # --- analysis ---
     (
-        "src/generation/analysis/entity_resolver.py",
+        "rag_core/generation/analysis/entity_resolver.py",
         "generation_analysis_entity_resolver.py",
     ),
     (
-        "src/generation/analysis/prefilter.py",
+        "rag_core/generation/analysis/prefilter.py",
         "generation_analysis_prefilter.py",
     ),
     (
-        "src/generation/analysis/query_analysis.py",
+        "rag_core/generation/analysis/query_analysis.py",
         "generation_analysis_query_analysis.py",
     ),
     # --- answer ---
     (
-        "src/generation/answer/context_builder.py",
+        "rag_core/generation/answer/context_builder.py",
         "generation_answer_context_builder.py",
     ),
-    ("src/generation/answer/generator.py", "generation_answer_generator.py"),
+    ("rag_core/generation/answer/generator.py", "generation_answer_generator.py"),
     (
-        "src/generation/answer/verification.py",
+        "rag_core/generation/answer/verification.py",
         "generation_answer_verification.py",
     ),
     # --- llm / planning / policy ---
-    ("src/generation/llm/client.py", "generation_llm_client.py"),
+    ("rag_core/generation/llm/client.py", "generation_llm_client.py"),
     (
-        "src/generation/planning/planner.py",
+        "rag_core/generation/planning/planner.py",
         "generation_planning_planner.py",
     ),
-    ("src/generation/policy/precheck.py", "generation_policy_precheck.py"),
+    ("rag_core/generation/policy/precheck.py", "generation_policy_precheck.py"),
     # --- prompts package (плоские модули) ---
     (
-        "src/generation/prompts/templates.py",
+        "rag_core/generation/prompts/templates.py",
         "generation_prompts_templates.py",
     ),
-    ("src/generation/prompts/bailout.py", "generation_prompts_bailout.py"),
-    ("src/generation/prompts/evidence.py", "generation_prompts_evidence.py"),
-    ("src/generation/prompts/generator.py", "generation_prompts_generator.py"),
+    ("rag_core/generation/prompts/bailout.py", "generation_prompts_bailout.py"),
+    ("rag_core/generation/prompts/evidence.py", "generation_prompts_evidence.py"),
+    ("rag_core/generation/prompts/generator.py", "generation_prompts_generator.py"),
+    ("rag_core/generation/prompts/history.py", "generation_prompts_history.py"),
     (
-        "src/generation/prompts/query_analysis.py",
+        "rag_core/generation/prompts/query_analysis.py",
         "generation_prompts_query_analysis.py",
     ),
     (
-        "src/generation/prompts/regenerate.py",
+        "rag_core/generation/prompts/regenerate.py",
         "generation_prompts_regenerate.py",
     ),
-    ("src/generation/prompts/verifier.py", "generation_prompts_verifier.py"),
+    ("rag_core/generation/prompts/verifier.py", "generation_prompts_verifier.py"),
     # --- retrieval (generation) ---
-    ("src/generation/retrieval/bridge.py", "generation_retrieval_bridge.py"),
+    ("rag_core/generation/retrieval/bridge.py", "generation_retrieval_bridge.py"),
     (
-        "src/generation/retrieval/evidence.py",
+        "rag_core/generation/retrieval/evidence.py",
         "generation_retrieval_evidence.py",
     ),
     # --- indexing / retrieval ---
-    ("src/indexing/chunker.py", "indexing_chunker.py"),
-    ("src/indexing/parser.py", "indexing_parser.py"),
-    ("src/indexing/tokenizer_utils.py", "indexing_tokenizer_utils.py"),
-    ("src/retrieval/hybrid.py", "retrieval_hybrid.py"),
-    ("src/retrieval/keyword_store.py", "retrieval_keyword_store.py"),
-    ("src/retrieval/reranker.py", "retrieval_reranker.py"),
-    ("src/retrieval/vector_store.py", "retrieval_vector_store.py"),
+    ("rag_core/indexing/chunker.py", "indexing_chunker.py"),
+    ("rag_core/indexing/parser.py", "indexing_parser.py"),
+    ("rag_core/indexing/tokenizer_utils.py", "indexing_tokenizer_utils.py"),
+    ("rag_core/retrieval/hybrid.py", "retrieval_hybrid.py"),
+    ("rag_core/retrieval/keyword_store.py", "retrieval_keyword_store.py"),
+    ("rag_core/retrieval/reranker.py", "retrieval_reranker.py"),
+    ("rag_core/retrieval/vector_store.py", "retrieval_vector_store.py"),
     ("build_index.py", "build_index.py"),
     ("solution.py", "solution.py"),
 ]
 
 MODULE_MAP: dict[str, str] = {}
 for _source, _target in MODULE_SOURCES:
-    if not _source.startswith("src/"):
+    if not (_source.startswith("rag_core/") or _source.startswith("src/")):
         continue
-    _module = "src." + _source[len("src/") : -len(".py")].replace("/", ".")
-    MODULE_MAP[_module] = _target[: -len(".py")]
+    prefix = "rag_core/" if _source.startswith("rag_core/") else "src/"
+    _rel = _source[len(prefix) : -len(".py")].replace("/", ".")
+    MODULE_MAP[f"rag_core.{_rel}"] = _target[: -len(".py")]
+    MODULE_MAP[f"src.{_rel}"] = _target[: -len(".py")]
 
 INTERNAL_MODULES = {
     target[: -len(".py")] for _, target in MODULE_SOURCES
@@ -244,18 +247,18 @@ def validate_settings() -> bool:
 
 
 class SrcImportRewriter(ast.NodeTransformer):
-    """Переписывает импорты src.* в плоские имена модулей."""
+    """Переписывает импорты rag_core.* и src.* в плоские имена модулей."""
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         if node.level != 0:
             return self.generic_visit(node)
 
         module = node.module or ""
-        if module == "src":
+        if module in {"src", "rag_core"}:
             new_nodes = []
             for alias in node.names:
-                full_name = f"src.{alias.name}"
-                flat_name = MODULE_MAP.get(full_name)
+                full_name = f"{module}.{alias.name}"
+                flat_name = MODULE_MAP.get(full_name) or MODULE_MAP.get(f"rag_core.{alias.name}")
                 if flat_name is None:
                     raise BuildError(
                         f"Не найден плоский модуль для импорта {full_name}"
@@ -276,7 +279,7 @@ class SrcImportRewriter(ast.NodeTransformer):
             node.module = MODULE_MAP[module]
             return node
 
-        if module.startswith("src."):
+        if module.startswith(("src.", "rag_core.")):
             new_nodes = []
             for alias in node.names:
                 full_name = f"{module}.{alias.name}"
@@ -302,7 +305,7 @@ class SrcImportRewriter(ast.NodeTransformer):
     def visit_Import(self, node: ast.Import):
         new_aliases = []
         for alias in node.names:
-            if alias.name == "src" or alias.name.startswith("src."):
+            if alias.name in {"src", "rag_core"} or alias.name.startswith(("src.", "rag_core.")):
                 flat_name = MODULE_MAP.get(alias.name)
                 if flat_name is None:
                     raise BuildError(
@@ -413,7 +416,10 @@ def validate_generated() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == "src" or alias.name.startswith("src."):
+                    if (
+                        alias.name in {"src", "rag_core"}
+                        or alias.name.startswith(("src.", "rag_core."))
+                    ):
                         raise BuildError(
                             f"В {path.name} остался импорт {alias.name}"
                         )
@@ -426,7 +432,10 @@ def validate_generated() -> None:
                         )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "src" or module.startswith("src."):
+                if (
+                    module in {"src", "rag_core"}
+                    or module.startswith(("src.", "rag_core."))
+                ):
                     raise BuildError(
                         f"В {path.name} остался импорт from {module}"
                     )

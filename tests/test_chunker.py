@@ -3,14 +3,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from src.indexing import chunker as chunker_mod
-from src.indexing.chunker import (
+from rag_core.indexing import chunker as chunker_mod
+from rag_core.indexing.chunker import (
     HARD_MAX_TOKENS,
     chunk_document_structural,
     generate_chunk_id,
     save_canonical_chunks,
 )
-from src.indexing.tokenizer_utils import count_tokens
+from rag_core.indexing.tokenizer_utils import count_tokens
 from tests._common import all_docs, doc_by_filename, make_chunk_dict, require_data
 
 

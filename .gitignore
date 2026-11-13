@@ -1,43 +1,17 @@
-# Environment & secrets
+.venv/
+__pycache__/
+*.pyc
 .env
-.env.*
-!.env.example
-
-# Local storage & databases
-storage/
-*.db
-*.sqlite
-*.sqlite3
 storage/chroma_db/
 storage/bm25_index/
-
-# Data artifacts & runs
+models/
+model/
+submit/
+submit.zip
+.DS_Store
 data/debug/
 data/manifests/
 data/processed/
 run.log
-
-# Python
-__pycache__/
-*.pyc
-*.py[cod]
-*$py.class
-.venv/
-venv/
+results.txt
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-build/
-dist/
-
-# ML models & artifacts
-/models/
-/model/
-submit/
-submit.zip
-
-# Frontend & OS
-node_modules/
-.DS_Store
-Thumbs.db

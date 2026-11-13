@@ -7,14 +7,14 @@ LLM/analysis и сам retrieval замоканы существующими с�
 
 from unittest.mock import patch
 
-from src import config
-from src.generation import orchestrator as orch_mod
-from src.generation import prompts
-from src.generation import refusal
-from src.generation.errors import RetrievalAPIError
-from src.generation.retrieval import bridge as bridge_mod
-from src.generation.retrieval import evidence as evidence_mod
-from src.generation.types import (
+from rag_core import config
+from rag_core.generation import orchestrator as orch_mod
+from rag_core.generation import prompts
+from rag_core.generation import refusal
+from rag_core.generation.errors import RetrievalAPIError
+from rag_core.generation.retrieval import bridge as bridge_mod
+from rag_core.generation.retrieval import evidence as evidence_mod
+from rag_core.generation.types import (
     EvidenceAssessment,
     EvidenceBundle,
     PreFilterResult,

@@ -1,14 +1,14 @@
 from unittest.mock import patch
 
-from src import config
-from src.generation.retrieval import bridge as rb_mod
-from src.generation.retrieval.bridge import (
+from rag_core import config
+from rag_core.generation.retrieval import bridge as rb_mod
+from rag_core.generation.retrieval.bridge import (
     _dict_to_chunk,
     filter_chunks_by_threshold,
     rerank_chunks,
     retrieve_chunks,
 )
-from src.generation.types import Intent, RetrievedChunk
+from rag_core.generation.types import Intent, RetrievedChunk
 from tests._common import make_chunk_dict, make_retrieved_chunk
 
 

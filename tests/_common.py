@@ -11,13 +11,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import config as _cfg
+from rag_core import config as _cfg
 
 _cfg.USE_STUB_LLM = False
 _cfg.USE_STUB_RAG = False
 _cfg.USE_STUB_RERANKER = False
 
-from src.generation.types import RetrievedChunk
+from rag_core.generation.types import RetrievedChunk
 
 RAW_DIR = ROOT / "data" / "raw"
 _CACHE = {}
@@ -38,7 +38,7 @@ def require_data():
 def all_docs():
     if "docs" not in _CACHE:
         require_data()
-        from src.indexing.parser import load_documents_with_metadata
+        from rag_core.indexing.parser import load_documents_with_metadata
         _CACHE["docs"] = load_documents_with_metadata(RAW_DIR)
     return _CACHE["docs"]
 
@@ -98,7 +98,7 @@ def make_retrieved_chunk(**kwargs):
 
 
 def make_query_spec(**kwargs):
-    from src.generation.types import Ambiguity, QuerySpec, TaskType
+    from rag_core.generation.types import Ambiguity, QuerySpec, TaskType
 
     data = {
         "intent": "semantic",
@@ -124,7 +124,7 @@ def make_query_spec(**kwargs):
 
 
 def make_policy_verdict(**kwargs):
-    from src.generation.types import PolicyVerdict
+    from rag_core.generation.types import PolicyVerdict
 
     data = {
         "premise_mismatch": False,
@@ -137,7 +137,7 @@ def make_policy_verdict(**kwargs):
 
 
 def make_evidence_bundle(**kwargs):
-    from src.generation.types import EvidenceBundle
+    from rag_core.generation.types import EvidenceBundle
 
     data = {
         "chunks": [],
@@ -150,7 +150,7 @@ def make_evidence_bundle(**kwargs):
 
 
 def make_verification_report(**kwargs):
-    from src.generation.types import VerificationReport, VerificationVerdict
+    from rag_core.generation.types import VerificationReport, VerificationVerdict
 
     data = {
         "batch_status": [],

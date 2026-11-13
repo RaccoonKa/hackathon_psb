@@ -220,7 +220,10 @@ def check_imports(submit_dir: Path) -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == "src" or alias.name.startswith("src."):
+                    if (
+                        alias.name in {"src", "rag_core"}
+                        or alias.name.startswith(("src.", "rag_core."))
+                    ):
                         raise CheckFailure(
                             f"В {path.name} остался импорт {alias.name}"
                         )
@@ -233,7 +236,10 @@ def check_imports(submit_dir: Path) -> None:
                         )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "src" or module.startswith("src."):
+                if (
+                    module in {"src", "rag_core"}
+                    or module.startswith(("src.", "rag_core."))
+                ):
                     raise CheckFailure(
                         f"В {path.name} остался импорт from {module}"
                     )
@@ -349,7 +355,7 @@ print("config-ok")
 def check_local_config() -> None:
     code = """
 from pathlib import Path
-import src.config as config
+import rag_core.config as config
 
 assert config.USE_SUBMIT is False
 root = Path(config.__file__).resolve().parent.parent
@@ -394,7 +400,7 @@ def check_index_consistency_report() -> None:
 
     code = """
 import json
-from src.retrieval.hybrid import check_index_consistency
+from rag_core.retrieval.hybrid import check_index_consistency
 
 report = check_index_consistency()
 print(json.dumps({
@@ -748,7 +754,7 @@ def run_checks(
     checks: list[tuple[str, Callable[[], None]]] = [
         ("структура submit/", lambda: check_structure(submit_dir)),
         ("compile", lambda: check_compile(submit_dir)),
-        ("импорты без src.*", lambda: check_imports(submit_dir)),
+        ("импорты без rag_core.* / src.*", lambda: check_imports(submit_dir)),
         ("requirements", lambda: check_requirements(submit_dir)),
         ("изолированный импорт", lambda: check_isolated_imports(submit_dir)),
         ("конфигурация SUBMIT", lambda: check_submit_config(submit_dir)),

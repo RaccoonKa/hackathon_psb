@@ -10,21 +10,21 @@ from pathlib import Path
 from unittest import SkipTest
 from unittest.mock import patch
 
-from src.generation.analysis.entity_resolver import (
+from rag_core.generation.analysis.entity_resolver import (
     extract_doc_routing_sets,
     resolve_single_entity,
 )
-from src.generation.retrieval import bridge as bridge_mod
-from src.generation.retrieval import evidence as evidence_mod
-from src.generation.types import (
+from rag_core.generation.retrieval import bridge as bridge_mod
+from rag_core.generation.retrieval import evidence as evidence_mod
+from rag_core.generation.types import (
     Ambiguity,
     QuerySpec,
     RetrievalTask,
     Sufficiency,
     TaskType,
 )
-from src.retrieval import hybrid as hybrid_mod
-from src.retrieval.hybrid import (
+from rag_core.retrieval import hybrid as hybrid_mod
+from rag_core.retrieval.hybrid import (
     bm25_search,
     hybrid_search,
     load_canonical_chunks_map,

@@ -13,8 +13,8 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.retrieval import vector_store as vs_mod
-from src.retrieval.vector_store import EmbeddingConfigError, compute_embeddings
+from rag_core.retrieval import vector_store as vs_mod
+from rag_core.retrieval.vector_store import EmbeddingConfigError, compute_embeddings
 
 
 class _FakeCuda:

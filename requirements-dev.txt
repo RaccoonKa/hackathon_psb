@@ -1,4 +1,3 @@
 # Зависимости для разработки и тестов (НЕ runtime для платформы).
 # Устанавливаются отдельно: python -m pip install -r requirements-dev.txt
 pytest>=7
-pytest-asyncio

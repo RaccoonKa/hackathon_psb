@@ -1,4 +1,4 @@
-from src import config
+from rag_core import config
 
 
 def test_llm_model_is_set():

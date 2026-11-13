@@ -2,19 +2,19 @@ from datetime import datetime, timezone
 import json
 import sys
 
-from src.config import (
+from rag_core.config import (
     EMBEDDING_MODEL,
     MANIFESTS_DIR,
     RAW_DATA_DIR,
     RERANKER_MODEL,
 )
-from src.indexing.chunker import (
+from rag_core.indexing.chunker import (
     chunk_document_structural,
     save_canonical_chunks,
 )
-from src.indexing.parser import load_documents_with_metadata
-from src.retrieval.keyword_store import BM25KeywordStore
-from src.retrieval.vector_store import save_embeddings_to_chroma
+from rag_core.indexing.parser import load_documents_with_metadata
+from rag_core.retrieval.keyword_store import BM25KeywordStore
+from rag_core.retrieval.vector_store import save_embeddings_to_chroma
 
 
 def build_indexes() -> dict:

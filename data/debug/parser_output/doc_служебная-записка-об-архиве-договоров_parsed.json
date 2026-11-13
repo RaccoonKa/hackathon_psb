@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "document_id": "doc_служебная-записка-об-архиве-договоров",
+    "version_id": "doc_служебная-записка-об-архиве-договоров_v1",
+    "document_title": "Юридический отдел",
+    "document_type": "internal",
+    "scope": "global",
+    "chat_id": null,
+    "created_by": "system",
+    "source_filename": "документы компании__Служебная записка об архиве договоров.txt",
+    "source_hash": "sha256:a90d426b390e892ba490fde5c5bb85367ed71232a48442728a8e1363232a27ee",
+    "published_at": "2025-05-12",
+    "effective_from": "2025-05-12",
+    "effective_to": null,
+    "effective_dates_known": true,
+    "ingested_at": "2026-11-11T14:17:39Z",
+    "amends_document_id": null,
+    "parser_version": "txt-parser-2.0",
+    "chunker_version": "structural-1.0"
+  },
+  "total_characters": 852,
+  "total_blocks_found": 1,
+  "blocks_preview": [
+    {
+      "provision_id": null,
+      "path": [
+        "Введение / Общие положения"
+      ],
+      "start_line": 1,
+      "end_line": 10,
+      "char_length": 851,
+      "text_sample": "ООО «МЕРИДИАН» Юридический отдел СЛУЖЕБНАЯ ЗАПИСКА № ЮО-7 от 12.05.2025 О порядке хранения оригиналов договоров Оригиналы подписанных договоров, дополнительных ..."
+    }
+  ]
+}
