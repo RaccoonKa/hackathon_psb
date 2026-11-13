@@ -11,9 +11,6 @@ from rag_core.generation.analysis.query_analysis import analyze_query
 from rag_core.generation.answer.context_builder import build_context_and_sources
 from rag_core.generation.answer.generator import generate_draft, regenerate_draft
 from rag_core.generation.answer.verification import verify
-<<<<<<< HEAD
-from rag_core.generation.errors import OrchestratorError
-=======
 from rag_core.generation.errors import (
     OrchestratorError,
     RetrievalAPIError,
@@ -21,7 +18,6 @@ from rag_core.generation.errors import (
     RetrievalError,
     RetrievalTimeoutError,
 )
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 from rag_core.generation.planning import planner
 from rag_core.generation.policy.precheck import precheck
 from rag_core.generation.prompts import templates

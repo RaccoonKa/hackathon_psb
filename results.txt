@@ -20,8 +20,8 @@ RAG ASSISTANT TEST RESULTS
 ИНТЕНТ: semantic
 ОТКАЗ: False | Причина: None
 УВЕРЕННОСТЬ: medium
-ДЕГРАДАЦИИ: ['retrieval_partial_failure']
-ДОПУЩЕНИЯ: ['Не указан конкретный внутренний регламент или устав, регулирующий порядок одобрения сделок.', 'интерпретация: порог 10 000 000 рублей из редакции, действовавшей в августе 2024 года, сопоставлен с указанной пользователем суммой 12 000 000 рублей, что даёт вывод о необходимости одобрения генерального директора.']
+ДЕГРАДАЦИИ: ['retrieval_partial_failure', 'deadline_exceeded']
+ДОПУЩЕНИЯ: ['Речь идёт о внутреннем порядке одобрения сделок (регламент/устав/политика компании), а не о договоре с конкретным контрагентом', "Под 'одобрением генерального директора' понимается согласование/одобрение сделки единоличным исполнительным органом", 'интерпретация: указанная пользователем сумма 12 млн рублей документально не подтверждена; ответ о необходимости одобрения дан применительно к порогу свыше 10 млн рублей.']
 ИСПОЛЬЗОВАНА ИСТОРИЯ: False
 
 ПОЛНЫЙ ТРЕЙС:
@@ -36,7 +36,7 @@ RAG ASSISTANT TEST RESULTS
       "template_key": null,
       "reason": null
     },
-    "latency_ms": 0.807,
+    "latency_ms": 0.128,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -59,25 +59,25 @@ RAG ASSISTANT TEST RESULTS
       "required_slots": [
         "approval_process"
       ],
-      "decomposition_count": 0,
+      "decomposition_count": 1,
       "premises_count": 2,
       "rewritten_bm25": [
-        "одобрение генерального директора договор 12 млн рублей август 2024",
-        "порядок одобрения генеральным директором сделки на сумму 12 млн рублей"
+        "одобрение генерального директора заключение договора 12 млн рублей август 2024 на",
+        "порядок одобрения сделки генеральным директором порог суммы договора"
       ],
       "rewritten_dense": [
-        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
-        "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?"
+        "Нужно ли было получить одобрение генерального директора на заключение договора с ценой 12 миллионов рублей, заключаемого в августе 2024 года, согласно внутреннему порядку одобрения сделок",
+        "Каков порядок одобрения сделок генеральным директором: при какой сумме договора требуется одобрение единоличного исполнительного органа и какие лимиты установлены"
       ],
-      "event_date": null,
+      "event_date": "2024-08-01",
       "degradation_reason": null,
       "entities": [],
       "entities_raw": []
     },
-    "latency_ms": 12976.962,
+    "latency_ms": 11528.428,
     "model": "deepseek-v4.1-flash:free",
     "prompt_tokens": 1382,
-    "completion_tokens": 1677,
+    "completion_tokens": 1325,
     "extra": {},
     "stage_idx": 1,
     "failures_global": 0,
@@ -91,37 +91,44 @@ RAG ASSISTANT TEST RESULTS
       "required_slots": [
         "approval_process"
       ],
-      "event_date": null
+      "event_date": "2024-08-01"
     },
     "output": {
-      "tasks_count": 4,
+      "tasks_count": 5,
       "tasks": [
         {
           "task_id": "task_0",
-          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
+          "query": "Нужно ли было получить одобрение генерального директора на заключение договора с ценой 12 миллионов рублей, заключаемого в августе 2024 года, согласно внутреннему порядку одобрения сделок",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
           "intent": "semantic_query"
         },
         {
           "task_id": "task_1",
-          "query": "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
+          "query": "Каков порядок одобрения сделок генеральным директором: при какой сумме договора требуется одобрение единоличного исполнительного органа и какие лимиты установлены",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
           "intent": "semantic_query"
         },
         {
           "task_id": "task_2",
-          "query": "одобрение генерального директора договор 12 млн рублей август 2024",
+          "query": "одобрение генерального директора заключение договора 12 млн рублей август 2024 на",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
           "intent": "semantic_query"
         },
         {
           "task_id": "task_3",
-          "query": "порядок одобрения генеральным директором сделки на сумму 12 млн рублей",
+          "query": "порядок одобрения сделки генеральным директором порог суммы договора",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
+          "intent": "semantic_query"
+        },
+        {
+          "task_id": "task_4",
+          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года?",
+          "mode": "dense",
+          "purpose": "subquestion:approval_process",
           "intent": "semantic_query"
         }
       ],
@@ -134,7 +141,7 @@ RAG ASSISTANT TEST RESULTS
       },
       "document_type": "unknown"
     },
-    "latency_ms": 0.098,
+    "latency_ms": 0.085,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -147,20 +154,23 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "rag_retrieval",
     "input": {
-      "tasks_count": 4,
+      "tasks_count": 5,
       "queries": [
-        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
-        "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
-        "одобрение генерального директора договор 12 млн рублей август 2024",
-        "порядок одобрения генеральным директором сделки на сумму 12 млн рублей"
+        "Нужно ли было получить одобрение генерального директора на заключение договора с ценой 12 миллионов рублей, заключаемого в августе 2024 года, согласно внутреннему порядку одобрения сделок",
+        "Каков порядок одобрения сделок генеральным директором: при какой сумме договора требуется одобрение единоличного исполнительного органа и какие лимиты установлены",
+        "одобрение генерального директора заключение договора 12 млн рублей август 2024 на",
+        "порядок одобрения сделки генеральным директором порог суммы договора",
+        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года?"
       ],
       "modes": [
         "hybrid",
         "hybrid",
         "hybrid",
-        "hybrid"
+        "hybrid",
+        "dense"
       ],
       "intents": [
+        "semantic_query",
         "semantic_query",
         "semantic_query",
         "semantic_query",
@@ -170,45 +180,52 @@ RAG ASSISTANT TEST RESULTS
     },
     "output": {
       "chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_п-17-2024_v1_0003_2f65da79",
         "contract_п-17-2024_v1_0000_e32d7419",
         "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_пт-05-2023_v1_0011_c3ebfbc9",
         "contract_пт-05-2023_v1_0000_54dc4895",
-        "contract_п-17-2024_v1_0033_17b00617",
         "contract_а-08-2024_v1_0000_523355cb",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0000_6ca2e09c",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
-        "contract_пт-05-2023_v1_0024_2d0e634a"
+        "contract_п-17-2024_v1_0011_b63cc385",
+        "contract_пт-05-2023_v1_0007_68b05174"
       ],
       "scores": [
-        0.032787,
-        0.032258,
-        0.031258,
-        0.031258,
-        0.029644,
+        0.031545,
+        0.031498,
+        0.030415,
+        0.016393,
+        0.016129,
+        0.015873,
         0.015625,
-        0.015625,
-        0.015152,
-        0.014925,
-        0.014925
+        0.015385,
+        0.015385,
+        0.015152
       ],
       "count": 10,
       "degraded": true,
       "executor": {
-        "submitted": 4,
-        "started": 4,
+        "submitted": 5,
+        "started": 5,
         "completed": 2,
         "failed": 0,
         "queued": 0,
         "cancelled": 0,
-        "timed_out": 2,
+        "timed_out": 3,
         "queue_timeout": 0,
         "threads_alive_after_grace": 2,
-        "batch_duration_ms": 22037
+        "batch_duration_ms": 30317
       },
       "status": "partial",
       "failed_tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "status": "timeout",
+          "error_type": "TimeoutError"
+        },
         {
           "task_id": "task_1",
           "mode": "hybrid",
@@ -217,14 +234,18 @@ RAG ASSISTANT TEST RESULTS
           "error_type": "TimeoutError"
         },
         {
-          "task_id": "task_3",
-          "mode": "hybrid",
-          "purpose": "semantic_hybrid",
+          "task_id": "task_4",
+          "mode": "dense",
+          "purpose": "subquestion:approval_process",
           "status": "timeout",
           "error_type": "TimeoutError"
         }
       ],
       "errors": [
+        {
+          "type": "TimeoutError",
+          "message": "Задача не завершилась за 20.0 с от старта"
+        },
         {
           "type": "TimeoutError",
           "message": "Задача не завершилась за 20.0 с от старта"
@@ -239,28 +260,28 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_0",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей в августе 2024 года?",
-          "status": "ok",
-          "duration_ms": 16482,
-          "error_type": null,
-          "error_message": null,
+          "query": "Нужно ли было получить одобрение генерального директора на заключение договора с ценой 12 миллионов рублей, заключаемого в августе 2024 года, согласно внутреннему порядку одобрения сделок",
+          "status": "timeout",
+          "duration_ms": 20037,
+          "error_type": "TimeoutError",
+          "error_message": "Задача не завершилась за 20.0 с от старта",
           "search": {
             "selected_doc_ids": null,
-            "allowed_chunk_ids_count": 282,
-            "bm25_candidates_count": 20,
-            "dense_candidates_count": 40,
-            "candidates_before_filters": 449,
-            "candidates_after_date_filter": 278,
-            "candidates_after_document_filter": 278,
-            "final_chunks_count": 10,
-            "validity_unknown_count": 0
+            "allowed_chunk_ids_count": null,
+            "bm25_candidates_count": null,
+            "dense_candidates_count": null,
+            "candidates_before_filters": null,
+            "candidates_after_date_filter": null,
+            "candidates_after_document_filter": null,
+            "final_chunks_count": null,
+            "validity_unknown_count": null
           },
           "embeddings": {
-            "provider": "local",
-            "model": "BAAI/bge-m3",
-            "dimension": 1024,
-            "success": true,
-            "fallback_used": false,
+            "provider": "unknown",
+            "model": null,
+            "dimension": null,
+            "success": null,
+            "fallback_used": null,
             "error_type": null
           }
         },
@@ -268,9 +289,9 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_1",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "Каков порядок одобрения генеральным директором сделок на сумму 12 млн рублей в августе 2024 года?",
+          "query": "Каков порядок одобрения сделок генеральным директором: при какой сумме договора требуется одобрение единоличного исполнительного органа и какие лимиты установлены",
           "status": "timeout",
-          "duration_ms": 20026,
+          "duration_ms": 20038,
           "error_type": "TimeoutError",
           "error_message": "Задача не завершилась за 20.0 с от старта",
           "search": {
@@ -297,19 +318,19 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_2",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "одобрение генерального директора договор 12 млн рублей август 2024",
+          "query": "одобрение генерального директора заключение договора 12 млн рублей август 2024 на",
           "status": "ok",
-          "duration_ms": 8178,
+          "duration_ms": 8290,
           "error_type": null,
           "error_message": null,
           "search": {
             "selected_doc_ids": null,
-            "allowed_chunk_ids_count": 211,
+            "allowed_chunk_ids_count": 307,
             "bm25_candidates_count": 20,
             "dense_candidates_count": 40,
-            "candidates_before_filters": 254,
-            "candidates_after_date_filter": 181,
-            "candidates_after_document_filter": 181,
+            "candidates_before_filters": 397,
+            "candidates_after_date_filter": 293,
+            "candidates_after_document_filter": 293,
             "final_chunks_count": 10,
             "validity_unknown_count": 0
           },
@@ -326,9 +347,38 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_3",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "порядок одобрения генеральным директором сделки на сумму 12 млн рублей",
+          "query": "порядок одобрения сделки генеральным директором порог суммы договора",
+          "status": "ok",
+          "duration_ms": 16213,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 307,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 134,
+            "candidates_after_date_filter": 106,
+            "candidates_after_document_filter": 106,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        },
+        {
+          "task_id": "task_4",
+          "mode": "dense",
+          "purpose": "subquestion:approval_process",
+          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года?",
           "status": "timeout",
-          "duration_ms": 20031,
+          "duration_ms": 20017,
           "error_type": "TimeoutError",
           "error_message": "Задача не завершилась за 20.0 с от старта",
           "search": {
@@ -355,24 +405,24 @@ RAG ASSISTANT TEST RESULTS
       "degradation_reason": "retrieval_partial_failure",
       "technical_retrieval_failure": true
     },
-    "latency_ms": 22037.592,
+    "latency_ms": 30317.575,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {
       "executor": {
-        "submitted": 4,
-        "started": 4,
+        "submitted": 5,
+        "started": 5,
         "completed": 2,
         "failed": 0,
         "queued": 0,
         "cancelled": 0,
-        "timed_out": 2,
+        "timed_out": 3,
         "queue_timeout": 0,
         "threads_alive_after_grace": 2,
-        "batch_duration_ms": 22037
+        "batch_duration_ms": 30317
       },
-      "errors_count": 2,
+      "errors_count": 3,
       "degraded": true,
       "aggregation": "sum_rrf",
       "rrf_k": 60,
@@ -383,7 +433,7 @@ RAG ASSISTANT TEST RESULTS
         "local_model": "ok",
         "collection": "ok",
         "warmup": "ok",
-        "warmup_ms": 9218
+        "warmup_ms": 8181
       },
       "attempt": 1,
       "status": "partial",
@@ -400,40 +450,40 @@ RAG ASSISTANT TEST RESULTS
       "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
       "top_n": 5,
       "input_chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
+        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_п-17-2024_v1_0003_2f65da79",
         "contract_п-17-2024_v1_0000_e32d7419",
         "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0006_786850ed",
+        "contract_пт-05-2023_v1_0011_c3ebfbc9",
         "contract_пт-05-2023_v1_0000_54dc4895",
-        "contract_п-17-2024_v1_0033_17b00617",
         "contract_а-08-2024_v1_0000_523355cb",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0000_6ca2e09c",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
-        "contract_пт-05-2023_v1_0024_2d0e634a"
+        "contract_п-17-2024_v1_0011_b63cc385",
+        "contract_пт-05-2023_v1_0007_68b05174"
       ],
       "mode": "real"
     },
     "output": {
       "chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
         "contract_а-08-2024_v1_0000_523355cb",
         "contract_п-17-2024_v1_0000_e32d7419",
-        "contract_п-17-2024_v1_0006_786850ed"
+        "contract_п-17-2024_v1_0006_786850ed",
+        "amend_1_п-17-2024_v1_0000_57fd0d01"
       ],
       "scores": [
-        0.9909713268280029,
-        0.990648090839386,
-        0.845736026763916,
-        0.6693211793899536,
-        0.38836514949798584
+        0.9909675717353821,
+        0.8453013300895691,
+        0.6692046523094177,
+        0.3842359185218811,
+        0.3547063171863556
       ],
       "count": 5,
       "before_count": 10,
       "after_count": 5,
       "top_n": 5
     },
-    "latency_ms": 36685.113,
+    "latency_ms": 31028.478,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -451,7 +501,7 @@ RAG ASSISTANT TEST RESULTS
       "required_slots": [
         "approval_process"
       ],
-      "event_date": null
+      "event_date": "2024-08-01"
     },
     "output": {
       "sufficiency": "sufficient",
@@ -474,7 +524,7 @@ RAG ASSISTANT TEST RESULTS
       "contradictions_count": 0,
       "version_issues_count": 0
     },
-    "latency_ms": 2.325,
+    "latency_ms": 21.821,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -494,12 +544,12 @@ RAG ASSISTANT TEST RESULTS
     "output": {
       "premise_mismatch": true,
       "premise_details": [
-        "Предпосылка пользователя 'Договор на 12 млн рублей' (значение '12000000') не подтверждается текстом найденных документов."
+        "Предпосылка пользователя 'Сумма договора составляет 12 млн рублей' (значение '12000000') не подтверждается текстом найденных документов."
       ],
       "injection_flagged": false,
       "refusal_forbidden": true
     },
-    "latency_ms": 1.439,
+    "latency_ms": 0.869,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -514,10 +564,10 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "doc_регламент-согласования-договоров-ред-2025_v1_0010_4891019e",
         "contract_а-08-2024_v1_0000_523355cb",
         "contract_п-17-2024_v1_0000_e32d7419",
-        "contract_п-17-2024_v1_0006_786850ed"
+        "contract_п-17-2024_v1_0006_786850ed",
+        "amend_1_п-17-2024_v1_0000_57fd0d01"
       ]
     },
     "output": {
@@ -528,9 +578,9 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "context_length": 3449
+      "context_length": 4246
     },
-    "latency_ms": 0.395,
+    "latency_ms": 16.996,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -544,20 +594,21 @@ RAG ASSISTANT TEST RESULTS
     "step": "generation",
     "input": {
       "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
-      "context_length": 3449,
+      "context_length": 4246,
+      "history_turns": 0,
       "attempts": 1
     },
     "output": {
-      "answer_length": 589,
+      "answer_length": 600,
       "claims_count": 3,
-      "assumptions_count": 2,
+      "assumptions_count": 3,
       "missing_info_count": 0,
       "refusal_reason": null
     },
-    "latency_ms": 7638.973,
+    "latency_ms": 14828.767,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2309,
-    "completion_tokens": 1000,
+    "prompt_tokens": 2865,
+    "completion_tokens": 904,
     "extra": {},
     "stage_idx": 6,
     "failures_global": 0,
@@ -574,68 +625,19 @@ RAG ASSISTANT TEST RESULTS
     "output": {
       "final_verdict": "regenerate",
       "supported_locked": [
-        1,
+        0,
         2
       ],
       "citation_errors_count": 0,
       "injection_signals_count": 0
     },
-    "latency_ms": 5015.914,
-    "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 1869,
-    "completion_tokens": 636,
-    "extra": {},
-    "stage_idx": 7,
-    "failures_global": 0,
-    "failures_step": 0,
-    "degradation": null
-  },
-  {
-    "step": "regenerate_draft",
-    "input": {
-      "supported_locked": [
-        1,
-        2
-      ],
-      "failed_claims_count": 1
-    },
-    "output": {
-      "claims_count": 2,
-      "answer_length": 589
-    },
-    "latency_ms": 13561.876,
-    "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": null,
-    "completion_tokens": null,
-    "extra": {},
-    "stage_idx": 6,
-    "failures_global": 1,
-    "failures_step": 1,
-    "degradation": null
-  },
-  {
-    "step": "verify_draft",
-    "input": {
-      "claims_count": 2,
-      "core_claims_count": 1,
-      "non_core_claims_count": 1
-    },
-    "output": {
-      "final_verdict": "accept",
-      "supported_locked": [
-        1,
-        2
-      ],
-      "citation_errors_count": 0,
-      "injection_signals_count": 0
-    },
-    "latency_ms": 3880.926,
+    "latency_ms": 6879.964,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {},
     "stage_idx": 7,
-    "failures_global": 2,
+    "failures_global": 1,
     "failures_step": 1,
     "degradation": null
   },
@@ -650,41 +652,43 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "answer_length": 589
+      "answer_length": 600
     },
     "output": {
       "refused": false,
       "sources_count": 2,
       "cited_source_ids": [
-        "S1",
-        "S2"
+        "S4",
+        "S1"
       ],
       "confidence": "medium",
       "confidence_reasons": [
-        "degradation:retrieval_partial_failure"
+        "degradation:retrieval_partial_failure",
+        "degradation:deadline_exceeded"
       ],
       "degradation_reasons": [
-        "retrieval_partial_failure"
+        "retrieval_partial_failure",
+        "deadline_exceeded"
       ],
       "retrieval_summary": {
         "attempts": 1,
         "attempts_ok": 0,
         "attempts_partial": 1,
         "attempts_error": 0,
-        "tasks_submitted": 4,
+        "tasks_submitted": 5,
         "tasks_completed": 2,
         "tasks_failed": 0,
         "tasks_cancelled": 0,
-        "tasks_timed_out": 2
+        "tasks_timed_out": 3
       }
     },
-    "latency_ms": 2.585,
+    "latency_ms": 1.482,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {},
     "stage_idx": 8,
-    "failures_global": 2,
+    "failures_global": 1,
     "failures_step": 0,
     "degradation": null
   }

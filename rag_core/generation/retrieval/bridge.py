@@ -1,13 +1,5 @@
 import concurrent.futures
 from dataclasses import replace
-<<<<<<< HEAD
-import inspect
-import logging
-import time
-
-from rag_core import config
-from rag_core.generation.errors import RetrievalAPIError, RetrievalTimeoutError
-=======
 import datetime
 import inspect
 import logging
@@ -20,7 +12,6 @@ from rag_core.generation.errors import (
     RetrievalBusyError,
     RetrievalTimeoutError,
 )
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 from rag_core.generation.stubs import stub_rag_retrieve, stub_reranker
 from rag_core.generation.types import (
     Intent,
@@ -60,26 +51,13 @@ _SEARCH_DIAGNOSTICS_DEFAULTS: dict = {
     "validity_unknown_count": 0,
 }
 
-<<<<<<< HEAD
-=======
 # Для задач, которые вовсе не используют эмбеддинги (bm25): provider none
 # означает «канал не задействован», поэтому success не может быть true без
 # измерения.
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 _EMPTY_EMBEDDINGS_DIAGNOSTICS: dict = {
     "provider": "none",
     "model": None,
     "dimension": None,
-<<<<<<< HEAD
-    "success": True,
-    "fallback_used": False,
-    "error_type": None,
-}
-
-_SIGNATURE_CACHE: dict = {}
-
-
-=======
     "success": None,
     "fallback_used": False,
     "error_type": None,
@@ -185,7 +163,6 @@ def _apply_diagnostics_to_state(
         state["model_reused"] = embeddings.get("model_reused")
 
 
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 def _accepts(func, param_name: str) -> bool:
     """Проверяет наличие параметра в сигнатуре (обратная совместимость).
 
@@ -328,9 +305,6 @@ def _call_dense_search(
 def _postprocess_task_chunks(
     chunks: list[RetrievedChunk], task: RetrievalTask
 ) -> list[RetrievedChunk]:
-<<<<<<< HEAD
-    """Единый постпроцессинг задач: дедуп по chunk_id + буст документов."""
-=======
     """Дедуп по ``chunk_id`` с сохранением лучшего дубля (по score канала).
 
     ``task.boost_doc_ids`` здесь намеренно не применяется: score канала
@@ -338,7 +312,6 @@ def _postprocess_task_chunks(
     приращение на этом этапе было бы декоративным. Мягкий doc-boost
     выполняется один раз в :func:`_aggregate_task_results`.
     """
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     best_by_id: dict[str, RetrievedChunk] = {}
     order: list[str] = []
     for chunk in chunks:
@@ -349,28 +322,11 @@ def _postprocess_task_chunks(
         elif chunk.score > best_by_id[cid].score:
             best_by_id[cid] = chunk
 
-<<<<<<< HEAD
-    result: list[RetrievedChunk] = []
-    for cid in order:
-        chunk = best_by_id[cid]
-        if task.boost_doc_ids and chunk.document_id in task.boost_doc_ids:
-            delta = 0.002 if chunk.score < 0.1 else 0.05
-            chunk = replace(
-                chunk, score=min(1.0, round(chunk.score + delta, 6))
-            )
-        result.append(chunk)
-    return result
-=======
     return [best_by_id[cid] for cid in order]
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 
 
 def _run_single_task(
     task: RetrievalTask,
-<<<<<<< HEAD
-) -> tuple[list[RetrievedChunk], dict, dict, int]:
-    """Выполняет одну задачу; возвращает (chunks, search, embeddings, ms)."""
-=======
     task_state: dict | None = None,
 ) -> tuple[list[RetrievedChunk], dict, dict, int]:
     """Выполняет одну задачу; возвращает (chunks, search, embeddings, ms).
@@ -381,15 +337,10 @@ def _run_single_task(
     обратная совместимость) продолжает работать.
     """
     state = task_state if task_state is not None else _current_task_state()
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     started = time.perf_counter()
     reset_embedding_diagnostics()
 
     mode = (task.mode or "hybrid").strip().lower()
-<<<<<<< HEAD
-    intent_str = _MODE_TO_HYBRID_INTENT.get(mode, "mixed_query")
-    stats: dict = dict(_SEARCH_DIAGNOSTICS_DEFAULTS)
-=======
     # H-2A: явный intent задачи имеет приоритет; fallback по mode нужен
     # только для обратной совместимости (например, follow-up задачи H-4).
     intent_str = task.intent or _MODE_TO_HYBRID_INTENT.get(mode, "mixed_query")
@@ -397,7 +348,6 @@ def _run_single_task(
     if state is not None:
         state["stage"] = "search"
         state["search_type"] = mode
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 
     if config.USE_STUB_RAG:
         chunks = stub_rag_retrieve(query=task.query, top_k=task.top_k)
@@ -430,11 +380,8 @@ def _run_single_task(
             diagnostics=stats,
         )
 
-<<<<<<< HEAD
-=======
     if state is not None:
         state["stage"] = "postprocess"
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     chunks = _postprocess_task_chunks(chunks, task)
 
     if mode == "bm25":
@@ -449,25 +396,6 @@ def _run_single_task(
     duration_ms = int(
         round((time.perf_counter() - started) * config.MS_PER_SECOND)
     )
-<<<<<<< HEAD
-    return list(chunks), dict(stats), embeddings, duration_ms
-
-
-def _task_diag(
-    index: int, task: RetrievalTask, status: str
-) -> dict:
-    return {
-        "task_id": f"task_{index}",
-        "mode": task.mode,
-        "purpose": task.purpose,
-        "query": task.query,
-        "status": status,
-        "duration_ms": 0,
-        "error_type": None,
-        "error_message": None,
-        "search": dict(_SEARCH_DIAGNOSTICS_DEFAULTS),
-        "embeddings": dict(_EMPTY_EMBEDDINGS_DIAGNOSTICS),
-=======
     if state is not None:
         _apply_diagnostics_to_state(
             state, stats=stats, embeddings=embeddings
@@ -561,7 +489,6 @@ def _task_diag(
         "error_message": state.get("error_message"),
         "search": search,
         "embeddings": embeddings,
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     }
 
 
@@ -573,10 +500,6 @@ def _publish_diagnostics(
     diagnostics_out.update(payload)
 
 
-<<<<<<< HEAD
-def _join_executor_threads(executor, grace_s: float) -> None:
-    """Ограниченное ожидание завершения потоков после единственного shutdown."""
-=======
 def _join_executor_threads(executor, grace_s: float) -> int:
     """Ограниченное ожидание завершения потоков; возвращает число живых.
 
@@ -584,7 +507,6 @@ def _join_executor_threads(executor, grace_s: float) -> int:
     выполняющийся код, поэтому здесь только ожидаем потоки в пределах
     grace и честно возвращаем число не завершившихся (зомби) потоков.
     """
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     threads = list(getattr(executor, "_threads", ()) or ())
     deadline = time.monotonic() + max(0.0, float(grace_s))
     for thread in threads:
@@ -599,8 +521,6 @@ def _join_executor_threads(executor, grace_s: float) -> int:
             len(alive),
             grace_s,
         )
-<<<<<<< HEAD
-=======
     return len(alive)
 
 
@@ -713,7 +633,6 @@ def _aggregate_task_results(
             score *= DOC_BOOST_FACTOR
         deduped_map[cid] = replace(chunk, score=round(score, 6))
     return deduped_map, protected_top_ids
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 
 
 def retrieve_tasks(
@@ -725,12 +644,6 @@ def retrieve_tasks(
     diagnostics: dict = {
         "executor": {
             "submitted": len(tasks),
-<<<<<<< HEAD
-            "completed": 0,
-            "failed": 0,
-            "cancelled": 0,
-            "timed_out": 0,
-=======
             "started": 0,
             "completed": 0,
             "failed": 0,
@@ -740,22 +653,15 @@ def retrieve_tasks(
             "queue_timeout": 0,
             "threads_alive_after_grace": None,
             "batch_duration_ms": None,
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         },
         "tasks": [],
         "degraded": False,
         "errors": [],
-<<<<<<< HEAD
-    }
-
-    if not tasks:
-=======
         "prewarm": {},
     }
 
     if not tasks:
         diagnostics["executor"]["batch_duration_ms"] = 0
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         step = TraceStep(
             step=config.STEP_RAG_RETRIEVAL,
             input={"tasks_count": 0},
@@ -766,12 +672,8 @@ def retrieve_tasks(
         _publish_diagnostics(diagnostics_out, diagnostics)
         return [], step
 
-<<<<<<< HEAD
-    # Предзагрузка до создания пула: гонок инициализации нет в принципе.
-=======
     # Предзагрузка (включая warm-up forward) до создания пула: гонок
     # инициализации нет, а первый реальный forward уже «горячий».
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     try:
         prewarm_report = prewarm_retrieval_backends()
     except Exception as exc:  # noqa: BLE001 - предзагрузка не фатальна
@@ -780,15 +682,12 @@ def retrieve_tasks(
             {"type": type(exc).__name__, "message": str(exc)[:300]}
         )
     else:
-<<<<<<< HEAD
-=======
         diagnostics["prewarm"] = {
             "local_model": prewarm_report.get("local_model"),
             "collection": prewarm_report.get("collection"),
             "warmup": prewarm_report.get("warmup"),
             "warmup_ms": prewarm_report.get("warmup_ms"),
         }
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         for error in prewarm_report.get("errors", []):
             diagnostics["errors"].append(
                 {
@@ -804,8 +703,6 @@ def retrieve_tasks(
             config.RETRIEVAL_TIMEOUT_S,
         )
     )
-<<<<<<< HEAD
-=======
     # Queue-бюджет — отдельная централизованная настройка; не маскирует
     # проблему увеличением общего тайм-аута.
     queue_timeout_s = float(
@@ -814,7 +711,6 @@ def retrieve_tasks(
     grace_s = float(
         getattr(config, "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0)
     )
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
     configured_workers = int(
         getattr(config, "RETRIEVAL_MAX_WORKERS", 0)
         or getattr(config, "MAX_WORKERS", 1)
@@ -822,135 +718,6 @@ def retrieve_tasks(
     )
     max_workers = max(1, min(configured_workers, len(tasks)))
 
-<<<<<<< HEAD
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=max_workers, thread_name_prefix="retrieval"
-    )
-    futures: dict[concurrent.futures.Future, tuple[int, RetrievalTask]] = {}
-    submitted_at: dict[concurrent.futures.Future, float] = {}
-    task_results: list[list[RetrievedChunk]] = []
-    deadline = time.monotonic() + timeout_s
-
-    try:
-        for index, task in enumerate(tasks):
-            future = executor.submit(_run_single_task, task)
-            futures[future] = (index, task)
-            submitted_at[future] = time.perf_counter()
-
-        for future, (index, task) in futures.items():
-            entry = _task_diag(index, task, "pending")
-            elapsed_ms = int(
-                round(
-                    (time.perf_counter() - submitted_at[future])
-                    * config.MS_PER_SECOND
-                )
-            )
-
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                cancelled = future.cancel()
-                entry["status"] = "cancelled" if cancelled else "timeout"
-                entry["duration_ms"] = elapsed_ms
-                entry["error_type"] = "BatchDeadlineExceeded"
-                entry["error_message"] = (
-                    f"Дедлайн батча {timeout_s} с исчерпан до запуска задачи"
-                )
-                if cancelled:
-                    diagnostics["executor"]["cancelled"] += 1
-                else:
-                    diagnostics["executor"]["timed_out"] += 1
-                diagnostics["errors"].append(
-                    {
-                        "type": entry["error_type"],
-                        "message": entry["error_message"],
-                    }
-                )
-                diagnostics["tasks"].append(entry)
-                continue
-
-            try:
-                chunks, stats, embeddings, duration_ms = future.result(
-                    timeout=remaining
-                )
-            except concurrent.futures.TimeoutError:
-                cancelled = future.cancel()
-                entry["status"] = "cancelled" if cancelled else "timeout"
-                entry["duration_ms"] = int(
-                    round(
-                        (time.perf_counter() - submitted_at[future])
-                        * config.MS_PER_SECOND
-                    )
-                )
-                entry["error_type"] = "TimeoutError"
-                entry["error_message"] = (
-                    f"Задача не завершилась за {timeout_s} с"
-                )
-                if cancelled:
-                    diagnostics["executor"]["cancelled"] += 1
-                else:
-                    diagnostics["executor"]["timed_out"] += 1
-                diagnostics["errors"].append(
-                    {
-                        "type": entry["error_type"],
-                        "message": entry["error_message"],
-                    }
-                )
-            except concurrent.futures.CancelledError:
-                entry["status"] = "cancelled"
-                entry["duration_ms"] = elapsed_ms
-                entry["error_type"] = "CancelledError"
-                entry["error_message"] = "Задача отменена"
-                diagnostics["executor"]["cancelled"] += 1
-            except Exception as exc:  # noqa: BLE001 - изолируем задачи
-                entry["status"] = "error"
-                entry["duration_ms"] = int(
-                    round(
-                        (time.perf_counter() - submitted_at[future])
-                        * config.MS_PER_SECOND
-                    )
-                )
-                entry["error_type"] = type(exc).__name__
-                entry["error_message"] = str(exc)[:300]
-                diagnostics["executor"]["failed"] += 1
-                diagnostics["errors"].append(
-                    {
-                        "type": entry["error_type"],
-                        "message": entry["error_message"],
-                    }
-                )
-                logger.warning(
-                    "Retrieval task %s (%s) failed: %s: %s",
-                    index,
-                    task.purpose,
-                    entry["error_type"],
-                    entry["error_message"],
-                )
-            else:
-                entry["status"] = "ok"
-                entry["duration_ms"] = duration_ms
-                entry["search"] = stats
-                entry["embeddings"] = embeddings
-                diagnostics["executor"]["completed"] += 1
-                task_results.append(chunks)
-
-            diagnostics["tasks"].append(entry)
-    finally:
-        for future in futures:
-            future.cancel()
-        # Ровно один shutdown; потоки дожидаются ограниченно.
-        executor.shutdown(wait=False, cancel_futures=True)
-        _join_executor_threads(
-            executor,
-            getattr(config, "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0),
-        )
-
-    submitted = len(tasks)
-    completed = diagnostics["executor"]["completed"]
-    timed_out = diagnostics["executor"]["timed_out"]
-    diagnostics["degraded"] = completed < submitted
-
-    if completed == 0 and submitted > 0:
-=======
     # Новый пул создаётся только после завершения потоков предыдущего батча.
     try:
         executor = _acquire_executor(max_workers, grace_s)
@@ -1222,18 +989,11 @@ def retrieve_tasks(
     )
 
     if completed == 0 and tasks:
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         _publish_diagnostics(diagnostics_out, diagnostics)
         error_types = sorted(
             {error["type"] for error in diagnostics["errors"]}
         ) or ["UnknownError"]
         summary = ", ".join(error_types)
-<<<<<<< HEAD
-        if timed_out == submitted:
-            raise RetrievalTimeoutError(
-                "Все retrieval-задачи превысили дедлайн "
-                f"{timeout_s} с (причины: {summary})"
-=======
         statuses = {state.get("status") for state in task_states}
         only_timeouts = statuses <= {
             "timeout", "queue_timeout", "cancelled", "not_started"
@@ -1243,41 +1003,11 @@ def retrieve_tasks(
                 "Все retrieval-задачи превысили дедлайн "
                 f"(task={timeout_s} с, queue={queue_timeout_s} с; "
                 f"причины: {summary})"
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
             )
         raise RetrievalAPIError(
             f"Все retrieval-задачи завершились ошибкой ({summary})"
         )
 
-<<<<<<< HEAD
-    merged_by_id: dict[str, RetrievedChunk] = {}
-    hit_counts: dict[str, int] = {}
-    protected_top_ids: list[str] = []
-
-    for chunk_list in task_results:
-        for rank_idx, ch in enumerate(chunk_list):
-            cid = ch.chunk_id
-            if rank_idx < 3 and cid not in protected_top_ids:
-                protected_top_ids.append(cid)
-            if cid not in merged_by_id:
-                merged_by_id[cid] = ch
-                hit_counts[cid] = 1
-            else:
-                hit_counts[cid] += 1
-                prev = merged_by_id[cid]
-                if ch.score > prev.score:
-                    merged_by_id[cid] = ch
-
-    deduped_map: dict[str, RetrievedChunk] = {}
-    for cid, ch in merged_by_id.items():
-        if hit_counts[cid] > 1:
-            # Пропорциональный буст в шкале RRF/Reranker, не искажающий порядок на порядок величины
-            increment = 0.0015 if ch.score < 0.1 else 0.05
-            boosted_score = min(1.0, round(ch.score + increment, 6))
-            deduped_map[cid] = replace(ch, score=boosted_score)
-        else:
-            deduped_map[cid] = ch
-=======
     # H-2B: суммирующая RRF-агрегация рангов задач вместо max(score)+increment.
     deduped_map, protected_top_ids = _aggregate_task_results(task_results)
     boost_ids = _collect_boost_doc_ids(
@@ -1288,7 +1018,6 @@ def retrieve_tasks(
         for chunk in deduped_map.values()
         if getattr(chunk, "document_id", None) in boost_ids
     )
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
 
     sorted_all = sorted(deduped_map.values(), key=lambda c: c.score, reverse=True)
     max_keep = max(int(config.RAG_TOP_K), int(config.RERANKER_TOP_N), 10)
@@ -1318,10 +1047,7 @@ def retrieve_tasks(
             "tasks_count": len(tasks),
             "queries": [t.query for t in tasks],
             "modes": [t.mode for t in tasks],
-<<<<<<< HEAD
-=======
             "intents": [t.intent for t in tasks],
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         },
         output={
             "chunk_ids": [c.chunk_id for c in final_chunks],
@@ -1335,8 +1061,6 @@ def retrieve_tasks(
             "executor": dict(diagnostics["executor"]),
             "errors_count": len(diagnostics["errors"]),
             "degraded": diagnostics["degraded"],
-<<<<<<< HEAD
-=======
             "aggregation": "sum_rrf",
             "rrf_k": RRF_AGGREGATION_K,
             "doc_boost_factor": DOC_BOOST_FACTOR,
@@ -1344,7 +1068,6 @@ def retrieve_tasks(
             "doc_boost_applied": doc_boost_applied,
             # Warm-up/бэкенды: без секретов и путей.
             "prewarm": dict(diagnostics.get("prewarm") or {}),
->>>>>>> a87f9eb (fix(rag): stabilize retrieval executor and restore hybrid ranking)
         },
     )
     _publish_diagnostics(diagnostics_out, diagnostics)
