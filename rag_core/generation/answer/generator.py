@@ -30,6 +30,10 @@ _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 _NULL_REFUSAL_VALUES = {"null", "none", "nil", "false", "нет", "n/a", ""}
 
 _HISTORY_SOURCE_TAG_RE = re.compile(r"\s*<source>.*?</source>", re.DOTALL)
+_INJECTION_TOKENS_RE = re.compile(
+    r"(?:<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
+    re.IGNORECASE,
+)
 
 
 def _format_chat_history_block(chat_history: list[dict] | None) -> str:
@@ -47,13 +51,15 @@ def _format_chat_history_block(chat_history: list[dict] | None) -> str:
         raw_content = str(turn.get("content") or "").strip()
         if not raw_content:
             continue
-        role_raw = str(turn.get("role") or "user").strip().lower()
-        if role_raw != "user":
-            raw_content = _HISTORY_SOURCE_TAG_RE.sub("", raw_content).strip()
+        # Защита от prompt injection и утечки старых тегов источников
+        raw_content = _INJECTION_TOKENS_RE.sub("", raw_content).strip()
+        raw_content = _HISTORY_SOURCE_TAG_RE.sub("", raw_content).strip()
         if not raw_content:
             continue
         if len(raw_content) > max_chars:
             raw_content = raw_content[:max_chars].rstrip() + "..."
+        raw_content = " ".join(raw_content.split())
+        role_raw = str(turn.get("role") or "user").strip().lower()
         role_label = "Пользователь" if role_raw == "user" else "Ассистент"
         lines.append(f"{role_label}: {raw_content}")
 
@@ -63,7 +69,7 @@ def _format_chat_history_block(chat_history: list[dict] | None) -> str:
     history_body = "\n".join(lines)
     return (
         "История предыдущих сообщений диалога (используй только для понимания контекста беседы; "
-        "все факты и теги <source> бери СТРОГО из раздела «Контекст (источники)»):\n"
+        "все факты и ссылки на источники бери СТРОГО из раздела «Контекст (источники)»):\n"
         f"{history_body}\n\n"
     )
 

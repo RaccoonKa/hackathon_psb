@@ -369,13 +369,17 @@ def assemble_final(
             if sid in sources and sid not in cited_ids:
                 cited_ids.append(sid)
 
+    has_verified_support = verification is not None and bool(verification.supported_locked)
     if draft.refusal_reason is not None:
-        if (
-            draft.refusal_reason.strip().lower() in _NULL_LIKE_REFUSAL
-            or bool(cited_ids)
-            or (verification is not None and bool(verification.supported_locked))
-        ):
+        if draft.refusal_reason.strip().lower() in _NULL_LIKE_REFUSAL:
             draft.refusal_reason = None
+        elif has_verified_support:
+            draft.refusal_reason = None
+        else:
+            # Обоснованный отказ: очищаем случайные теги источников и сбрасываем cited_ids
+            cleaned_answer = _SOURCE_TAG_PATTERN.sub("", cleaned_answer).strip()
+            cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
+            cited_ids = []
 
     if (
         verification is not None
