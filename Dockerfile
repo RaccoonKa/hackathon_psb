@@ -6,12 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app:/app/backend
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-dev.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-dev.txt
 
 COPY src/ /app/src/
 COPY backend/ /app/backend/
-RUN pip install --no-cache-dir -r backend/requirements-dev.txt
 
 COPY settings_submit.py build_index.py /app/
 COPY data/ /app/data/
