@@ -2,8 +2,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from src.retrieval import keyword_store as ks_mod
-from src.retrieval.keyword_store import BM25KeywordStore
+from rag_core.retrieval import keyword_store as ks_mod
+from rag_core.retrieval.keyword_store import BM25KeywordStore
 from tests._common import make_chunk_dict
 
 

@@ -1,16 +1,16 @@
 import json
 from unittest.mock import patch
 
-from src import config
-from src.generation.answer.generator import (
+from rag_core import config
+from rag_core.generation.answer.generator import (
     _normalize_refusal_reason,
     _parse_draft_schema,
     generate_draft,
     regenerate_draft,
 )
-from src.generation.errors import LLMAPIError, LLMFormatError
-from src.generation.prompts import generator as gen_prompts
-from src.generation.types import Claim, DraftAnswer
+from rag_core.generation.errors import LLMAPIError, LLMFormatError
+from rag_core.generation.prompts import generator as gen_prompts
+from rag_core.generation.types import Claim, DraftAnswer
 from tests._common import (
     make_evidence_bundle,
     make_policy_verdict,
@@ -19,7 +19,7 @@ from tests._common import (
     make_verification_report,
 )
 
-LLM_PATH = "src.generation.answer.generator.llm_complete_with_usage"
+LLM_PATH = "rag_core.generation.answer.generator.llm_complete_with_usage"
 
 
 def _draft_json(answer="Ответ <source>S1</source>", claims=None, refusal_reason=None):

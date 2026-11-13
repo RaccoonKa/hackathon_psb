@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.indexing.parser import (
+from rag_core.indexing.parser import (
     classify_heading,
     extract_document_structure,
     extract_metadata,

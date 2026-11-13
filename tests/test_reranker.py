@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-from src.retrieval import reranker as rr_mod
-from src.retrieval.reranker import rerank_candidates
+from rag_core.retrieval import reranker as rr_mod
+from rag_core.retrieval.reranker import rerank_candidates
 
 
 def _cands(n=3):

@@ -10,8 +10,8 @@ os.environ["USE_STUB_RERANKER"] = "false"
 os.environ["USE_STUB_LLM"] = "false"
 os.environ["LLM_MODE"] = "real"
 
-from src.generation.orchestrator import run_agent
-from src.generation.answer.context_builder import replace_source_tags 
+from rag_core.generation.orchestrator import run_agent
+from rag_core.generation.answer.context_builder import replace_source_tags 
 
 NEED_FILE = True
 NEED_SOURCES = False

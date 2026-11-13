@@ -1,27 +1,27 @@
 from unittest.mock import MagicMock, patch
 
-from src import config
-from src.generation import prompts
-from src.generation.answer.context_builder import (
+from rag_core import config
+from rag_core.generation import prompts
+from rag_core.generation.answer.context_builder import (
     _format_effective_dates,
     build_context_and_sources,
     build_source_entry,
     format_single_chunk,
 )
-from src.generation.llm.client import (
+from rag_core.generation.llm.client import (
     _extract_token_usage,
     llm_complete,
     llm_complete_with_usage,
 )
-from src.generation.orchestrator import (
+from rag_core.generation.orchestrator import (
     _sanitize_and_extract_citations,
     assemble_final,
 )
-from src.generation.refusal import (
+from rag_core.generation.refusal import (
     build_no_context_refusal_result,
     build_template_intent_result,
 )
-from src.generation.types import AgentResult, DraftAnswer, Intent, TraceStep
+from rag_core.generation.types import AgentResult, DraftAnswer, Intent, TraceStep
 from tests._common import (
     make_query_spec,
     make_retrieved_chunk,
@@ -219,7 +219,7 @@ def test_assemble_filters_sources_by_citations():
 
 
 def test_assemble_uses_claim_sources():
-    from src.generation.types import Claim
+    from rag_core.generation.types import Claim
 
     sources = {"S1": {}, "S2": {}}
     draft = _draft("Без тега", claims=[Claim(text="факт", source_ids=["S2"], slot=None)])
@@ -274,7 +274,7 @@ def test_assemble_mixed_intent_kept():
 
 
 def test_assemble_clears_missing_info_for_supported_slots():
-    from src.generation.types import Claim
+    from rag_core.generation.types import Claim
 
     draft = _draft(
         "<source>S1</source>",
@@ -363,7 +363,7 @@ def test_extract_token_usage_fallback():
 
 def test_llm_complete_with_usage_mocked():
     with patch(
-        "src.generation.llm.client._invoke_real_llm",
+        "rag_core.generation.llm.client._invoke_real_llm",
         return_value=("Ответ", 10, 5),
     ):
         text, p, c = llm_complete_with_usage(
@@ -379,7 +379,7 @@ def test_llm_complete_with_usage_mocked():
 
 def test_llm_complete_mocked():
     with patch(
-        "src.generation.llm.client._invoke_real_llm",
+        "rag_core.generation.llm.client._invoke_real_llm",
         return_value=("Ответ", 10, 5),
     ):
         text = llm_complete(
@@ -395,12 +395,12 @@ def test_run_agent_invokes_reranker_before_evidence():
     """Регрессия: retrieve_tasks вызывает hybrid_search с rerank=False,
     поэтому оркестратор обязан явно применить rerank_chunks до evidence.assess.
     """
-    from src.generation import orchestrator as orch_mod
-    from src.generation.retrieval import bridge as bridge_mod
-    from src.generation.retrieval import evidence as evidence_mod
+    from rag_core.generation import orchestrator as orch_mod
+    from rag_core.generation.retrieval import bridge as bridge_mod
+    from rag_core.generation.retrieval import evidence as evidence_mod
     from dataclasses import replace
 
-    from src.generation.types import (
+    from rag_core.generation.types import (
         DraftAnswer,
         EvidenceAssessment,
         EvidenceBundle,

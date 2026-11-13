@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-from src import config
-from src.generation.llm import client as lc_mod
-from src.generation.llm.client import (
+from rag_core import config
+from rag_core.generation.llm import client as lc_mod
+from rag_core.generation.llm.client import (
     _build_chat_model,
     _extract_token_usage,
     _invoke_real_llm,

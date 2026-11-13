@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.indexing.parser import extract_metadata, parse_dates_and_version
+from rag_core.indexing.parser import extract_metadata, parse_dates_and_version
 
 
 def test_prolongation_skips_effective_to():

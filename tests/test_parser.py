@@ -1,5 +1,5 @@
 import re
-from src.indexing.parser import (
+from rag_core.indexing.parser import (
     calculate_source_hash,
     classify_heading,
     clean_garant_headers,

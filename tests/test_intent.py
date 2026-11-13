@@ -1,13 +1,13 @@
 import json
 from unittest.mock import patch
 
-from src import config
-from src.generation.analysis.query_analysis import (
+from rag_core import config
+from rag_core.generation.analysis.query_analysis import (
     _sanitize_intent,
     analyze_query,
 )
-from src.generation.policy.precheck import precheck
-from src.generation.types import (
+from rag_core.generation.policy.precheck import precheck
+from rag_core.generation.types import (
     EvidenceAssessment,
     Intent,
     Premise,
@@ -74,7 +74,7 @@ def test_sanitize_intent_compare_unchanged():
 
 def test_parse_semantic_query_alias_normalized_by_schema():
     with patch(
-        "src.generation.analysis.query_analysis.llm_complete_with_usage",
+        "rag_core.generation.analysis.query_analysis.llm_complete_with_usage",
         return_value=(_analysis_payload(
             intent="semantic_query",
             article_refs=[],
@@ -89,7 +89,7 @@ def test_parse_semantic_query_alias_normalized_by_schema():
 
 def test_analyze_query_exact_intent():
     with patch(
-        "src.generation.analysis.query_analysis.llm_complete_with_usage",
+        "rag_core.generation.analysis.query_analysis.llm_complete_with_usage",
         return_value=(_analysis_payload(), 50, 5),
     ):
         spec, step, _ = analyze_query("Статья 112 НК РФ")
@@ -103,7 +103,7 @@ def test_analyze_query_exact_intent():
 
 def test_analyze_query_input_recorded():
     with patch(
-        "src.generation.analysis.query_analysis.llm_complete_with_usage",
+        "rag_core.generation.analysis.query_analysis.llm_complete_with_usage",
         return_value=(_analysis_payload(), 1, 1),
     ):
         _, step, _ = analyze_query("Статья 112 НК РФ", event_date="2025-01-01")
@@ -113,7 +113,7 @@ def test_analyze_query_input_recorded():
 
 def test_analyze_query_garbage_falls_back_to_regex():
     with patch(
-        "src.generation.analysis.query_analysis.llm_complete_with_usage",
+        "rag_core.generation.analysis.query_analysis.llm_complete_with_usage",
         return_value=("abcdef", 0, 0),
     ):
         spec, step, _ = analyze_query("Статья 112 НК РФ")
@@ -126,7 +126,7 @@ def test_analyze_query_garbage_falls_back_to_regex():
 
 def test_analyze_query_empty_output_falls_back_to_regex():
     with patch(
-        "src.generation.analysis.query_analysis.llm_complete_with_usage",
+        "rag_core.generation.analysis.query_analysis.llm_complete_with_usage",
         return_value=("", 0, 0),
     ):
         spec, _, _ = analyze_query("Что такое неустойка?")

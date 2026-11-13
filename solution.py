@@ -5,7 +5,7 @@
 2. находит `questions.csv` и архив базы знаний;
 3. безопасно распаковывает архив во временный рабочий каталог;
 4. один раз строит индексы общим индексатором `build_index.py`;
-5. для каждого вопроса вызывает общий `run_agent(...)`;
+5. для каждого вопроса (или диалога) вызывает общий `run_agent(...)`;
 6. атомарно записывает `submission.csv` в текущий рабочий каталог.
 
 RAG-логика здесь не дублируется: используется `src.generation.orchestrator`.
@@ -21,19 +21,47 @@ import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from src import config
+from rag_core import config
 import build_index
-from src.generation.orchestrator import run_agent
-from src.generation.answer.context_builder import replace_source_tags 
-from src.indexing.parser import safe_extract_zip
+from rag_core.generation.orchestrator import run_agent
+from rag_core.generation.answer.context_builder import replace_source_tags
+from rag_core.indexing.parser import safe_extract_zip
 
 logger = logging.getLogger(__name__)
 
-Question = Tuple[str, str]
+
+@dataclass(frozen=True)
+class QuestionItem:
+    """Элемент входного CSV с опциональной привязкой к многоходовому диалогу."""
+
+    question_id: str
+    question: str
+    dialog_id: Optional[str] = None
+    turn: Optional[int] = None
+
+
+Question = Union[Tuple[str, str], QuestionItem]
 AnswerRow = Tuple[str, str]
+
+_DIALOG_ID_COLUMNS: Tuple[str, ...] = (
+    "dialog_id",
+    "session_id",
+    "conversation_id",
+    "chat_id",
+)
+_TURN_COLUMNS: Tuple[str, ...] = (
+    "turn",
+    "turn_id",
+    "step",
+    "message_index",
+)
+_TURN_MARKER_RE = re.compile(
+    r"(?im)^\s*(пользователь|user|ассистент|assistant|бот|bot)\s*:\s*"
+)
 
 
 class SubmissionError(RuntimeError):
@@ -57,9 +85,50 @@ def find_kb_archive(data_dir: Path) -> Optional[Path]:
     return None
 
 
-def read_questions(data_dir: Path) -> List[Question]:
+def _detect_column(fieldnames: Sequence[str], candidates: Sequence[str]) -> Optional[str]:
+    lower_map = {name.strip().lower(): name for name in fieldnames if name}
+    for cand in candidates:
+        if cand in lower_map:
+            return lower_map[cand]
+    return None
+
+
+def parse_dialog_transcript(
+    raw_question: str,
+) -> Tuple[str, Optional[List[Dict[str, str]]]]:
+    """Разбирает стенограмму диалога вида 'Пользователь: ...\\nАссистент: ...\\nПользователь: ...'.
+
+    Если реплик меньше двух или последняя реплика не от пользователя,
+    возвращает исходный текст без истории.
+    """
+    if not raw_question or ":" not in raw_question:
+        return raw_question, None
+
+    matches = list(_TURN_MARKER_RE.finditer(raw_question))
+    if len(matches) < 2:
+        return raw_question, None
+
+    turns: List[Dict[str, str]] = []
+    for idx, match in enumerate(matches):
+        role_token = match.group(1).strip().lower()
+        role = "user" if role_token in {"пользователь", "user"} else "assistant"
+        start = match.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw_question)
+        content = raw_question[start:end].strip()
+        if content:
+            turns.append({"role": role, "content": content})
+
+    if len(turns) < 2 or turns[-1]["role"] != "user":
+        return raw_question, None
+
+    return turns[-1]["content"], turns[:-1]
+
+
+def read_questions(data_dir: Path | str) -> List[Question]:
     """Читает questions.csv (UTF-8/BOM), сохраняя ID как строки и порядок."""
-    path = Path(data_dir) / "questions.csv"
+    path = Path(data_dir)
+    if path.is_dir():
+        path = path / "questions.csv"
     if not path.is_file():
         raise SubmissionError(f"Не найден файл вопросов: {path}")
 
@@ -74,6 +143,9 @@ def read_questions(data_dir: Path) -> List[Question]:
                 "questions.csv должен содержать колонки id и question; "
                 f"получено: {fieldnames}"
             )
+
+        dialog_col = _detect_column(fieldnames, _DIALOG_ID_COLUMNS)
+        turn_col = _detect_column(fieldnames, _TURN_COLUMNS)
 
         for row in reader:
             raw_id = row.get("id")
@@ -93,7 +165,34 @@ def read_questions(data_dir: Path) -> List[Question]:
                 )
 
             seen_ids.add(question_id)
-            questions.append((question_id, row.get("question") or ""))
+            question_text = row.get("question") or ""
+
+            dialog_id: Optional[str] = None
+            if dialog_col:
+                raw_dialog = row.get(dialog_col)
+                if raw_dialog is not None and str(raw_dialog).strip():
+                    dialog_id = str(raw_dialog).strip()
+
+            turn_num: Optional[int] = None
+            if turn_col:
+                raw_turn = row.get(turn_col)
+                if raw_turn is not None and str(raw_turn).strip():
+                    try:
+                        turn_num = int(str(raw_turn).strip())
+                    except ValueError:
+                        turn_num = None
+
+            if dialog_id is not None:
+                questions.append(
+                    QuestionItem(
+                        question_id=question_id,
+                        question=question_text,
+                        dialog_id=dialog_id,
+                        turn=turn_num,
+                    )
+                )
+            else:
+                questions.append((question_id, question_text))
 
     return questions
 
@@ -195,44 +294,125 @@ def limit_answer(
     return shortened or text[:limit]
 
 
-def _answer_one(item: Question) -> AnswerRow:
+def _normalize_question(item: Question) -> QuestionItem:
+    if isinstance(item, QuestionItem):
+        return item
     question_id, question = item
-    result = run_agent(question)
+    return QuestionItem(question_id=question_id, question=question)
+
+
+def _answer_one(
+    item: Question,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+) -> AnswerRow:
+    q_item = _normalize_question(item)
+    effective_query = q_item.question
+    effective_history = list(chat_history) if chat_history else None
+
+    if effective_history is None:
+        parsed_query, inline_history = parse_dialog_transcript(q_item.question)
+        if inline_history:
+            effective_query = parsed_query
+            effective_history = inline_history
+
+    if effective_history:
+        result = run_agent(effective_query, chat_history=effective_history)
+    else:
+        result = run_agent(effective_query)
+
     answer = getattr(result, "final_answer", None)
     if not isinstance(answer, str) or not answer.strip():
         raise SubmissionError(
-            f"Агент вернул пустой ответ для id={question_id}"
+            f"Агент вернул пустой ответ для id={q_item.question_id}"
         )
 
     sources = getattr(result, "sources", None) or {}
     answer = replace_source_tags(answer, sources)
 
-    return question_id, limit_answer(answer)
+    return q_item.question_id, limit_answer(answer)
 
 
 def _answer_one_safe(item: Question):
+    q_item = _normalize_question(item)
     try:
-        return _answer_one(item), None
+        return _answer_one(q_item), None
     except Exception as exc:  # noqa: BLE001 - ошибки собираются по id
-        return None, (item[0], exc)
+        return None, (q_item.question_id, exc)
+
+
+def _build_execution_groups(
+    items: Sequence[QuestionItem],
+) -> List[List[Tuple[int, QuestionItem]]]:
+    """Группирует вопросы по dialog_id; одиночные вопросы остаются отдельными задачами."""
+    groups: List[List[Tuple[int, QuestionItem]]] = []
+    dialog_buckets: Dict[str, List[Tuple[int, QuestionItem]]] = {}
+    dialog_order: List[str] = []
+
+    for idx, item in enumerate(items):
+        if item.dialog_id:
+            if item.dialog_id not in dialog_buckets:
+                dialog_buckets[item.dialog_id] = []
+                dialog_order.append(item.dialog_id)
+            dialog_buckets[item.dialog_id].append((idx, item))
+        else:
+            groups.append([(idx, item)])
+
+    for dialog_id in dialog_order:
+        turns = dialog_buckets[dialog_id]
+        turns.sort(
+            key=lambda pair: (
+                pair[1].turn if pair[1].turn is not None else pair[0],
+                pair[0],
+            )
+        )
+        groups.append(turns)
+
+    groups.sort(key=lambda grp: grp[0][0])
+    return groups
+
+
+def _process_group_safe(
+    group: Sequence[Tuple[int, QuestionItem]],
+) -> Tuple[List[Tuple[int, AnswerRow]], Optional[Tuple[str, Exception]]]:
+    """Последовательно выполняет реплики одного диалога с накоплением chat_history."""
+    is_dialog = len(group) > 1 or bool(group[0][1].dialog_id)
+    chat_history: List[Dict[str, str]] = []
+    collected: List[Tuple[int, AnswerRow]] = []
+
+    for orig_idx, item in group:
+        try:
+            row = _answer_one(
+                item,
+                chat_history=chat_history if (is_dialog and chat_history) else None,
+            )
+            collected.append((orig_idx, row))
+            if is_dialog:
+                chat_history.append({"role": "user", "content": item.question})
+                chat_history.append({"role": "assistant", "content": row[1]})
+        except Exception as exc:  # noqa: BLE001 - ошибки собираются по id
+            return collected, (item.question_id, exc)
+
+    return collected, None
 
 
 def process_questions(
     questions: Sequence[Question], max_workers: int
 ) -> List[AnswerRow]:
-    """Обрабатывает вопросы, сохраняя исходный порядок строк CSV."""
+    """Обрабатывает вопросы и диалоги, сохраняя исходный порядок строк CSV."""
     if not questions:
         return []
 
-    workers = max(1, min(max_workers, len(questions)))
+    normalized = [_normalize_question(item) for item in questions]
+    groups = _build_execution_groups(normalized)
+
+    workers = max(1, min(max_workers, len(groups)))
     if workers == 1:
-        results = [_answer_one_safe(item) for item in questions]
+        group_results = [_process_group_safe(grp) for grp in groups]
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            # executor.map сохраняет порядок результатов.
-            results = list(executor.map(_answer_one_safe, questions))
+            group_results = list(executor.map(_process_group_safe, groups))
 
-    errors = [error for _, error in results if error is not None]
+    errors = [error for _, error in group_results if error is not None]
     if errors:
         preview = "; ".join(
             f"id={question_id}: {type(exc).__name__}: {exc}"
@@ -247,7 +427,12 @@ def process_questions(
             f"Обработка вопросов завершилась ошибкой: {preview}{suffix}"
         ) from errors[0][1]
 
-    return [row for row, _ in results if row is not None]
+    ordered_rows: List[Optional[AnswerRow]] = [None] * len(normalized)
+    for collected, _ in group_results:
+        for orig_idx, row in collected:
+            ordered_rows[orig_idx] = row
+
+    return [row for row in ordered_rows if row is not None]
 
 
 def write_submission(
@@ -299,24 +484,36 @@ def run(
     data_dir: Optional[Path | str] = None,
     questions: Optional[Sequence[Question]] = None,
     out_path: Optional[Path | str] = None,
+    input_file: Optional[Path | str] = None,
+    skip_index: Optional[bool] = None,
 ) -> List[AnswerRow]:
     """Полный прогон: входные данные, индексы, вопросы, submission.csv."""
     resolved_data_dir = _resolve_data_dir(data_dir)
 
     if questions is None:
-        questions = read_questions(resolved_data_dir)
+        target = input_file or resolved_data_dir
+        questions = read_questions(target)
     if not questions:
         raise SubmissionError(
             "questions.csv не содержит ни одного вопроса"
         )
 
-    prepare_inputs(resolved_data_dir)
-    summary = build_index.build_indexes()
-    logger.info(
-        "Индекс построен один раз: документов=%s, чанков=%s",
-        summary.get("documents"),
-        summary.get("chunks"),
+    should_skip = skip_index if skip_index is not None else (
+        not config.USE_SUBMIT and find_kb_archive(resolved_data_dir) is None
     )
+
+    if not should_skip:
+        prepare_inputs(resolved_data_dir)
+        summary = build_index.build_indexes()
+        logger.info(
+            "Индекс построен один раз: документов=%s, чанков=%s",
+            summary.get("documents"),
+            summary.get("chunks"),
+        )
+    else:
+        logger.info(
+            "Пропуск перестроения индекса: используются существующие индексы"
+        )
 
     rows = process_questions(questions, config.MAX_WORKERS)
 
@@ -326,7 +523,16 @@ def run(
     return rows
 
 
-def main() -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Автоматический сабмит RAG-ассистента")
+    parser.add_argument("--input", default=None, help="Путь к questions.csv или файлу с вопросами")
+    parser.add_argument("--output", default=None, help="Путь для сохранения submission.csv")
+    parser.add_argument("--data-dir", default=None, help="Каталог входных данных")
+    parser.add_argument("--skip-index", action="store_true", default=None, help="Пропустить построение индекса")
+    args = parser.parse_args(argv)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -334,7 +540,7 @@ def main() -> int:
     )
     started = time.perf_counter()
 
-    if not config.USE_SUBMIT:
+    if not config.USE_SUBMIT and not args.input:
         print(
             "[solution] Отказ запуска: solution.py работает в SUBMIT-режиме. "
             "Соберите артефакт командой `python build_submit.py`.",
@@ -342,7 +548,7 @@ def main() -> int:
         )
         return 2
 
-    out_path = Path.cwd() / config.SUBMISSION_FILENAME
+    out_path = Path(args.output) if args.output else Path.cwd() / config.SUBMISSION_FILENAME
     temp_path = out_path.with_name(out_path.name + ".tmp")
 
     try:
@@ -351,8 +557,15 @@ def main() -> int:
         if temp_path.exists():
             temp_path.unlink()
 
-        config.validate_submit_config()
-        rows = run(out_path=out_path)
+        if config.USE_SUBMIT:
+            config.validate_submit_config()
+
+        rows = run(
+            data_dir=args.data_dir,
+            out_path=out_path,
+            input_file=args.input,
+            skip_index=args.skip_index,
+        )
     except config.ConfigError as exc:
         print(f"[solution] Ошибка конфигурации: {exc}", file=sys.stderr)
         return 1

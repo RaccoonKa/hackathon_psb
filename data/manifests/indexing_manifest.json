@@ -1,9 +1,9 @@
 {
-  "index_build_id": "index_2026_11_12_160847",
+  "index_build_id": "index_2026_11_12_130121",
   "embedding_model": "BAAI/bge-m3",
-  "reranker_model": "qwen3-reranker-8b",
+  "reranker_model": "Qwen/Qwen3-Reranker-8B",
   "chunker_version": "structural-1.0",
-  "indexed_at": "2026-11-12T16:08:47Z",
+  "indexed_at": "2026-11-12T13:01:21Z",
   "total_chunks": 453,
   "documents": [
     {

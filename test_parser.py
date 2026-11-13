@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
-from src.config import RAW_DATA_DIR, BASE_DIR
-from src.indexing.parser import load_documents_with_metadata, extract_document_structure
+from rag_core.config import RAW_DATA_DIR, BASE_DIR
+from rag_core.indexing.parser import load_documents_with_metadata, extract_document_structure
 
 DEBUG_DIR = BASE_DIR / "data" / "debug" / "parser_output"
 

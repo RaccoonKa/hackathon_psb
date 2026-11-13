@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
-from src.indexing import chunker as chunker_mod
-from src.indexing.chunker import (
+from rag_core.indexing import chunker as chunker_mod
+from rag_core.indexing.chunker import (
     HARD_MAX_TOKENS,
     OVERLAP_TOKENS,
     SUB_CHUNK_OVERLAP_CHARS,

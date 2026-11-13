@@ -1,6 +1,6 @@
-from src import config
-from src.generation import prompts
-from src.generation.answer.context_builder import (
+from rag_core import config
+from rag_core.generation import prompts
+from rag_core.generation.answer.context_builder import (
     _format_effective_dates,
     build_context_and_sources,
     build_source_entry,

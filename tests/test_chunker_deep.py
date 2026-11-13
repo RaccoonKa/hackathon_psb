@@ -1,9 +1,9 @@
-from src.indexing.chunker import (
+from rag_core.indexing.chunker import (
     HARD_MAX_TOKENS,
     TARGET_MAX_TOKENS,
     chunk_document_structural,
 )
-from src.indexing.tokenizer_utils import count_tokens
+from rag_core.indexing.tokenizer_utils import count_tokens
 from tests._common import all_docs, require_data
 
 
