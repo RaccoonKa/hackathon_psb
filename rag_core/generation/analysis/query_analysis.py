@@ -38,6 +38,24 @@ _EXPLICIT_POINT_OR_QUOTE_RE = re.compile(
 )
 _ISO_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _RU_DATE_RE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d{2})\b")
+_TEXT_DATE_RE = re.compile(
+    r"\b(\d{1,2})\s+(январ\w*|феврал\w*|март\w*|апрел\w*|ма[яе]|июн\w*|июл\w*|август\w*|сентябр\w*|октябр\w*|ноябр\w*|декабр\w*)\s+(20\d{2})(?:\s*(?:года|г\.?))?\b",
+    re.IGNORECASE,
+)
+_RU_MONTH_MAP: dict[str, str] = {
+    "январ": "01",
+    "феврал": "02",
+    "март": "03",
+    "апрел": "04",
+    "ма": "05",
+    "июн": "06",
+    "июл": "07",
+    "август": "08",
+    "сентябр": "09",
+    "октябр": "10",
+    "ноябр": "11",
+    "декабр": "12",
+}
 
 _NON_AMOUNT_RENT_MENTIONS_RE = re.compile(
     r"(?:просрочк\w*|срок\w*\s+(?:внесени\w*|оплат\w*|уплат\w*)|дата\s+(?:внесени\w*|оплат\w*)|до\s+какого\s+числа\s+[^\?]*?внес\w*|пен[яиюей]\s+за\s+[^\?]*?)\s+арендн\w+\s+плат\w*",
@@ -116,6 +134,97 @@ _RESOLVED_PREFIX_RE = re.compile(
 )
 
 
+_INJECTION_TOKENS_RE = re.compile(
+    r"(?:<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
+    re.IGNORECASE,
+)
+
+_ANAPHORA_BACKWARD_RE = re.compile(
+    r"(?:\b(?:по\s+нему|по\s+ней|по\s+ним|к\s+нему|к\s+ней|к\s+ним|в\s+нем|в\s+ней|в\s+них|о\s+нем|о\s+ней|о\s+них|с\s+ним|с\s+ней|с\s+ними)\b"
+    r"|\b(?:этот|эта|это|эти|этого|этой|этому|этим|этом|этих|этими)\b"
+    r"|\b(?:тот|та|то|те|того|той|тому|тем|том|тех|теми)\s+(?:же\s+)?(?:договор|соглашен|пункт|акт|документ)\b"
+    r"|\b(?:ранее|предыдущ\w+|выше\w+|тогда|в\s+тот\s+момент|в\s+то\s+время)\b"
+    r"|\b(?:он|она|оно|они|его|е[её]|их|ему|ей|им|нем|ней|них|нему|него|нее|не[её]|нею|ними)\b"
+    r"|^(?:а|но|и)\s+(?:в\s+какой|какой|какая|какое|какие|сколько|до\s+какого|каков\w*)\b)",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_LAW_OR_DOC_RE = re.compile(
+    r"(?:\b(?:коап|гк|нк|тк|ук)\s+рф\b|\bфз\b|\bфедеральн\w+\s+закон\b|\bзакон\s+(?:рф|о\b)|договор\w*\s+(?:№|номер|[«\"А-Яа-я0-9\-\/])|приказ\w*\s+(?:№|номер))",
+    re.IGNORECASE,
+)
+
+
+def extract_dates_from_text(text: str) -> list[str]:
+    """Извлекает даты в формате YYYY-MM-DD из текста (ISO, DD.MM.YYYY или текстовый месяц)."""
+    dates: list[str] = []
+    if not text:
+        return dates
+    for match in _ISO_DATE_RE.findall(text):
+        if match not in dates:
+            dates.append(match)
+    for day, month, year in _RU_DATE_RE.findall(text):
+        try:
+            iso = f"{year}-{int(month):02d}-{int(day):02d}"
+            if iso not in dates:
+                dates.append(iso)
+        except ValueError:
+            pass
+    for match in _TEXT_DATE_RE.finditer(text):
+        day_str, month_str, year_str = match.group(1), match.group(2).lower(), match.group(3)
+        month_num = None
+        for prefix, num in _RU_MONTH_MAP.items():
+            if month_str.startswith(prefix):
+                month_num = num
+                break
+        if month_num:
+            try:
+                iso = f"{year_str}-{int(month_num):02d}-{int(day_str):02d}"
+                if iso not in dates:
+                    dates.append(iso)
+            except ValueError:
+                pass
+    return dates
+
+
+def extract_date_from_history(history: list[dict] | None) -> str | None:
+    """Извлекает дату события из последних реплик диалога (от новых к старым)."""
+    if not history:
+        return None
+    # Сначала проверяем реплики пользователя от самых свежих к старым
+    for turn in reversed(history):
+        if not isinstance(turn, dict):
+            continue
+        if str(turn.get("role") or "").lower() == "user":
+            content = str(turn.get("content") or "")
+            dates = extract_dates_from_text(content)
+            if dates:
+                return dates[0]
+    # Если в репликах пользователя нет, проверяем все реплики (включая ассистента)
+    for turn in reversed(history):
+        if not isinstance(turn, dict):
+            continue
+        content = str(turn.get("content") or "")
+        dates = extract_dates_from_text(content)
+        if dates:
+            return dates[0]
+    return None
+
+
+def is_independent_query(query: str) -> bool:
+    """Проверяет, является ли запрос полностью самостоятельным (смена темы / самодостаточный вопрос)."""
+    q = query.strip()
+    if not q:
+        return False
+    # Если есть явные анафоры (местоимения, неполные отсылки назад) — запрос зависим
+    if _ANAPHORA_BACKWARD_RE.search(q):
+        return False
+    # Если вопрос явно ссылается на закон или конкретный новый документ — он самостоятелен
+    if _EXPLICIT_LAW_OR_DOC_RE.search(q):
+        return True
+    return False
+
+
 def _format_history_turns(history: list[dict]) -> list[str]:
     max_turns = max(1, int(getattr(config, "MAX_HISTORY_TURNS", 6)))
     max_chars = max(100, int(getattr(config, "HISTORY_TURN_MAX_CHARS", 1200)))
@@ -127,8 +236,12 @@ def _format_history_turns(history: list[dict]) -> list[str]:
         content = str(turn.get("content") or "").strip()
         if not content:
             continue
+        # Защита от prompt injection control tokens
+        content = _INJECTION_TOKENS_RE.sub("", content).strip()
         if len(content) > max_chars:
             content = content[:max_chars].rstrip() + "..."
+        # Заменяем переносы строк пробелами для защиты структуры промпта
+        content = " ".join(content.split())
         role_raw = str(turn.get("role") or "user").strip().lower()
         role_label = "Пользователь" if role_raw == "user" else "Ассистент"
         formatted.append(f"{role_label}: {content}")
@@ -143,6 +256,10 @@ def _resolve_history_with_usage(
     on_llm_success: Optional[Callable[[], None]] = None,
 ) -> tuple[str, bool, int, int]:
     if not history:
+        return query, False, 0, 0
+
+    # Детекция смены темы / самостоятельного вопроса без анафор
+    if is_independent_query(query):
         return query, False, 0, 0
 
     context_parts = _format_history_turns(history)
@@ -407,6 +524,7 @@ def _build_regex_fallback_spec(
     query: str,
     event_date: str | None,
     history_resolved: bool,
+    chat_history: list[dict] | None = None,
 ) -> QuerySpec:
     entities_raw: list[str] = []
     for m in _QUOTED_ENTITY_RE.findall(query):
@@ -416,13 +534,18 @@ def _build_regex_fallback_spec(
 
     article_refs = [m.strip(".") for m in _ARTICLE_EXTRACT_RE.findall(query) if m.strip(".")]
 
-    dates: list[str] = list(_ISO_DATE_RE.findall(query))
-    for day, month, year in _RU_DATE_RE.findall(query):
-        iso_candidate = f"{year}-{int(month):02d}-{int(day):02d}"
-        if iso_candidate not in dates:
-            dates.append(iso_candidate)
-
+    dates: list[str] = extract_dates_from_text(query)
     resolved_event_date = event_date or (dates[0] if dates else None)
+    assumptions: list[str] = []
+    if not resolved_event_date and chat_history:
+        hist_date = extract_date_from_history(chat_history)
+        if hist_date:
+            resolved_event_date = hist_date
+            if hist_date not in dates:
+                dates.insert(0, hist_date)
+    if not event_date and resolved_event_date and (history_resolved or chat_history):
+        assumptions.append(f"дата события ({resolved_event_date}) определена из истории диалога")
+
     entities_resolved = resolve_entities(entities_raw)
     required_slots = _infer_slots_by_regex(query)
     bm25_q, dense_q = _ensure_slot_queries(
@@ -441,7 +564,7 @@ def _build_regex_fallback_spec(
         event_date=resolved_event_date,
         premises=premises,
         required_slots=required_slots,
-        assumptions=[],
+        assumptions=assumptions,
         ambiguity=Ambiguity.LOW,
         needs_clarification=False,
         decomposition=decomposition,
@@ -567,6 +690,21 @@ def analyze_query(
             effective_event_date = event_date or parsed.event_date or (
                 parsed.dates[0] if parsed.dates else None
             )
+            spec_assumptions = list(parsed.assumptions)
+            if not effective_event_date:
+                effective_dates = extract_dates_from_text(effective_query)
+                if effective_dates:
+                    effective_event_date = effective_dates[0]
+                elif chat_history:
+                    effective_event_date = extract_date_from_history(chat_history)
+                    if effective_event_date:
+                        msg = f"дата события ({effective_event_date}) определена из истории диалога"
+                        if msg not in spec_assumptions:
+                            spec_assumptions.append(msg)
+
+            spec_dates = list(parsed.dates)
+            if effective_event_date and effective_event_date not in spec_dates:
+                spec_dates.insert(0, effective_event_date)
 
             spec = QuerySpec(
                 intent=sanitized_intent,
@@ -574,11 +712,11 @@ def analyze_query(
                 entities_raw=list(parsed.entities_raw),
                 entities_resolved=entities_resolved,
                 article_refs=list(parsed.article_refs),
-                dates=list(parsed.dates),
+                dates=spec_dates,
                 event_date=effective_event_date,
                 premises=premises,
                 required_slots=required_slots,
-                assumptions=list(parsed.assumptions),
+                assumptions=spec_assumptions,
                 ambiguity=parsed.ambiguity,
                 needs_clarification=False,
                 decomposition=decomposition,
@@ -640,6 +778,7 @@ def analyze_query(
         query=effective_query,
         event_date=event_date,
         history_resolved=used_history,
+        chat_history=chat_history,
     )
     fallback_spec = _apply_date_version_degradation(fallback_spec)
     latency_ms = round(
