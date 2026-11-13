@@ -1,13 +1,19 @@
 import hashlib
+import io
 import logging
 import re
+import shutil
+import stat
+import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTENSIONS = {".txt", ".docx", ".pdf"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
 
 RU_MONTHS = {
     "января": "01", "январе": "01",
@@ -108,15 +114,18 @@ def extract_text_from_file(
     file_path: Path,
 ) -> Tuple[str, Optional[List[Tuple[int, int, int]]]]:
     """
-    Универсальный экстрактор текста для .txt, .docx и .pdf.
+    Универсальный экстрактор текста для .txt, .md, .docx и .pdf.
     Для PDF дополнительно возвращает карту страниц [(char_start, char_end, page), ...].
+    DOCX читается через python-docx с fallback на zipfile + ElementTree.
     """
     suffix = file_path.suffix.lower()
-    if suffix == ".txt":
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read(), None
+    if suffix in {".txt", ".md"}:
+        return file_path.read_text(encoding="utf-8-sig"), None
     if suffix == ".docx":
-        return _extract_docx_text(file_path), None
+        try:
+            return _extract_docx_text(file_path), None
+        except Exception:  # noqa: BLE001 - fallback на устойчивый zipfile-экстрактор
+            return _docx_bytes_to_text(file_path.read_bytes()), None
     if suffix == ".pdf":
         return _extract_pdf_text_and_pages(file_path)
     raise ValueError(f"Неподдерживаемый формат файла: {file_path.suffix}")
@@ -597,27 +606,170 @@ def extract_metadata(
     return metadata, cleaned_content
 
 
+# --- Инфраструктура чтения базы знаний платформы ---
+
+SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
+
+_SKIP_DIR_MARKERS = ("__MACOSX/", "/__MACOSX/", ".DS_Store")
+_DOCX_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+
+
+class UnsafeArchiveError(RuntimeError):
+    """Архив содержит небезопасный путь или превышает допустимый размер."""
+
+
+def _should_skip_member(name: str) -> bool:
+    if not name or name.endswith("/"):
+        return True
+    normalized = name.replace("\\", "/")
+    if normalized.startswith("__MACOSX/") or "/__MACOSX/" in normalized:
+        return True
+    if any(normalized.endswith(marker) for marker in _SKIP_DIR_MARKERS):
+        return True
+    return False
+
+
+def _docx_bytes_to_text(data: bytes) -> str:
+    """Извлекает текст DOCX через zipfile + ElementTree без python-docx."""
+    with zipfile.ZipFile(io.BytesIO(data)) as docx_zip:
+        document_xml = docx_zip.read("word/document.xml")
+    root = ET.fromstring(document_xml)
+
+    paragraphs: List[str] = []
+    for paragraph in root.iter(f"{{{_DOCX_NS}}}p"):
+        parts = [
+            node.text or "" for node in paragraph.iter(f"{{{_DOCX_NS}}}t")
+        ]
+        line = "".join(parts).strip()
+        if line:
+            paragraphs.append(line)
+    if paragraphs:
+        return "\n".join(paragraphs)
+
+    loose_parts = [
+        node.text or "" for node in root.iter(f"{{{_DOCX_NS}}}t")
+    ]
+    return " ".join(part.strip() for part in loose_parts if part.strip())
+
+
+def _read_document_text(path: Path) -> str:
+    """Читает поддерживаемый файл базы знаний в UTF-8-текст."""
+    suffix = path.suffix.lower()
+    if suffix in {".txt", ".md"}:
+        return path.read_text(encoding="utf-8-sig")
+    if suffix == ".docx":
+        return _docx_bytes_to_text(path.read_bytes())
+    raise ValueError(f"Неподдерживаемый формат файла: {path.name}")
+
+
+def _pseudo_document_path(raw_dir: Path, file_path: Path) -> Path:
+    """Сохраняет префиксы каталогов через `__` для detect_doc_type()."""
+    relative = file_path.relative_to(raw_dir)
+    if len(relative.parts) == 1:
+        return file_path
+    return Path("__".join(relative.parts))
+
+
+def safe_extract_zip(zip_path: Path, dest_dir: Path) -> Path:
+    """Безопасно распаковывает ZIP, блокируя path traversal и zip-slip."""
+    destination = Path(dest_dir).resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    total_size = 0
+
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+
+            name = info.filename.replace("\\", "/")
+            if _should_skip_member(name):
+                continue
+
+            if name.startswith("/") or re.match(r"^[A-Za-z]:", name):
+                raise UnsafeArchiveError(
+                    f"Абсолютный путь в архиве запрещён: {name}"
+                )
+            if ".." in Path(name).parts:
+                raise UnsafeArchiveError(
+                    f"Path traversal в архиве запрещён: {name}"
+                )
+
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == stat.S_IFLNK:
+                raise UnsafeArchiveError(
+                    f"Символические ссылки в архиве запрещены: {name}"
+                )
+
+            target = (destination / name).resolve()
+            try:
+                target.relative_to(destination)
+            except ValueError as exc:
+                raise UnsafeArchiveError(
+                    f"Путь выходит за пределы каталога распаковки: {name}"
+                ) from exc
+
+            total_size += info.file_size
+            if total_size > _MAX_UNCOMPRESSED_BYTES:
+                raise UnsafeArchiveError(
+                    "Распакованный размер базы знаний превышает "
+                    f"{_MAX_UNCOMPRESSED_BYTES} байт"
+                )
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info) as source, open(target, "wb") as output:
+                shutil.copyfileobj(source, output)
+
+    return destination
+
+
 def load_documents_with_metadata(raw_dir: Path) -> List[Dict[str, Any]]:
-    """Загружает все поддерживаемые документы (.txt, .docx, .pdf) из директории."""
+    """Загружает поддерживаемые документы (.txt, .md, .docx, .pdf) из директории."""
+    raw_dir = Path(raw_dir)
     docs: List[Dict[str, Any]] = []
-    all_files = sorted(
-        p for p in raw_dir.glob("**/*")
-        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
-    )
+    skipped: List[str] = []
 
-    for p in all_files:
-        suffix = p.suffix.lower()
-        raw_bytes = p.read_bytes() if suffix in {".docx", ".pdf"} else None
-        raw_c, page_spans = extract_text_from_file(p)
+    if not raw_dir.exists():
+        return docs
 
-        if not raw_c.strip():
-            logger.warning("Пропущен пустой файл или скан без текстового слоя: %s", p.name)
+    for path in sorted(raw_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        relative_name = str(path.relative_to(raw_dir))
+        if _should_skip_member(relative_name):
             continue
 
-        meta, clean_c = extract_metadata(p, raw_c, raw_bytes=raw_bytes)
-        doc_entry: Dict[str, Any] = {"content": clean_c, "metadata": meta}
+        if path.suffix.lower() not in SUPPORTED_DOCUMENT_EXTENSIONS:
+            skipped.append(relative_name)
+            continue
+
+        suffix = path.suffix.lower()
+        raw_bytes = path.read_bytes() if suffix in {".docx", ".pdf"} else None
+        try:
+            raw_content, page_spans = extract_text_from_file(path)
+        except Exception as exc:  # noqa: BLE001 - один файл не должен ронять парсер
+            logger.warning("Пропущен нечитаемый файл '%s': %s", relative_name, exc)
+            continue
+
+        if not raw_content.strip():
+            logger.warning(
+                "Пропущен пустой файл или скан без текстового слоя: %s",
+                relative_name,
+            )
+            continue
+
+        pseudo_path = _pseudo_document_path(raw_dir, path)
+        metadata, cleaned_content = extract_metadata(
+            pseudo_path, raw_content, raw_bytes=raw_bytes
+        )
+        metadata["source_filename"] = relative_name
+
+        doc_entry: Dict[str, Any] = {
+            "content": cleaned_content,
+            "metadata": metadata,
+        }
         if page_spans is not None:
-            header_shift = max(0, len(raw_c) - len(clean_c))
+            header_shift = max(0, len(raw_content) - len(cleaned_content))
             adjusted_spans = [
                 (max(0, s - header_shift), max(0, e - header_shift), pg)
                 for s, e, pg in page_spans
@@ -625,5 +777,14 @@ def load_documents_with_metadata(raw_dir: Path) -> List[Dict[str, Any]]:
             ]
             doc_entry["page_spans"] = adjusted_spans
         docs.append(doc_entry)
+
+    if skipped:
+        preview = ", ".join(skipped[:20])
+        suffix_msg = "" if len(skipped) <= 20 else f" и ещё {len(skipped) - 20}"
+        logger.warning(
+            "Пропущены файлы неподдерживаемого формата: %s%s",
+            preview,
+            suffix_msg,
+        )
 
     return docs

@@ -117,6 +117,8 @@ def _restore_transformers(saved):
 
 
 def _reset_local_cache():
+    # Публичный сброс также очищает кэш неудачи загрузки (_local_model_error).
+    vs_mod.reset_local_model_cache()
     vs_mod._local_tokenizer = None
     vs_mod._local_model = None
     vs_mod._local_device = None
@@ -218,8 +220,10 @@ def test_compute_embeddings_uses_local_model():
     saved_torch = _install_fake_torch()
     try:
         with patch.object(vs_mod, "_load_local_model", return_value=(fake_tok, fake_model, "cpu")), \
-             patch.object(vs_mod, "client_api") as mock_client:
-            mock_client.embeddings.create.side_effect = AssertionError("Не должен вызывать API")
+             patch.object(vs_mod, "_get_api_client") as mock_get_client:
+            mock_get_client.return_value.embeddings.create.side_effect = AssertionError(
+                "Не должен вызывать API"
+            )
             result = compute_embeddings(["a", "b"], batch_size=10)
         assert len(result) == 2
         assert all(isinstance(v, list) for v in result)

@@ -1,30 +1,62 @@
-import pytest
+from unittest import SkipTest
 
 from src import config
 from src.generation import prompts
 from src.generation.refusal import (
     build_no_context_refusal_result,
     build_template_intent_result,
-    resolve_template,
 )
 from src.generation.types import AgentResult, Intent
 
 
-def test_resolve_out_of_scope():
-    assert resolve_template(config.RESPONSE_OUT_OF_SCOPE) == prompts.RESPONSE_OUT_OF_SCOPE
+def test_template_key_out_of_scope():
+    result = build_template_intent_result(
+        query="?",
+        intent=Intent.OUT_OF_SCOPE,
+        prior_trace=[],
+        template_key=config.RESPONSE_OUT_OF_SCOPE,
+    )
+    assert result.final_answer == prompts.RESPONSE_OUT_OF_SCOPE
 
 
-def test_resolve_about_assistant():
-    assert resolve_template(config.RESPONSE_ABOUT_ASSISTANT) == prompts.RESPONSE_ABOUT_ASSISTANT
+def test_template_key_about_assistant():
+    result = build_template_intent_result(
+        query="?",
+        intent=Intent.ABOUT_ASSISTANT,
+        prior_trace=[],
+        template_key=config.RESPONSE_ABOUT_ASSISTANT,
+    )
+    assert result.final_answer == prompts.RESPONSE_ABOUT_ASSISTANT
 
 
-def test_resolve_no_context():
-    assert resolve_template(config.RESPONSE_REFUSAL_NO_CONTEXT) == prompts.RESPONSE_REFUSAL_NO_CONTEXT
+def test_template_key_no_context():
+    result = build_template_intent_result(
+        query="?",
+        intent=Intent.SEMANTIC_QUERY,
+        prior_trace=[],
+        template_key=config.RESPONSE_REFUSAL_NO_CONTEXT,
+    )
+    assert result.final_answer == prompts.RESPONSE_REFUSAL_NO_CONTEXT
 
 
-def test_resolve_unknown_raises():
-    with pytest.raises(KeyError):
-        resolve_template("UNKNOWN_KEY")
+def test_unknown_template_key_falls_back():
+    result = build_template_intent_result(
+        query="?",
+        intent=Intent.OUT_OF_SCOPE,
+        prior_trace=[],
+        template_key="UNKNOWN_KEY",
+    )
+    assert result.final_answer == prompts.RESPONSE_OUT_OF_SCOPE
+
+
+def test_resolve_template_unknown_raises_removed_api():
+    raise SkipTest(
+        "resolve_template() удалён вместе с src/generation/generator.py: "
+        "новая архитектура резолвит ключ шаблона через "
+        "build_template_intent_result(template_key=...) и при неизвестном ключе "
+        "делает graceful fallback на RESPONSE_OUT_OF_SCOPE вместо KeyError. "
+        "Поведение fallback проверено в test_unknown_template_key_falls_back."
+    )
 
 
 def test_template_out_of_scope_refused():

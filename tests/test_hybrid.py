@@ -90,12 +90,17 @@ def _build_date_map():
 
 
 def test_resolve_2024():
-    allowed = resolve_allowed_versions_by_date("2024-06-01", _build_date_map())
+    unknown = set()
+    allowed = resolve_allowed_versions_by_date(
+        "2024-06-01", _build_date_map(), validity_unknown=unknown,
+    )
     assert "c_law" in allowed
     assert "c_old" in allowed
     assert "c_new" not in allowed
     assert "c_amend" not in allowed
-    assert "c_unknown" not in allowed
+    # Третье состояние: неизвестные даты не отсекаются, но помечаются.
+    assert "c_unknown" in allowed
+    assert "c_unknown" in unknown
 
 
 def test_resolve_2025():

@@ -1,6 +1,6 @@
 from src import config
 from src.generation import prompts
-from src.generation.context_builder import (
+from src.generation.answer.context_builder import (
     _format_effective_dates,
     build_context_and_sources,
     build_source_entry,
@@ -59,7 +59,7 @@ def test_format_single_chunk_has_path():
 def test_format_single_chunk_has_provision():
     ch = make_retrieved_chunk(provision_id="3.2")
     out = format_single_chunk("S1", ch)
-    assert "Пункт: 3.2" in out
+    assert f"{prompts.PROVISION_LINE_PREFIX} 3.2" in out
 
 
 def test_format_single_chunk_no_provision_line():
@@ -109,10 +109,10 @@ def test_format_single_chunk_line_order():
     )
     out = format_single_chunk("S1", ch)
     pos_title = out.index("[S1]")
-    pos_path = out.index("Путь:")
-    pos_prov = out.index("Пункт:")
-    pos_eff = out.index("Редакция:")
-    pos_amend = out.index("Изменяет документ:")
+    pos_path = out.index("Раздел:")
+    pos_prov = out.index(prompts.PROVISION_LINE_PREFIX)
+    pos_eff = out.index(prompts.EFFECTIVE_LINE_PREFIX)
+    pos_amend = out.index(prompts.AMENDS_LINE_PREFIX)
     pos_text = out.index("Текст:")
     assert pos_title < pos_path < pos_prov < pos_eff < pos_amend < pos_text
 

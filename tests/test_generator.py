@@ -1,214 +1,243 @@
+import json
 from unittest.mock import patch
 
 from src import config
-from src.generation import prompts
-from src.generation.generator import (
-    _sanitize_and_extract_citations,
-    assemble_final_response,
-    build_generation_messages,
-    generate_answer,
+from src.generation.answer.generator import (
+    _normalize_refusal_reason,
+    _parse_draft_schema,
+    generate_draft,
+    regenerate_draft,
 )
-from src.generation.types import AgentResult, Intent
+from src.generation.errors import LLMAPIError, LLMFormatError
+from src.generation.prompts import generator as gen_prompts
+from src.generation.types import Claim, DraftAnswer
+from tests._common import (
+    make_evidence_bundle,
+    make_policy_verdict,
+    make_query_spec,
+    make_retrieved_chunk,
+    make_verification_report,
+)
+
+LLM_PATH = "src.generation.answer.generator.llm_complete_with_usage"
 
 
-def test_build_messages_count():
-    msgs = build_generation_messages(query="q", context="c")
+def _draft_json(answer="Ответ <source>S1</source>", claims=None, refusal_reason=None):
+    payload = {
+        "answer_text": answer,
+        "claims": claims or [],
+        "assumptions": [],
+        "missing_info": [],
+        "refusal_reason": refusal_reason,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _spec(**kwargs):
+    return make_query_spec(**kwargs)
+
+
+def _evidence():
+    return make_evidence_bundle()
+
+
+def test_generation_system_has_anti_injection():
+    text = gen_prompts.GENERATION_SYSTEM
+    assert "PROMPT INJECTION" in text.upper()
+    assert "Игнорируй" in text
+    assert "<source>" in text
+
+
+def test_generate_draft_builds_two_messages():
+    with patch(LLM_PATH, return_value=(_draft_json(), 10, 2)) as mock_llm:
+        generate_draft(
+            spec=_spec(),
+            evidence=_evidence(),
+            policy=make_policy_verdict(),
+            context="Уникальный контекст 123",
+            query="Что делать?",
+        )
+    msgs = mock_llm.call_args.kwargs["messages"]
     assert len(msgs) == 2
-
-
-def test_build_messages_roles():
-    msgs = build_generation_messages(query="q", context="c")
     assert msgs[0]["role"] == config.ROLE_SYSTEM
     assert msgs[1]["role"] == config.ROLE_USER
-
-
-def test_build_messages_system_equals_prompt():
-    msgs = build_generation_messages(query="q", context="c")
-    assert msgs[0]["content"] == prompts.GENERATION_SYSTEM
-
-
-def test_build_messages_includes_query():
-    msgs = build_generation_messages(query="Что делать?", context="c")
+    assert msgs[0]["content"] == gen_prompts.GENERATION_SYSTEM
     assert "Что делать?" in msgs[1]["content"]
-
-
-def test_build_messages_includes_context():
-    msgs = build_generation_messages(query="q", context="Уникальный контекст 123")
     assert "Уникальный контекст 123" in msgs[1]["content"]
 
 
-def test_generate_answer_mocked():
-    with patch(
-        "src.generation.generator.llm_complete_with_usage",
-        return_value=("Ответ <source>S1</source>", 200, 20),
-    ):
-        ans, step = generate_answer("Вопрос?", "Контекст")
-    assert "S1" in ans
+def test_generate_draft_parses_claims_and_default_slot():
+    claims = [{"text": "Плата 450000 руб.", "source_ids": ["S1"], "slot": None}]
+    with patch(LLM_PATH, return_value=(_draft_json(claims=claims), 10, 2)):
+        draft, _ = generate_draft(
+            spec=_spec(required_slots=["rent_amount"]),
+            evidence=_evidence(),
+            policy=make_policy_verdict(),
+            context="ctx",
+            query="q",
+        )
+    assert isinstance(draft, DraftAnswer)
+    assert draft.claims[0].text == "Плата 450000 руб."
+    assert draft.claims[0].source_ids == ["S1"]
+    assert draft.claims[0].slot == "rent_amount"
+    assert draft.claims[0].original_idx == 0
+
+
+def test_generate_draft_trace_fields():
+    with patch(LLM_PATH, return_value=(_draft_json(), 200, 20)):
+        _, step = generate_draft(
+            spec=_spec(),
+            evidence=_evidence(),
+            policy=make_policy_verdict(),
+            context="контекст длиной 10",
+            query="Какой-то вопрос?",
+        )
     assert step.step == config.STEP_GENERATION
     assert step.model == config.LLM_MODEL
     assert step.prompt_tokens == 200
     assert step.completion_tokens == 20
-
-
-def test_generate_answer_trace_input():
-    with patch(
-        "src.generation.generator.llm_complete_with_usage",
-        return_value=("a", 1, 1),
-    ):
-        _, step = generate_answer("Какой-то вопрос?", "контекст длиной 10")
     assert step.input["query"] == "Какой-то вопрос?"
     assert step.input["context_length"] == len("контекст длиной 10")
-    assert step.input["model"] == config.LLM_MODEL
+    assert step.input["attempts"] == 1
+    assert step.output["claims_count"] == 0
 
 
-def test_generate_answer_empty_response():
-    with patch(
-        "src.generation.generator.llm_complete_with_usage",
-        return_value=("", 0, 0),
-    ):
-        ans, _ = generate_answer("q", "c")
-    assert ans == ""
+def test_generate_draft_uses_dense_query_when_query_missing():
+    with patch(LLM_PATH, return_value=(_draft_json(), 1, 1)) as mock_llm:
+        generate_draft(
+            spec=_spec(rewritten_queries_dense=["переформулированный"]),
+            evidence=_evidence(),
+            policy=make_policy_verdict(),
+            context="ctx",
+        )
+    msgs = mock_llm.call_args.kwargs["messages"]
+    assert "переформулированный" in msgs[1]["content"]
 
 
-def test_sanitize_single_valid():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "Текст <source>S1</source>.", {"S1": {}}
+def test_generate_draft_refusal_forbidden_drops_reason():
+    with patch(LLM_PATH, return_value=(_draft_json(refusal_reason="нет данных"), 1, 1)):
+        draft, _ = generate_draft(
+            spec=_spec(),
+            evidence=_evidence(),
+            policy=make_policy_verdict(refusal_forbidden=True),
+            context="ctx",
+            query="q",
+        )
+    assert draft.refusal_reason is None
+
+
+def test_generate_draft_keeps_refusal_reason_when_allowed():
+    with patch(LLM_PATH, return_value=(_draft_json(answer="", refusal_reason="нет данных"), 1, 1)):
+        draft, _ = generate_draft(
+            spec=_spec(),
+            evidence=_evidence(),
+            policy=make_policy_verdict(refusal_forbidden=False),
+            context="ctx",
+            query="q",
+        )
+    assert draft.refusal_reason == "нет данных"
+
+
+def test_generate_draft_raw_fallback_on_invalid_json():
+    with patch(LLM_PATH, return_value=("не json", 0, 0)) as mock_llm:
+        draft, step = generate_draft(
+            spec=_spec(),
+            evidence=_evidence(),
+            policy=make_policy_verdict(),
+            context="ctx",
+            query="q",
+        )
+    assert mock_llm.call_count == max(1, int(config.MAX_ATTEMPTS_GENERATE_INITIAL))
+    assert draft.answer_text == "не json"
+    assert draft.claims == []
+    assert step.degradation == "draft_raw_fallback"
+    assert step.extra["confidence"] == "low"
+
+
+def test_parse_draft_schema_fenced_json():
+    parsed = _parse_draft_schema("```json\n" + _draft_json(answer="A") + "\n```")
+    assert parsed.answer_text == "A"
+
+
+def test_parse_draft_schema_embedded_json():
+    parsed = _parse_draft_schema("преамбула " + _draft_json(answer="B") + " хвост")
+    assert parsed.answer_text == "B"
+
+
+def test_parse_draft_schema_garbage_raises():
+    try:
+        _parse_draft_schema("abcdef")
+    except LLMFormatError:
+        return
+    raise AssertionError("Ожидался LLMFormatError")
+
+
+def test_normalize_refusal_reason_null_like():
+    assert _normalize_refusal_reason("нет", has_claims=False, refusal_forbidden=False) is None
+    assert _normalize_refusal_reason(None, has_claims=False, refusal_forbidden=False) is None
+
+
+def test_normalize_refusal_reason_dropped_when_claims_present():
+    assert _normalize_refusal_reason(
+        "нет данных", has_claims=True, refusal_forbidden=False
+    ) is None
+
+
+def test_normalize_refusal_reason_kept():
+    assert _normalize_refusal_reason(
+        "нет данных", has_claims=False, refusal_forbidden=False
+    ) == "нет данных"
+
+
+def _previous_draft():
+    return DraftAnswer(
+        answer_text="старый ответ <source>S1</source>",
+        claims=[Claim(
+            text="исходный факт",
+            source_ids=["S1"],
+            slot="rent_amount",
+            original_idx=0,
+        )],
+        assumptions=[],
+        missing_info=[],
+        refusal_reason=None,
     )
-    assert cited == ["S1"]
-    assert "<source>S1</source>" in cleaned
 
 
-def test_sanitize_multiple_valid():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "A <source>S1, S2</source> B", {"S1": {}, "S2": {}}
-    )
-    assert cited == ["S1", "S2"]
+def test_regenerate_draft_locks_supported_claims():
+    payload = json.dumps({
+        "answer_text": "новый ответ <source>S1</source>",
+        "claims": [{
+            "claim_idx": 0,
+            "text": "изменённый факт",
+            "source_ids": ["S1"],
+            "slot": "rent_amount",
+        }],
+        "assumptions": [],
+        "missing_info": [],
+        "refusal_reason": None,
+    }, ensure_ascii=False)
+    with patch(LLM_PATH, return_value=(payload, 5, 3)):
+        draft, step = regenerate_draft(
+            previous=_previous_draft(),
+            report=make_verification_report(supported_locked=[0]),
+            chunks=[make_retrieved_chunk(chunk_id="c1")],
+            spec=_spec(intent="semantic_query"),
+        )
+    assert step.step == "regenerate_draft"
+    assert draft.claims[0].text == "исходный факт"
+    assert draft.claims[0].source_ids == ["S1"]
 
 
-def test_sanitize_dedup():
-    _, cited = _sanitize_and_extract_citations(
-        "A <source>S1</source> B <source>S1</source> C", {"S1": {}}
-    )
-    assert cited == ["S1"]
-
-
-def test_sanitize_invalid_removed():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "A <source>X9</source> B", {"S1": {}}
-    )
-    assert cited == []
-    assert "<source>" not in cleaned
-
-
-def test_sanitize_mixed():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "A <source>S1, X9</source> B", {"S1": {}}
-    )
-    assert cited == ["S1"]
-    assert "X9" not in cleaned
-    assert "S1" in cleaned
-
-
-def test_sanitize_empty_tag():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "A <source></source> B", {"S1": {}}
-    )
-    assert cited == []
-    assert "<source>" not in cleaned
-
-
-def test_sanitize_whitespace_only():
-    cleaned, cited = _sanitize_and_extract_citations(
-        "A <source>  ,  ,  </source> B", {"S1": {}}
-    )
-    assert cited == []
-
-
-def test_sanitize_no_tags():
-    cleaned, cited = _sanitize_and_extract_citations("Просто текст.", {"S1": {}})
-    assert cited == []
-    assert cleaned == "Просто текст."
-
-
-def test_sanitize_punctuation_space_cleaned():
-    cleaned, _ = _sanitize_and_extract_citations(
-        "Текст <source>X9</source> .", {}
-    )
-    assert " ." not in cleaned
-
-
-def test_sanitize_preserves_multiline():
-    src = {"S1": {}}
-    cleaned, _ = _sanitize_and_extract_citations(
-        "Первая строка <source>S1</source>\nВторая строка", src
-    )
-    assert "\n" in cleaned
-
-
-def test_assemble_basic():
-    sources = {"S1": {"chunk_id": "c1"}}
-    result = assemble_final_response(
-        final_answer="Текст <source>S1</source>",
-        sources=sources,
-        intent=Intent.SEMANTIC_QUERY,
-        trace=[],
-    )
-    assert isinstance(result, AgentResult)
-    assert result.refused is False
-    assert list(result.sources.keys()) == ["S1"]
-    assert result.intent == "semantic_query"
-
-
-def test_assemble_no_citations_keeps_all():
-    sources = {"S1": {}, "S2": {}}
-    result = assemble_final_response(
-        final_answer="Без цитат.",
-        sources=sources,
-        intent=Intent.SEMANTIC_QUERY,
-        trace=[],
-    )
-    assert set(result.sources.keys()) == {"S1", "S2"}
-
-
-def test_assemble_appends_assembly_step():
-    sources = {}
-    result = assemble_final_response(
-        final_answer="x",
-        sources=sources,
-        intent=Intent.SEMANTIC_QUERY,
-        trace=[],
-    )
-    assert result.trace[-1].step == config.STEP_RESPONSE_ASSEMBLY
-
-
-def test_assemble_preserves_prior_trace():
-    from src.generation.types import TraceStep
-    prior = [TraceStep(step="x", input={}, output={}, latency_ms=0.0)]
-    result = assemble_final_response(
-        final_answer="x", sources={}, intent=Intent.SEMANTIC_QUERY, trace=prior,
-    )
-    assert len(result.trace) == 2
-    assert result.trace[0].step == "x"
-
-
-def test_assemble_step_output():
-    result = assemble_final_response(
-        final_answer="x", sources={"S1": {}}, intent=Intent.SEMANTIC_QUERY, trace=[],
-    )
-    step = result.trace[-1]
-    assert step.output["refused"] is False
-    assert step.output["sources_count"] == 1
-
-
-def test_assemble_exact_intent_kept():
-    result = assemble_final_response(
-        final_answer="x", sources={}, intent=Intent.EXACT_LOOKUP, trace=[],
-    )
-    assert result.intent == "exact_lookup"
-
-
-def test_assemble_mixed_intent_kept():
-    result = assemble_final_response(
-        final_answer="x", sources={}, intent=Intent.MIXED_QUERY, trace=[],
-    )
-    assert result.intent == "mixed_query"
+def test_regenerate_draft_keeps_previous_on_error():
+    with patch(LLM_PATH, side_effect=LLMAPIError("boom")):
+        draft, step = regenerate_draft(
+            previous=_previous_draft(),
+            report=make_verification_report(supported_locked=[0]),
+            chunks=[make_retrieved_chunk(chunk_id="c1")],
+            spec=_spec(intent="semantic_query"),
+        )
+    assert step.step == "regenerate_draft"
+    assert draft.answer_text == _previous_draft().answer_text
+    assert len(draft.claims) == 1
+    assert draft.claims[0].text == "исходный факт"

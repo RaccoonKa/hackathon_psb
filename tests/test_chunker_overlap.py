@@ -43,7 +43,7 @@ def test_sub_chunk_size_is_hard_max_times_3():
 
 def test_oversized_uses_splitter():
     parts = ["part-a", "part-b", "part-c"]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunk_document_structural(_make_doc(_oversized_content()))
     mock_splitter.split_text.assert_called_once()
@@ -51,7 +51,7 @@ def test_oversized_uses_splitter():
 
 def test_oversized_char_start_formula():
     parts = ["A" * 500, "B" * 500, "C" * 500]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -66,7 +66,7 @@ def test_oversized_char_start_formula():
 
 def test_oversized_char_start_with_exact_overlap():
     parts = ["X" * SUB_CHUNK_OVERLAP_CHARS, "Y" * SUB_CHUNK_OVERLAP_CHARS]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -79,7 +79,7 @@ def test_oversized_char_start_with_exact_overlap():
 
 def test_oversized_short_part_uses_max_one():
     parts = ["Z" * 10, "W" * 10, "V" * 10]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -92,7 +92,7 @@ def test_oversized_short_part_uses_max_one():
 
 def test_oversized_char_end_equals_start_plus_len_part():
     parts = ["A" * 1000, "B" * 750, "C" * 250]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -102,7 +102,7 @@ def test_oversized_char_end_equals_start_plus_len_part():
 
 def test_oversized_char_start_monotonic_for_long_parts():
     parts = ["A" * 500, "B" * 500, "C" * 500, "D" * 500]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -113,7 +113,7 @@ def test_oversized_char_start_monotonic_for_long_parts():
 
 def test_oversized_short_part_may_repeat_start():
     parts = ["Z" * 10, "W" * 10]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -122,7 +122,7 @@ def test_oversized_short_part_may_repeat_start():
 
 def test_oversized_preserves_provision_and_path():
     parts = ["A" * 500, "B" * 500]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]
@@ -133,7 +133,7 @@ def test_oversized_preserves_provision_and_path():
 
 def test_oversized_text_equals_part_stripped():
     parts = ["A" * 500, "B" * 500]
-    with patch.object(chunker_mod, "oversized_splitter") as mock_splitter:
+    with patch.object(chunker_mod, "_oversized_splitter") as mock_splitter:
         mock_splitter.split_text.return_value = parts
         chunks = chunk_document_structural(_make_doc(_oversized_content()))
     p11 = [c for c in chunks if c["structure"]["provision_id"] == "1.1"]

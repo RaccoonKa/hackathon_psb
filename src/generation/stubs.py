@@ -1,12 +1,4 @@
-from src.generation.types import Intent, RetrievedChunk
-
-
-def stub_intent_classifier(query: str) -> Intent:
-    raise NotImplementedError(
-        f"STUB stub_intent_classifier is not implemented. "
-        f"Replace with real intent classification. "
-        f"Received query={query!r}"
-    )
+from src.generation.types import RetrievedChunk
 
 
 def stub_rag_retrieve(query: str, top_k: int) -> list[RetrievedChunk]:

@@ -1,7 +1,7 @@
 import pickle
 import re
+import threading
 from typing import Any, Dict, List, Optional, Set, Tuple
-from rank_bm25 import BM25Okapi
 from src.config import BM25_DIR
 
 
@@ -15,10 +15,13 @@ class BM25KeywordStore:
     def __init__(self):
         self.chunk_ids: List[str] = []
         self.tokenized_corpus: List[List[str]] = []
-        self.bm25: Optional[BM25Okapi] = None
+        self.bm25: Any = None
         self._is_built: bool = False
+        self._load_lock = threading.Lock()
 
     def build_index(self, chunks: List[Dict[str, Any]]):
+        from rank_bm25 import BM25Okapi
+
         self.chunk_ids = [c["chunk_id"] for c in chunks]
         # Индексируем embedding_text (заголовок + путь + текст), чтобы BM25
         # находил фрагменты по названиям кодексов и номерам статей
@@ -45,6 +48,14 @@ class BM25KeywordStore:
             self.chunk_ids, self.tokenized_corpus, self.bm25 = pickle.load(f)
         self._is_built = True
 
+    def get_chunk_ids(self) -> List[str]:
+        """Снимок id индекса (неразрушающий, ленивая загрузка под lock)."""
+        if not self._is_built:
+            with self._load_lock:
+                if not self._is_built:
+                    self.load()
+        return list(self.chunk_ids)
+
     def search(
         self,
         query: str,
@@ -54,7 +65,9 @@ class BM25KeywordStore:
         if self.bm25 is None:
             if self._is_built:
                 return []
-            self.load()
+            with self._load_lock:
+                if self.bm25 is None and not self._is_built:
+                    self.load()
             if self.bm25 is None:
                 return []
 

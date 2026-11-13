@@ -96,19 +96,25 @@ def test_prepare_flat_metadata_no_structure_key():
 
 def test_compute_embeddings_fallback():
     with patch.object(vs_mod, "_load_local_model", return_value=(None, None, None)), \
-         patch.object(vs_mod, "client_api") as mock_client:
-        mock_client.embeddings.create.side_effect = Exception("no api")
+         patch.object(vs_mod, "USE_SUBMIT", False), \
+         patch.object(vs_mod, "ALLOW_HASH_FALLBACK", True), \
+         patch.object(vs_mod, "_get_api_client") as mock_get_client:
+        mock_get_client.return_value.embeddings.create.side_effect = Exception("no api")
         result = compute_embeddings(["a", "b"])
     assert len(result) == 2
     assert len(result[0]) == 1024
 
 
 def test_compute_embeddings_uses_api():
-    mock_data = [MagicMock(embedding=[0.1] * 1024), MagicMock(embedding=[0.2] * 1024)]
+    first = MagicMock(embedding=[0.1] * 1024)
+    second = MagicMock(embedding=[0.2] * 1024)
+    first.index = 0
+    second.index = 1
+    mock_data = [first, second]
     mock_resp = MagicMock(data=mock_data)
     with patch.object(vs_mod, "_load_local_model", return_value=(None, None, None)), \
-         patch.object(vs_mod, "client_api") as mock_client:
-        mock_client.embeddings.create.return_value = mock_resp
+         patch.object(vs_mod, "_get_api_client") as mock_get_client:
+        mock_get_client.return_value.embeddings.create.return_value = mock_resp
         result = compute_embeddings(["a", "b"])
     assert len(result) == 2
     assert result[0][0] == 0.1
