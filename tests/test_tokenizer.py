@@ -1,4 +1,4 @@
-from src.indexing.tokenizer_utils import count_tokens
+from rag_core.indexing.tokenizer_utils import count_tokens
 
 
 def test_count_tokens_empty():

@@ -1,12 +1,12 @@
 from unittest import SkipTest
 
-from src import config
-from src.generation import prompts
-from src.generation.refusal import (
+from rag_core import config
+from rag_core.generation import prompts
+from rag_core.generation.refusal import (
     build_no_context_refusal_result,
     build_template_intent_result,
 )
-from src.generation.types import AgentResult, Intent
+from rag_core.generation.types import AgentResult, Intent
 
 
 def test_template_key_out_of_scope():
@@ -86,7 +86,7 @@ def test_template_about_assistant_not_refused():
 
 
 def test_template_preserves_prior_trace():
-    from src.generation.types import TraceStep
+    from rag_core.generation.types import TraceStep
     prior = [TraceStep(step="x", input={}, output={}, latency_ms=0.0)]
     result = build_template_intent_result(
         query="?", intent=Intent.OUT_OF_SCOPE, prior_trace=prior
@@ -128,7 +128,7 @@ def test_no_context_intent_kept():
 
 
 def test_no_context_preserves_prior():
-    from src.generation.types import TraceStep
+    from rag_core.generation.types import TraceStep
     prior = [TraceStep(step="x", input={}, output={}, latency_ms=0.0)]
     result = build_no_context_refusal_result(
         query="?", intent=Intent.SEMANTIC_QUERY, prior_trace=prior

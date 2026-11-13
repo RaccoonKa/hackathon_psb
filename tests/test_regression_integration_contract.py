@@ -14,12 +14,12 @@ from pathlib import Path
 from unittest import SkipTest
 from unittest.mock import patch
 
-from src import config
-from src.generation import orchestrator as orch_mod
-from src.generation.analysis.entity_resolver import resolve_single_entity
-from src.generation.retrieval import bridge as bridge_mod
-from src.generation.retrieval import evidence as evidence_mod
-from src.generation.types import (
+from rag_core import config
+from rag_core.generation import orchestrator as orch_mod
+from rag_core.generation.analysis.entity_resolver import resolve_single_entity
+from rag_core.generation.retrieval import bridge as bridge_mod
+from rag_core.generation.retrieval import evidence as evidence_mod
+from rag_core.generation.types import (
     Ambiguity,
     Claim,
     DraftAnswer,
@@ -28,7 +28,7 @@ from src.generation.types import (
     TaskType,
     TraceStep,
 )
-from src.retrieval import vector_store as vs_mod
+from rag_core.retrieval import vector_store as vs_mod
 from tests._common import make_verification_report
 
 # Тест помечен как тяжёлый/интеграционный: требует реального индекса и модели.

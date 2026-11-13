@@ -1,5 +1,5 @@
-from src import config
-from src.generation.types import AgentResult, Intent, RetrievedChunk, TraceStep
+from rag_core import config
+from rag_core.generation.types import AgentResult, Intent, RetrievedChunk, TraceStep
 
 
 def test_intent_enum_values():

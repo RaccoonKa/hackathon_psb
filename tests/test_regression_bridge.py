@@ -16,10 +16,10 @@ import time
 from unittest import SkipTest
 from unittest.mock import patch
 
-from src import config
-from src.generation.errors import RetrievalTimeoutError
-from src.generation.retrieval import bridge as bridge_mod
-from src.generation.types import RetrievalTask
+from rag_core import config
+from rag_core.generation.errors import RetrievalTimeoutError
+from rag_core.generation.retrieval import bridge as bridge_mod
+from rag_core.generation.types import RetrievalTask
 from tests._common import make_retrieved_chunk
 
 
@@ -158,11 +158,11 @@ def test_normal_shutdown_has_no_interpreter_shutdown_future_error():
     script = f"""
 import sys
 sys.path.insert(0, {str(root)!r})
-import src.generation.retrieval.bridge as bridge
+import rag_core.generation.retrieval.bridge as bridge
 # Пропускаем тяжёлую предзагрузку модели: тест про завершение пула, а не
 # про инициализацию бэкендов. Сам поиск BM25 остаётся реальным.
 bridge.prewarm_retrieval_backends = lambda: {{"errors": []}}
-from src.generation.types import RetrievalTask
+from rag_core.generation.types import RetrievalTask
 
 task = RetrievalTask(
     query="арендная плата 450 000 рублей",

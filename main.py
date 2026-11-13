@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from src.generation.orchestrator import run_agent
+from rag_core.generation.orchestrator import run_agent
 
 
 def main() -> None:

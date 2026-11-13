@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
-from src.retrieval import hybrid as hybrid_mod
-from src.retrieval.hybrid import (
+from rag_core.retrieval import hybrid as hybrid_mod
+from rag_core.retrieval.hybrid import (
     detect_query_intent,
     load_canonical_chunks_map,
     resolve_allowed_versions_by_date,

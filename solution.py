@@ -25,11 +25,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from src import config
+from rag_core import config
 import build_index
-from src.generation.orchestrator import run_agent
-from src.generation.answer.context_builder import replace_source_tags
-from src.indexing.parser import safe_extract_zip
+from rag_core.generation.orchestrator import run_agent
+from rag_core.generation.answer.context_builder import replace_source_tags
+from rag_core.indexing.parser import safe_extract_zip
 
 logger = logging.getLogger(__name__)
 

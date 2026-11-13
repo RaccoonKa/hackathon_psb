@@ -2,8 +2,8 @@ import sys
 import types
 from unittest.mock import patch
 
-from src.retrieval import vector_store as vs_mod
-from src.retrieval.vector_store import _load_local_model, compute_embeddings
+from rag_core.retrieval import vector_store as vs_mod
+from rag_core.retrieval.vector_store import _load_local_model, compute_embeddings
 
 
 class _NullCtx:
