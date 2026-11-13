@@ -154,13 +154,17 @@ class RAGAssistantAdapter(AssistantPort):
                 chunk.get("char_start")
                 if chunk and chunk.get("char_start") is not None
                 else loc.get("char_start")
-            ) if chunk else None
+                if loc.get("char_start") is not None
+                else sdata.get("char_start")
+            )
 
             raw_char_end = (
                 chunk.get("char_end")
                 if chunk and chunk.get("char_end") is not None
                 else loc.get("char_end")
-            ) if chunk else None
+                if loc.get("char_end") is not None
+                else sdata.get("char_end")
+            )
 
             raw_page = (
                 chunk.get("page")
@@ -170,7 +174,11 @@ class RAGAssistantAdapter(AssistantPort):
                 else loc.get("page")
                 if loc.get("page") is not None
                 else loc.get("page_num")
-            ) if chunk else None
+                if loc.get("page_num") is not None
+                else sdata.get("page")
+                if sdata.get("page") is not None
+                else sdata.get("page_num")
+            )
 
             char_start = _safe_int(raw_char_start)
             char_end = _safe_int(raw_char_end)
