@@ -15,10 +15,10 @@ from ..core.exceptions import NotFoundError
 from ..schemas.document import DocumentDetail, DocumentSummary
 
 _repo_root = Path(__file__).resolve().parents[3]
-if str(_repo_root) not in sys.path and (_repo_root / "src").is_dir():
+if str(_repo_root) not in sys.path and (_repo_root / "rag_core").is_dir():
     sys.path.insert(0, str(_repo_root))
 
-from src.indexing.parser import (
+from rag_core.indexing.parser import (
     SUPPORTED_DOCUMENT_EXTENSIONS,
     calculate_source_hash,
     clean_garant_headers,

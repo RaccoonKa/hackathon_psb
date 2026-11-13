@@ -83,7 +83,7 @@ async def test_rag_adapter_generates_reply_and_enriches_citations():
         ChatTurn(role="user", content="Северный склад, пункт 3.1"),
     ]
 
-    with patch("app.integrations.rag_adapter.run_agent", return_value=dummy_result) as mock_run:
+    with patch("app.integrations.rag_adapter.ask", return_value=dummy_result) as mock_run:
         with patch(
             "app.integrations.rag_adapter.replace_source_tags",
             return_value="Срок оплаты — до 5 числа каждого месяца. [Источник: Договор аренды, Пункт 3.1]",
@@ -96,7 +96,7 @@ async def test_rag_adapter_generates_reply_and_enriches_citations():
 
     assert mock_run.called
     call_args = mock_run.call_args
-    assert call_args.args[0] == "Северный склад, пункт 3.1"
+    assert (call_args.kwargs.get("query") or call_args.args[0]) == "Северный склад, пункт 3.1"
     assert call_args.kwargs["event_date"] == "2026-05-01"
     assert call_args.kwargs["selected_doc_ids"] == {"doc_rental"}
     assert call_args.kwargs["chat_history"] == [
@@ -124,13 +124,49 @@ async def test_rag_adapter_generates_reply_and_enriches_citations():
 
 
 @pytest.mark.asyncio
+async def test_rag_adapter_passes_chat_history_to_facade():
+    adapter = RAGAssistantAdapter(chunks_map={})
+    history = [
+        ChatTurn(role="user", content="Что такое овердрафт?"),
+        ChatTurn(role="assistant", content="Овердрафт — это форма краткосрочного кредитования."),
+        ChatTurn(role="user", content="Каковы лимиты по нему?"),
+        ChatTurn(role="assistant", content="Лимит устанавливается индивидуально."),
+        ChatTurn(role="user", content="А какой срок возврата?"),
+    ]
+
+    dummy_result = _DummyAgentResult(
+        final_answer="Срок возврата транша овердрафта составляет 30 дней.",
+        sources={},
+        intent="exact_lookup",
+        refused=False,
+        trace=[],
+    )
+
+    with patch("app.integrations.rag_adapter.ask", return_value=dummy_result) as mock_ask:
+        reply = await adapter.generate_reply(history)
+
+    assert mock_ask.called
+    kwargs = mock_ask.call_args.kwargs
+    assert kwargs["query"] == "А какой срок возврата?"
+    assert kwargs["chat_history"] == [
+        {"role": "user", "content": "Что такое овердрафт?"},
+        {"role": "assistant", "content": "Овердрафт — это форма краткосрочного кредитования."},
+        {"role": "user", "content": "Каковы лимиты по нему?"},
+        {"role": "assistant", "content": "Лимит устанавливается индивидуально."},
+    ]
+    assert kwargs["as_dict"] is False
+    assert reply.content == "Срок возврата транша овердрафта составляет 30 дней."
+    assert reply.refused is False
+
+
+@pytest.mark.asyncio
 async def test_rag_adapter_graceful_error_handling():
     adapter = RAGAssistantAdapter(chunks_map={})
 
     history = [ChatTurn(role="user", content="Вопрос")]
 
     with patch(
-        "app.integrations.rag_adapter.run_agent",
+        "app.integrations.rag_adapter.ask",
         side_effect=RuntimeError("External LLM timeout"),
     ):
         reply = await adapter.generate_reply(history)
@@ -196,7 +232,7 @@ class TestRAGSourceCitations:
             trace=[],
         )
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res):
+        with patch("app.integrations.rag_adapter.ask", return_value=res):
             reply = await adapter.generate_reply([ChatTurn(role="user", content="Q")])
 
         assert len(reply.sources) == 1
@@ -236,7 +272,7 @@ class TestRAGSourceCitations:
             trace=[],
         )
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res):
+        with patch("app.integrations.rag_adapter.ask", return_value=res):
             reply = await adapter.generate_reply([ChatTurn(role="user", content="Q")])
 
         assert len(reply.sources) == 1
@@ -263,7 +299,7 @@ class TestRAGSourceCitations:
             trace=[],
         )
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res):
+        with patch("app.integrations.rag_adapter.ask", return_value=res):
             reply = await adapter.generate_reply([ChatTurn(role="user", content="Q")])
 
         assert len(reply.sources) == 1
@@ -299,7 +335,7 @@ class TestRAGTraceAndMetadataSerialization:
             refusal_reason=None,
         )
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res):
+        with patch("app.integrations.rag_adapter.ask", return_value=res):
             reply = await adapter.generate_reply([ChatTurn(role="user", content="Q")])
 
         assert reply.confidence == "medium"
@@ -330,7 +366,7 @@ class TestRAGParameterNormalization:
             trace=[],
         )
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res) as mock_run:
+        with patch("app.integrations.rag_adapter.ask", return_value=res) as mock_run:
             await adapter.generate_reply(
                 [ChatTurn(role="user", content="Q")],
                 event_date="   2026-11-13  ",
@@ -341,7 +377,7 @@ class TestRAGParameterNormalization:
         assert call_kwargs["event_date"] == "2026-11-13"
         assert call_kwargs["selected_doc_ids"] == {"doc1", "doc2"}
 
-        with patch("app.integrations.rag_adapter.run_agent", return_value=res) as mock_run:
+        with patch("app.integrations.rag_adapter.ask", return_value=res) as mock_run:
             await adapter.generate_reply(
                 [ChatTurn(role="user", content="Q")],
                 event_date="     ",
@@ -368,7 +404,7 @@ class TestRAGErrorIsolation:
     async def test_error_isolation(self, exc):
         adapter = RAGAssistantAdapter(chunks_map={})
 
-        with patch("app.integrations.rag_adapter.run_agent", side_effect=exc):
+        with patch("app.integrations.rag_adapter.ask", side_effect=exc):
             reply = await adapter.generate_reply([ChatTurn(role="user", content="Q")])
 
         assert reply.refused is True
@@ -415,7 +451,7 @@ class TestRAGFastAPIRoutes:
             # 3. On-demand prewarm fallback when app.state report is None
             app.state.rag_prewarm_report = None
             with patch(
-                "src.retrieval.vector_store.prewarm_retrieval_backends",
+                "rag_core.retrieval.vector_store.prewarm_retrieval_backends",
                 return_value={"collection": "ok", "count": 50, "errors": []},
             ):
                 resp = client.get("/api/health")
@@ -466,7 +502,7 @@ class TestRAGFastAPIRoutes:
             assert create_resp.status_code == 201
             chat_id = create_resp.json()["id"]
 
-            with patch("app.integrations.rag_adapter.run_agent", return_value=dummy_result):
+            with patch("app.integrations.rag_adapter.ask", return_value=dummy_result):
                 with patch(
                     "app.integrations.rag_adapter.replace_source_tags",
                     return_value="Порядок расторжения: уведомление за 30 дней. [1]",
@@ -540,7 +576,7 @@ class TestRAGFastAPIRoutes:
             chat_id = create_resp.json()["id"]
 
             with patch(
-                "app.integrations.rag_adapter.run_agent",
+                "app.integrations.rag_adapter.ask",
                 side_effect=RuntimeError("Vector store timeout"),
             ):
                 msg_resp = client.post(
@@ -564,7 +600,7 @@ class TestRAGFastAPIRoutes:
                 refused=False,
                 trace=[],
             )
-            with patch("app.integrations.rag_adapter.run_agent", return_value=dummy_recovery):
+            with patch("app.integrations.rag_adapter.ask", return_value=dummy_recovery):
                 msg_resp2 = client.post(
                     f"/api/chats/{chat_id}/messages",
                     json={"content": "Повторный вопрос"},

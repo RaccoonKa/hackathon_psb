@@ -45,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if active_settings.assistant_backend == "rag":
                 try:
                     from .integrations.rag_adapter import RAGAssistantAdapter
-                    from src.retrieval.vector_store import prewarm_retrieval_backends
+                    from rag_core.retrieval.vector_store import prewarm_retrieval_backends
 
                     report = await asyncio.to_thread(prewarm_retrieval_backends)
                     app.state.rag_prewarm_report = report

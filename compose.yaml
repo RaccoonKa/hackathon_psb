@@ -1,0 +1,39 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ASSISTANT_BACKEND=rag
+      - DATABASE_URL=sqlite:////app/storage/chat.db
+      - DATA_DIR=/app/data
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-ai/DeepSeek-V4.1-Flash}
+      - EMB_MODEL=${EMB_MODEL:-BAAI/bge-m3}
+      - RERANKER_MODEL=${RERANKER_MODEL:-Qwen/Qwen3-Reranker-8B}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+    command: >
+      sh -c "if [ ! -f /app/data/manifests/indexing_manifest.json ]; then
+               echo 'Indexing manifest not found, running build_index.py...';
+               python build_index.py || true;
+             fi &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
