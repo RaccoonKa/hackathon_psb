@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -26,6 +27,7 @@ from typing import List, Optional, Sequence, Tuple
 from src import config
 import build_index
 from src.generation.orchestrator import run_agent
+from src.generation.answer.context_builder import replace_source_tags 
 from src.indexing.parser import safe_extract_zip
 
 logger = logging.getLogger(__name__)
@@ -201,6 +203,10 @@ def _answer_one(item: Question) -> AnswerRow:
         raise SubmissionError(
             f"Агент вернул пустой ответ для id={question_id}"
         )
+
+    sources = getattr(result, "sources", None) or {}
+    answer = replace_source_tags(answer, sources)
+
     return question_id, limit_answer(answer)
 
 
