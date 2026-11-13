@@ -7,9 +7,9 @@ import dataclasses
 import logging
 from typing import Any
 
-from src.generation.answer.context_builder import replace_source_tags
-from src.generation.orchestrator import run_agent
-from src.retrieval.hybrid import load_canonical_chunks_map
+from rag_core import ask
+from rag_core.generation.answer.context_builder import replace_source_tags
+from rag_core.retrieval.hybrid import load_canonical_chunks_map
 
 from ..schemas.chat import SourceCitation
 from .base import AssistantPort, AssistantReply, ChatTurn
@@ -97,11 +97,12 @@ class RAGAssistantAdapter(AssistantPort):
 
         try:
             result = await asyncio.to_thread(
-                run_agent,
-                query,
+                ask,
+                query=query,
                 event_date=clean_event_date,
                 selected_doc_ids=normalized_doc_ids,
                 chat_history=chat_history,
+                as_dict=False,
             )
         except Exception as exc:
             logger.exception("Failed to execute RAG agent for query: %r", query)

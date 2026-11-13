@@ -43,7 +43,7 @@ async def health_check(
         report = getattr(request.app.state, "rag_prewarm_report", None)
         if report is None:
             try:
-                from src.retrieval.vector_store import prewarm_retrieval_backends
+                from rag_core.retrieval.vector_store import prewarm_retrieval_backends
 
                 report = await asyncio.to_thread(prewarm_retrieval_backends)
             except Exception as exc:
