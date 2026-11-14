@@ -52,6 +52,10 @@ MODULE_SOURCES: List[Tuple[str, str]] = [
         "rag_core/generation/analysis/query_analysis.py",
         "generation_analysis_query_analysis.py",
     ),
+    (
+        "rag_core/generation/analysis/source_kind.py",
+        "generation_analysis_source_kind.py",
+    ),
     # --- answer ---
     (
         "rag_core/generation/answer/context_builder.py",

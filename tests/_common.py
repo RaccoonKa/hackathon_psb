@@ -92,6 +92,13 @@ def make_retrieved_chunk(**kwargs):
         "effective_to": None,
         "effective_dates_known": True,
         "amends_document_id": None,
+        # Назначение/статус источника (P1): нейтральные значения по умолчанию
+        # сохраняют обратную совместимость существующих вызовов.
+        "document_type": "contract",
+        "source_kind": None,
+        "version_status": None,
+        "validity_uncertain": False,
+        "effective_date_mode": None,
     }
     data.update(kwargs)
     return RetrievedChunk(**data)
@@ -118,9 +125,29 @@ def make_query_spec(**kwargs):
         "rewritten_queries_dense": ["запрос"],
         "history_resolved": False,
         "degradation_reason": None,
+        "required_source_kinds": [],
+        "date_precision": "none",
     }
     data.update(kwargs)
     return QuerySpec(**data)
+
+
+def make_retrieval_task(**kwargs):
+    from rag_core.generation.types import RetrievalTask
+
+    data = {
+        "query": "запрос",
+        "mode": "hybrid",
+        "purpose": "test_hybrid",
+        "selected_doc_ids": None,
+        "boost_doc_ids": None,
+        "event_date": None,
+        "top_k": 5,
+        "intent": None,
+        "source_kinds": None,
+    }
+    data.update(kwargs)
+    return RetrievalTask(**data)
 
 
 def make_policy_verdict(**kwargs):
@@ -131,6 +158,7 @@ def make_policy_verdict(**kwargs):
         "premise_details": [],
         "injection_flagged": False,
         "refusal_forbidden": False,
+        "premise_statuses": [],
     }
     data.update(kwargs)
     return PolicyVerdict(**data)
@@ -144,6 +172,8 @@ def make_evidence_bundle(**kwargs):
         "slot_map": {},
         "contradictions": [],
         "version_issues": [],
+        "missing_source_kinds": [],
+        "generation_warnings": [],
     }
     data.update(kwargs)
     return EvidenceBundle(**data)
@@ -158,9 +188,30 @@ def make_verification_report(**kwargs):
         "injection_signals": [],
         "supported_locked": [],
         "final_verdict": VerificationVerdict.ACCEPT,
+        "answer_to_question": None,
+        "verifier_unavailable": False,
+        "auto_accept_blocked": False,
+        "claims_synthesized": False,
+        "source_role_issues": [],
     }
     data.update(kwargs)
     return VerificationReport(**data)
+
+
+def make_premise_status_entry(**kwargs):
+    from rag_core.generation.types import PremiseStatus, PremiseStatusEntry
+
+    data = {
+        "text": "предпосылка",
+        "kind": "fact",
+        "value": None,
+        "status": PremiseStatus.UNKNOWN,
+        "reason": None,
+        "evidence_source_id": None,
+        "conflicting_value": None,
+    }
+    data.update(kwargs)
+    return PremiseStatusEntry(**data)
 
 
 def make_bm25_stats(

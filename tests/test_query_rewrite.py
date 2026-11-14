@@ -2034,7 +2034,7 @@ def test_ensure_slot_queries_skips_canonical_when_llm_covered_each_slot():
 
 
 def test_dates_month_and_year_without_day():
-    assert extract_dates_from_text("договор на 12 млн руб. в августе 2024 года") == ["2024-08-01"]
+    assert extract_dates_from_text("договор на 7 тыс. руб. в марте 2023 года") == ["2023-03-01"]
     assert extract_dates_from_text("по состоянию на май 2025") == ["2025-05-01"]
 
 

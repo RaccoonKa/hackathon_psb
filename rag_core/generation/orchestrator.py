@@ -8,6 +8,10 @@ from rag_core import config
 from rag_core.generation import bailout, refusal
 from rag_core.generation.analysis.prefilter import run_prefilter
 from rag_core.generation.analysis.query_analysis import analyze_query
+from rag_core.generation.analysis.source_kind import (
+    SOURCE_KIND_NORMATIVE,
+    SOURCE_KIND_SPECIFIC,
+)
 from rag_core.generation.answer.context_builder import build_context_and_sources
 from rag_core.generation.answer.generator import generate_draft, regenerate_draft
 from rag_core.generation.answer.verification import verify
@@ -24,10 +28,12 @@ from rag_core.generation.prompts import templates
 from rag_core.generation.retrieval import bridge, evidence
 from rag_core.generation.types import (
     AgentResult,
+    AnswerToQuestionVerdict,
     BailoutContext,
     DraftAnswer,
     Intent,
     QuerySpec,
+    RetrievedChunk,
     Sufficiency,
     TraceStep,
     VerificationReport,
@@ -336,6 +342,50 @@ def _build_retrieval_error_step(
     )
 
 
+def _preserve_source_kind_representation(
+    reranked: list[RetrievedChunk],
+    before_rerank: list[RetrievedChunk],
+    required_kinds: list[str],
+) -> list[RetrievedChunk]:
+    """Возвращает лучший чанк пропавшего типа источника после реранка.
+
+    Работает только когда одновременно требуются ``normative`` и
+    ``specific``. Существующие чанки, их порядок и score не меняются:
+    недостающий представитель добавляется в конец результата.
+    """
+    required = {
+        str(kind).strip().lower()
+        for kind in (required_kinds or [])
+        if str(kind or "").strip()
+    }
+    if not {SOURCE_KIND_NORMATIVE, SOURCE_KIND_SPECIFIC}.issubset(required):
+        return reranked
+
+    def _kind(chunk: RetrievedChunk) -> str:
+        value = getattr(chunk, "source_kind", None)
+        return str(value).strip().lower() if value else ""
+
+    result = list(reranked)
+    present = {_kind(chunk) for chunk in result}
+    existing_ids = {chunk.chunk_id for chunk in result}
+
+    for kind in (SOURCE_KIND_NORMATIVE, SOURCE_KIND_SPECIFIC):
+        if kind in present:
+            continue
+        best: RetrievedChunk | None = None
+        for chunk in before_rerank:
+            if _kind(chunk) != kind or chunk.chunk_id in existing_ids:
+                continue
+            if best is None or float(chunk.score) > float(best.score):
+                best = chunk
+        if best is not None:
+            result.append(best)
+            existing_ids.add(best.chunk_id)
+            present.add(kind)
+
+    return result
+
+
 def _sanitize_and_extract_citations(
     answer: str,
     available_sources: dict[str, dict[str, Any]],
@@ -407,6 +457,7 @@ def _compute_confidence_and_reasons(
         reasons.append(f"degradation:{deg}")
     if missing_info:
         reasons.append(f"missing_info:{len(missing_info)}")
+    low_confidence = False
     if verification is not None:
         if verification.citation_errors:
             reasons.append(f"citation_errors:{len(verification.citation_errors)}")
@@ -414,7 +465,21 @@ def _compute_confidence_and_reasons(
             reasons.append(f"injection_signals:{len(verification.injection_signals)}")
         if verification.final_verdict == VerificationVerdict.REFUSE:
             reasons.append("verification_verdict:refuse")
+        if verification.verifier_unavailable:
+            reasons.append("verifier_unavailable")
+            low_confidence = True
+        if (
+            verification.answer_to_question is not None
+            and verification.answer_to_question.verdict
+            == AnswerToQuestionVerdict.MISMATCH
+        ):
+            reasons.append("answer_question_mismatch")
+            low_confidence = True
+        if verification.auto_accept_blocked:
+            reasons.append("auto_accept_blocked")
 
+    if low_confidence:
+        return "low", reasons
     if reasons:
         return "medium", reasons
     return "high", ["all_conditions_met"]
@@ -832,20 +897,36 @@ def run_agent(
             # Qwen-reranker применяется здесь, до оценки доказательств.
             if new_chunks:
                 before_count = len(new_chunks)
+                before_rerank_chunks = list(new_chunks)
                 rerank_query = (
                     spec.rewritten_queries_dense[0]
                     if (used_history and spec.rewritten_queries_dense)
                     else query
                 )
                 try:
-                    new_chunks, rerank_step = bridge.rerank_chunks(
+                    reranked_chunks, rerank_step = bridge.rerank_chunks(
                         chunks=new_chunks,
                         query=rerank_query,
                         top_n=int(config.RERANKER_TOP_N),
                     )
+                    new_chunks = _preserve_source_kind_representation(
+                        reranked_chunks,
+                        before_rerank_chunks,
+                        required_kinds=list(
+                            getattr(spec, "required_source_kinds", None) or []
+                        ),
+                    )
+                    preserved_source_kinds = [
+                        str(chunk.source_kind)
+                        for chunk in new_chunks[len(reranked_chunks):]
+                        if chunk.source_kind
+                    ]
                     rerank_step.output["before_count"] = before_count
                     rerank_step.output["after_count"] = len(new_chunks)
                     rerank_step.output["top_n"] = int(config.RERANKER_TOP_N)
+                    rerank_step.output["preserved_source_kinds"] = (
+                        preserved_source_kinds
+                    )
                     _append_step(rerank_step, stage_idx=3)
                 except Exception as exc:  # noqa: BLE001 - реранкер необязателен
                     _record_failure(exc)
@@ -1029,6 +1110,8 @@ def run_agent(
                 on_failure=_record_failure,
                 on_llm_success=_record_llm_success,
                 timeout=_llm_timeout(),
+                question=query,
+                policy=policy_verdict,
             )
             _append_step(ver_step, stage_idx=7)
 
@@ -1053,10 +1136,21 @@ def run_agent(
                 continue
             break
 
+        # Отказ по answer-to-question (MISMATCH) разрешён даже при запрете
+        # отказа по политике: пользователь получил ответ не на свой вопрос.
+        verification_refusal_allowed = (
+            not policy_verdict.refusal_forbidden
+            or (
+                verification_report is not None
+                and verification_report.answer_to_question is not None
+                and verification_report.answer_to_question.verdict
+                == AnswerToQuestionVerdict.MISMATCH
+            )
+        )
         if (
             verification_report is not None
             and verification_report.final_verdict == VerificationVerdict.REFUSE
-            and not policy_verdict.refusal_forbidden
+            and verification_refusal_allowed
             and bool(draft.refusal_reason)
         ):
             return refusal.build_verification_refusal_result(

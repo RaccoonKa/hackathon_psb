@@ -5,6 +5,11 @@ import logging
 import time
 
 from rag_core import config
+from rag_core.generation.analysis.source_kind import (
+    SOURCE_KIND_UNKNOWN,
+    document_types_for_source_kind,
+    source_kind_for_document_type,
+)
 from rag_core.generation.errors import (
     RetrievalAPIError,
     RetrievalTimeoutError,
@@ -46,6 +51,13 @@ _SEARCH_DIAGNOSTICS_DEFAULTS: dict = {
     "candidates_after_document_filter": 0,
     "final_chunks_count": 0,
     "validity_unknown_count": 0,
+    "date_mode": None,
+    "date_precision": None,
+    "source_kinds": [],
+    "source_kind_counts": {},
+    "source_kind_empty": [],
+    "version_status_counts": {},
+    "deduped_versions_count": 0,
 }
 
 # Для задач, которые вовсе не используют эмбеддинги (bm25): provider none
@@ -159,6 +171,11 @@ def _dict_to_chunk(raw: dict) -> RetrievedChunk:
         effective_to=raw.get("effective_to"),
         effective_dates_known=bool(raw.get("effective_dates_known", True)),
         amends_document_id=raw.get("amends_document_id"),
+        document_type=raw.get("document_type"),
+        source_kind=raw.get("source_kind"),
+        version_status=raw.get("version_status"),
+        validity_uncertain=bool(raw.get("validity_uncertain", False)),
+        effective_date_mode=raw.get("effective_date_mode"),
     )
 
 
@@ -171,6 +188,7 @@ def _call_search(
     selected_doc_ids: set[str] | None,
     intent_str: str | None,
     diagnostics: dict,
+    document_types: set[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Общий вызов поискового канала с прокидыванием диагностики."""
     kwargs: dict = {
@@ -188,6 +206,8 @@ def _call_search(
         kwargs["rerank"] = False
     if _accepts(search_func, "diagnostics"):
         kwargs["diagnostics"] = diagnostics
+    if document_types is not None and _accepts(search_func, "document_types"):
+        kwargs["document_types"] = document_types
 
     raw_chunks = search_func(**kwargs)
     return [_dict_to_chunk(raw) for raw in raw_chunks]
@@ -200,6 +220,7 @@ def _call_hybrid_search(
     selected_doc_ids: set[str] | None,
     intent_str: str | None,
     diagnostics: dict | None = None,
+    document_types: set[str] | None = None,
 ) -> list[RetrievedChunk]:
     if config.USE_STUB_RAG:
         return stub_rag_retrieve(query=query, top_k=top_k)
@@ -211,6 +232,7 @@ def _call_hybrid_search(
         selected_doc_ids=selected_doc_ids,
         intent_str=intent_str,
         diagnostics=diagnostics if diagnostics is not None else {},
+        document_types=document_types,
     )
 
 
@@ -221,6 +243,7 @@ def _call_lexical_search(
     selected_doc_ids: set[str] | None,
     intent_str: str | None,
     diagnostics: dict | None = None,
+    document_types: set[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Только BM25: эмбеддинги и Chroma не вызываются."""
     return _call_search(
@@ -231,6 +254,7 @@ def _call_lexical_search(
         selected_doc_ids=selected_doc_ids,
         intent_str=intent_str,
         diagnostics=diagnostics if diagnostics is not None else {},
+        document_types=document_types,
     )
 
 
@@ -241,6 +265,7 @@ def _call_dense_search(
     selected_doc_ids: set[str] | None,
     intent_str: str | None,
     diagnostics: dict | None = None,
+    document_types: set[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Только векторный поиск: BM25 не вызывается."""
     return _call_search(
@@ -251,6 +276,7 @@ def _call_dense_search(
         selected_doc_ids=selected_doc_ids,
         intent_str=intent_str,
         diagnostics=diagnostics if diagnostics is not None else {},
+        document_types=document_types,
     )
 
 
@@ -277,6 +303,19 @@ def _postprocess_task_chunks(
     return [best_by_id[cid] for cid in order]
 
 
+def _tag_chunk_source_kind(
+    chunk: RetrievedChunk, kind: str
+) -> RetrievedChunk:
+    """Проставляет ``source_kind`` чанку, если поиск его не вернул."""
+    if chunk.source_kind:
+        return chunk
+    derived = source_kind_for_document_type(chunk.document_type)
+    value = derived if derived != SOURCE_KIND_UNKNOWN else kind
+    if not value:
+        return chunk
+    return replace(chunk, source_kind=value)
+
+
 def _run_single_task(
     task: RetrievalTask,
     task_state: dict | None = None,
@@ -285,6 +324,11 @@ def _run_single_task(
 
     Последовательный режим: ``task_state`` передаётся напрямую, thread-local
     состояние и пул потоков больше не используются.
+
+    Если у задачи несколько ``source_kinds``, поиск выполняется раздельно по
+    каждому назначению (с фильтром ``document_types``), результаты
+    объединяются и дедуплицируются по ``chunk_id``. Конфликт решается в
+    пользу чанка с известным ``source_kind``.
     """
     state = task_state
     started = time.perf_counter()
@@ -299,36 +343,55 @@ def _run_single_task(
         state["stage"] = "search"
         state["search_type"] = mode
 
+    kinds = list(task.source_kinds or [])
+    kind_counts: dict[str, int] = {}
+
+    def _search(document_types: set[str] | None) -> list[RetrievedChunk]:
+        common = {
+            "query": task.query,
+            "top_k": task.top_k,
+            "event_date": task.event_date,
+            "selected_doc_ids": task.selected_doc_ids,
+            "intent_str": intent_str,
+            "diagnostics": stats,
+        }
+        if mode == "bm25":
+            return _call_lexical_search(**common, document_types=document_types)
+        if mode == "dense":
+            return _call_dense_search(**common, document_types=document_types)
+        # hybrid и неизвестный mode — безопасный дефолт.
+        return _call_hybrid_search(**common, document_types=document_types)
+
     if config.USE_STUB_RAG:
         chunks = stub_rag_retrieve(query=task.query, top_k=task.top_k)
-    elif mode == "bm25":
-        chunks = _call_lexical_search(
-            query=task.query,
-            top_k=task.top_k,
-            event_date=task.event_date,
-            selected_doc_ids=task.selected_doc_ids,
-            intent_str=intent_str,
-            diagnostics=stats,
-        )
-    elif mode == "dense":
-        chunks = _call_dense_search(
-            query=task.query,
-            top_k=task.top_k,
-            event_date=task.event_date,
-            selected_doc_ids=task.selected_doc_ids,
-            intent_str=intent_str,
-            diagnostics=stats,
-        )
+    elif not kinds:
+        # Старое поведение: один вызов без фильтра по назначению источника.
+        chunks = _search(None)
+    elif len(kinds) == 1:
+        kind = kinds[0]
+        part = _search(document_types_for_source_kind(kind))
+        kind_counts[kind] = len(part)
+        chunks = [_tag_chunk_source_kind(chunk, kind) for chunk in part]
     else:
-        # hybrid и неизвестный mode — безопасный дефолт.
-        chunks = _call_hybrid_search(
-            query=task.query,
-            top_k=task.top_k,
-            event_date=task.event_date,
-            selected_doc_ids=task.selected_doc_ids,
-            intent_str=intent_str,
-            diagnostics=stats,
-        )
+        merged: dict[str, RetrievedChunk] = {}
+        for kind in kinds:
+            part = _search(document_types_for_source_kind(kind))
+            kind_counts[kind] = len(part)
+            for chunk in part:
+                tagged = _tag_chunk_source_kind(chunk, kind)
+                existing = merged.get(tagged.chunk_id)
+                if existing is None:
+                    merged[tagged.chunk_id] = tagged
+                    continue
+                existing_known = existing.source_kind not in (
+                    None, SOURCE_KIND_UNKNOWN
+                )
+                tagged_known = tagged.source_kind not in (
+                    None, SOURCE_KIND_UNKNOWN
+                )
+                if not existing_known and tagged_known:
+                    merged[tagged.chunk_id] = tagged
+        chunks = list(merged.values())
 
     if state is not None:
         state["stage"] = "postprocess"
@@ -342,6 +405,16 @@ def _run_single_task(
     stats["final_chunks_count"] = len(chunks)
     if stats.get("selected_doc_ids") is None and task.selected_doc_ids:
         stats["selected_doc_ids"] = sorted(task.selected_doc_ids)
+
+    final_counts: dict[str, int] = {}
+    for chunk in chunks:
+        key = chunk.source_kind or SOURCE_KIND_UNKNOWN
+        final_counts[key] = final_counts.get(key, 0) + 1
+    stats["source_kinds"] = list(kinds)
+    stats["source_kind_counts"] = final_counts
+    stats["source_kind_empty"] = [
+        kind for kind in kinds if kind_counts.get(kind, 0) == 0
+    ]
 
     duration_ms = int(
         round((time.perf_counter() - started) * config.MS_PER_SECOND)
@@ -435,6 +508,13 @@ def _task_diag(
             else search.get("candidates_after_date_filter")
         ),
         "final_chunks_count": search.get("final_chunks_count"),
+        "source_kinds": (
+            search.get("source_kinds")
+            if search.get("source_kinds") is not None
+            else (list(task.source_kinds) if task.source_kinds else [])
+        ),
+        "source_kind_counts": search.get("source_kind_counts"),
+        "source_kind_empty": search.get("source_kind_empty"),
         "error_type": state.get("error_type"),
         "error_message": state.get("error_message"),
         "search": search,
@@ -612,6 +692,9 @@ def retrieve_tasks(
             "candidates_before_filters": None,
             "candidates_after_filters": None,
             "final_chunks_count": None,
+            "source_kinds": list(task.source_kinds or []),
+            "source_kind_counts": None,
+            "source_kind_empty": None,
             "search": None,
             "embeddings": None,
             "error_type": None,
@@ -909,6 +992,11 @@ def _chunk_to_rerank_candidate(chunk: RetrievedChunk) -> dict:
         "effective_to": chunk.effective_to,
         "effective_dates_known": chunk.effective_dates_known,
         "amends_document_id": chunk.amends_document_id,
+        "document_type": chunk.document_type,
+        "source_kind": chunk.source_kind,
+        "version_status": chunk.version_status,
+        "validity_uncertain": chunk.validity_uncertain,
+        "effective_date_mode": chunk.effective_date_mode,
     }
 
 

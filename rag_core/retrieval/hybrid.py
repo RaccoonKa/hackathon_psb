@@ -4,9 +4,13 @@ import json
 import logging
 import re
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from rag_core.config import PROCESSED_DATA_DIR
+from rag_core.generation.analysis.source_kind import (
+    SOURCE_KIND_UNKNOWN,
+    source_kind_for_document_type,
+)
 from rag_core.retrieval.keyword_store import BM25KeywordStore
 from rag_core.retrieval.reranker import rerank_candidates
 from rag_core.retrieval.vector_store import (
@@ -58,10 +62,15 @@ SEARCH_DIAGNOSTICS_KEYS: Tuple[str, ...] = (
     "candidates_after_document_filter",
     "final_chunks_count",
     "validity_unknown_count",
+    "date_mode",
+    "date_precision",
+    "source_kind_counts",
+    "version_status_counts",
+    "deduped_versions_count",
 )
 
-# Год внутри номера договора (``А-08/2024``, ``П-17/2024``, ``ПТ-05/2023``)
-# не является временной привязкой запроса и не должен влиять на дату проверки.
+# Год внутри номера договора (``<префикс>-<номер>/<год>``) не является
+# временной привязкой запроса и не должен влиять на дату проверки.
 _CONTRACT_NUMBER_RE = re.compile(
     r"[А-ЯЁа-яёA-Za-z]+[-\u2013\s]?\d+[^\s/]*/\s*20[12]\d"
 )
@@ -91,6 +100,24 @@ _TEMPORAL_OR_VERSION_RE = re.compile(
     re.IGNORECASE,
 )
 _AMENDMENT_BOOST_FACTOR = 1.15
+
+# Статусы редакции документа на дату проверки.
+EFFECTIVE_STATUS_APPLICABLE = "applicable"
+EFFECTIVE_STATUS_NOT_APPLICABLE = "not_applicable"
+EFFECTIVE_STATUS_UNKNOWN = "unknown"
+EFFECTIVE_STATUS_CURRENT_ONLY = "current_only"
+
+_UNCERTAIN_STATUSES = frozenset(
+    {EFFECTIVE_STATUS_UNKNOWN, EFFECTIVE_STATUS_CURRENT_ONLY}
+)
+_UNCERTAIN_PRECISIONS = frozenset({"year", "month", "none"})
+_FALSE_FLAGS = frozenset({"false", "0", ""})
+_STATUS_PRIORITY = {
+    EFFECTIVE_STATUS_APPLICABLE: 4,
+    EFFECTIVE_STATUS_CURRENT_ONLY: 3,
+    EFFECTIVE_STATUS_UNKNOWN: 2,
+    EFFECTIVE_STATUS_NOT_APPLICABLE: 1,
+}
 
 
 def should_boost_amendments(
@@ -199,10 +226,10 @@ def load_canonical_chunks_map() -> Dict[str, Dict[str, Any]]:
 def _extract_year_from_query(query: str) -> Optional[str]:
     """Извлекает год только из явных временных указаний в вопросе.
 
-    Номера договоров (``А-08/2024``, ``П-17/2024``, ``ПТ-05/2023``) перед
-    поиском вырезаются, чтобы их год не становился датой проверки.
-    Поддерживаются полная дата (``15.08.2024``), «2024 год/году/г.», а также
-    год после временного предлога («в 2024»). Возвращается первый по позиции.
+    Номера договоров (``<префикс>-<номер>/<год>``) перед поиском вырезаются,
+    чтобы их год не становился датой проверки. Поддерживаются полная дата
+    (``dd.mm.yyyy``), «<год> год/году/г.», а также год после временного
+    предлога («в <год>»). Возвращается первый по позиции.
     """
     if not query:
         return None
@@ -223,27 +250,273 @@ def _extract_year_from_query(query: str) -> Optional[str]:
     return matches[0][1]
 
 
+def _is_false_flag(value: Any) -> bool:
+    """Приводит флаг ``effective_dates_known`` к bool без исключений."""
+    if isinstance(value, bool):
+        return value is False
+    if isinstance(value, (int, float)):
+        return not bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in _FALSE_FLAGS
+    return False
+
+
+def _is_blank(value: Any) -> bool:
+    """True для ``None`` и строк из одних пробелов."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def parse_iso_date(value: Any) -> Optional[datetime.date]:
+    """Безопасно разбирает ``YYYY-MM-DD``; некорректные значения → ``None``."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) > 10:
+        text = text[:10]
+    try:
+        return datetime.date.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def effective_status(chunk: Dict[str, Any], check_date: str) -> str:
+    """Единый статус редакции чанка на ``check_date``.
+
+    Границы: ``effective_from <= дата < effective_to``; отсутствие
+    ``effective_from`` — открытая нижняя граница, отсутствие ``effective_to``
+    — открытая верхняя. Для законов ``check_date < effective_from`` даёт
+    ``current_only`` (в базе только актуальная редакция), для остальных —
+    ``not_applicable``.
+    """
+    if _is_false_flag(chunk.get("effective_dates_known", True)):
+        return EFFECTIVE_STATUS_UNKNOWN
+
+    eff_from = chunk.get("effective_from")
+    eff_to = chunk.get("effective_to")
+    if _is_blank(eff_from) and _is_blank(eff_to):
+        return EFFECTIVE_STATUS_UNKNOWN
+
+    from_date = None
+    if not _is_blank(eff_from):
+        from_date = parse_iso_date(eff_from)
+        if from_date is None:
+            return EFFECTIVE_STATUS_UNKNOWN
+
+    to_date = None
+    if not _is_blank(eff_to):
+        to_date = parse_iso_date(eff_to)
+        if to_date is None:
+            return EFFECTIVE_STATUS_UNKNOWN
+
+    check = parse_iso_date(check_date)
+    if check is None:
+        return EFFECTIVE_STATUS_UNKNOWN
+
+    if from_date is not None and check < from_date:
+        if chunk.get("document_type") == "law":
+            return EFFECTIVE_STATUS_CURRENT_ONLY
+        return EFFECTIVE_STATUS_NOT_APPLICABLE
+    if to_date is not None and check >= to_date:
+        return EFFECTIVE_STATUS_NOT_APPLICABLE
+    return EFFECTIVE_STATUS_APPLICABLE
+
+
+def resolve_check_date_details(
+    event_date: Optional[str], query: str = ""
+) -> Tuple[str, str, str]:
+    """Возвращает ``(check_date, date_mode, date_precision)``.
+
+    1. ``event_date`` передан и парсится → ``historical``/``day``;
+    2. иначе год из запроса → ``historical``/``year`` (середина года);
+    3. иначе сегодня → ``current``/``day``.
+    Невалидный ``event_date`` не подменяется молча: режим ``current``,
+    точность ``none`` — это видно в diagnostics.
+    """
+    today = datetime.date.today().isoformat()
+    if event_date and str(event_date).strip():
+        parsed = parse_iso_date(str(event_date).strip())
+        if parsed is not None:
+            return parsed.isoformat(), "historical", "day"
+        return today, "current", "none"
+
+    year = _extract_year_from_query(query or "")
+    if year:
+        return f"{year}-06-01", "historical", "year"
+    return today, "current", "day"
+
+
 def _resolve_check_date(
     event_date: Optional[str], query: str = ""
 ) -> str:
     """Дата, на которую проверяется актуальность редакции документа.
 
-    Бизнес-правило трёх состояний:
-    1. ``event_date`` передан явно → оцениваем документ на эту дату;
-    2. иначе берём год из явных временных указаний в вопросе (середина года),
-       если он есть; год из номера договора датой не считается;
-    3. иначе — сегодняшняя дата (``datetime.date.today()``), т.е. считаем,
-       что пользователя интересует актуальная на текущий момент редакция.
-    Хардкод «даты актуальности базы» не используется.
+    Обёртка над :func:`resolve_check_date_details` для обратной совместимости.
     """
-    if event_date and str(event_date).strip():
-        return str(event_date).strip()[:10]
+    return resolve_check_date_details(event_date, query)[0]
 
-    year = _extract_year_from_query(query or "")
-    if year:
-        return f"{year}-06-01"
 
-    return datetime.date.today().isoformat()
+def _normalize_document_types(
+    document_types: Iterable[str],
+) -> Set[str]:
+    """Нормализует набор типов документов для фильтрации."""
+    return {
+        str(value).strip().lower()
+        for value in document_types
+        if value is not None and str(value).strip()
+    }
+
+
+def _filter_by_document_types(
+    allowed_cids: Set[str],
+    chunks_map: Dict[str, Dict[str, Any]],
+    document_types: Optional[Set[str]],
+) -> Set[str]:
+    """Оставляет чанки с ``document_type`` из явного набора.
+
+    Чанки без ``document_type`` при явном фильтре отбрасываются: это
+    фильтр, а не классификация.
+    """
+    if document_types is None:
+        return set(allowed_cids)
+    normalized = _normalize_document_types(document_types)
+    result: Set[str] = set()
+    for cid in allowed_cids:
+        chunk = chunks_map.get(cid)
+        if chunk is None:
+            continue
+        raw_type = chunk.get("document_type")
+        if raw_type is None:
+            continue
+        if str(raw_type).strip().lower() in normalized:
+            result.add(cid)
+    return result
+
+
+def _version_status(statuses: Iterable[str]) -> str:
+    """Статус версии — наиболее пригодный статус среди её чанков."""
+    best = EFFECTIVE_STATUS_UNKNOWN
+    best_priority = -1
+    for status in statuses:
+        priority = _STATUS_PRIORITY.get(status, 0)
+        if priority > best_priority:
+            best = status
+            best_priority = priority
+    return best
+
+
+def _version_effective_from(
+    chunks: Iterable[Dict[str, Any]],
+) -> Optional[datetime.date]:
+    """Первая разбираемая ``effective_from`` среди чанков версии."""
+    for chunk in chunks:
+        parsed = parse_iso_date(chunk.get("effective_from"))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _latest_versions(
+    version_ids: Iterable[str],
+    version_from: Dict[str, Optional[datetime.date]],
+) -> Set[str]:
+    """Выбирает версии с максимальной ``effective_from <= check_date``.
+
+    Если ни у одной версии нет разбираемой даты — возвращает все
+    версии-кандидаты (неизвестная дата не позволяет выбрать одну).
+    """
+    candidates = list(version_ids)
+    dated = {
+        vid: version_from.get(vid)
+        for vid in candidates
+        if version_from.get(vid) is not None
+    }
+    if not dated:
+        return set(candidates)
+    latest = max(dated.values())
+    return {vid for vid, value in dated.items() if value == latest}
+
+
+def select_dominant_versions(
+    allowed_cids: Set[str],
+    chunks_map: Dict[str, Dict[str, Any]],
+    check_date: str,
+) -> Set[str]:
+    """Убирает одновременно взаимоисключающие редакции одного документа.
+
+    Группировка — по ``document_id``; документы с одной версией сохраняются
+    целиком. При нескольких версиях приоритет: ``applicable`` (самая свежая
+    ``effective_from``), затем ``current_only``, затем ``unknown``.
+    ``not_applicable`` не удаляются здесь — это уже сделано на уровне
+    ``resolve_allowed_versions_by_date``.
+    """
+    groups: Dict[str, List[Tuple[str, str]]] = {}
+    passthrough: Set[str] = set()
+    for cid in allowed_cids:
+        chunk = chunks_map.get(cid)
+        if chunk is None:
+            passthrough.add(cid)
+            continue
+        document_id = chunk.get("document_id")
+        if not document_id:
+            passthrough.add(cid)
+            continue
+        version_id = chunk.get("version_id") or cid
+        groups.setdefault(str(document_id), []).append((cid, str(version_id)))
+
+    selected: Set[str] = set(passthrough)
+    for members in groups.values():
+        versions: Dict[str, List[str]] = {}
+        for cid, version_id in members:
+            versions.setdefault(version_id, []).append(cid)
+
+        if len(versions) == 1:
+            selected.update(next(iter(versions.values())))
+            continue
+
+        version_statuses: Dict[str, str] = {}
+        version_from: Dict[str, Optional[datetime.date]] = {}
+        for version_id, cids in versions.items():
+            version_chunks = [chunks_map[cid] for cid in cids if cid in chunks_map]
+            version_statuses[version_id] = _version_status(
+                effective_status(chunk, check_date)
+                for chunk in version_chunks
+            )
+            version_from[version_id] = _version_effective_from(version_chunks)
+
+        applicable = [
+            vid
+            for vid, status in version_statuses.items()
+            if status == EFFECTIVE_STATUS_APPLICABLE
+        ]
+        if applicable:
+            chosen = _latest_versions(applicable, version_from)
+        elif any(
+            status == EFFECTIVE_STATUS_CURRENT_ONLY
+            for status in version_statuses.values()
+        ):
+            chosen = {
+                vid
+                for vid, status in version_statuses.items()
+                if status == EFFECTIVE_STATUS_CURRENT_ONLY
+            }
+        elif any(
+            status == EFFECTIVE_STATUS_UNKNOWN
+            for status in version_statuses.values()
+        ):
+            chosen = {
+                vid
+                for vid, status in version_statuses.items()
+                if status == EFFECTIVE_STATUS_UNKNOWN
+            }
+        else:
+            chosen = set(versions)
+
+        for version_id in chosen:
+            selected.update(versions[version_id])
+
+    return selected
 
 
 def resolve_allowed_versions_by_date(
@@ -255,16 +528,11 @@ def resolve_allowed_versions_by_date(
 ) -> Set[str]:
     """Разрешает допустимые chunk_id с учетом временных интервалов и связок.
 
-    Три состояния дат:
-    1. даты известны и документ актуален на ``check_date`` → включаем;
-    2. даты известны и документ неактуален (``effective_to`` пройден,
-       ``effective_from`` ещё не наступил, кроме законов) → исключаем;
-    3. даты неизвестны (``effective_dates_known=False`` или обе даты пусты)
-       → **не исключаем** только по этому признаку; id добавляется в
-       ``validity_unknown`` (если передан) для диагностики.
-
-    Законы РФ не отсекаются при ``event_date < effective_from``, чтобы модель
-    знала о действующей норме и могла сформулировать обоснованный отказ.
+    Единая семантика :func:`effective_status`:
+    * ``applicable`` → включаем;
+    * ``current_only`` (закон до ``effective_from``) → включаем;
+    * ``unknown`` → **не исключаем**, id добавляется в ``validity_unknown``;
+    * ``not_applicable`` → исключаем.
     """
     allowed_cids: Set[str] = set()
     check_date = _resolve_check_date(event_date, query)
@@ -273,35 +541,27 @@ def resolve_allowed_versions_by_date(
     if expanded_doc_ids:
         for ch in chunks_map.values():
             amends = ch.get("amends_document_id")
-            if amends and amends in expanded_doc_ids:
-                expanded_doc_ids.add(ch["document_id"])
+            if not amends or amends not in expanded_doc_ids:
+                continue
+            document_id = ch.get("document_id")
+            if document_id:
+                expanded_doc_ids.add(str(document_id))
 
     for cid, ch in chunks_map.items():
-        doc_id = ch["document_id"]
+        doc_id = ch.get("document_id")
         if expanded_doc_ids and doc_id not in expanded_doc_ids:
             continue
 
-        eff_from = ch.get("effective_from")
-        eff_to = ch.get("effective_to")
-        dates_known = ch.get("effective_dates_known", True)
-        is_law = ch.get("document_type") == "law"
-
-        # Состояние 3: даты неизвестны — не отсекаем, но помечаем.
-        if not dates_known or (not eff_from and not eff_to):
-            allowed_cids.add(cid)
-            if validity_unknown is not None:
-                validity_unknown.add(cid)
-            continue
-
-        # Состояние 2: внутренние документы до вступления в силу.
-        if eff_from and check_date < eff_from and not is_law:
-            continue
-
-        # Состояние 2: документ утратил силу к моменту события.
-        if eff_to and check_date >= eff_to:
+        status = effective_status(ch, check_date)
+        if status == EFFECTIVE_STATUS_NOT_APPLICABLE:
             continue
 
         allowed_cids.add(cid)
+        if (
+            status == EFFECTIVE_STATUS_UNKNOWN
+            and validity_unknown is not None
+        ):
+            validity_unknown.add(cid)
 
     return allowed_cids
 
@@ -310,6 +570,10 @@ def _new_stats(diagnostics: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Рабочая копия счётчиков; публикуется в ``diagnostics`` в конце."""
     stats: Dict[str, Any] = {key: 0 for key in SEARCH_DIAGNOSTICS_KEYS}
     stats["selected_doc_ids"] = None
+    stats["date_mode"] = None
+    stats["date_precision"] = None
+    stats["source_kind_counts"] = {}
+    stats["version_status_counts"] = {}
     return stats
 
 
@@ -324,11 +588,18 @@ def _prepare_context(
     query: str,
     event_date: Optional[str],
     selected_doc_ids: Optional[Set[str]],
+    document_types: Optional[Set[str]] = None,
 ) -> Tuple[
-    Dict[str, Dict[str, Any]], Set[str], Set[str], Set[str]
+    Dict[str, Dict[str, Any]], Set[str], Set[str], Set[str], int
 ]:
-    """Готовит корпус, разрешённые id и множество неизвестных редакций."""
+    """Готовит корпус, разрешённые id, неизвестные редакции и счётчик дедупа.
+
+    ``document_types`` — явный фильтр по типу документа (``None`` отключает).
+    После фильтрации к обоим множествам применяется выбор доминирующей
+    редакции, чтобы не возвращать одновременно взаимоисключающие версии.
+    """
     chunks_map = load_canonical_chunks_map()
+    check_date = _resolve_check_date(event_date, query)
     date_allowed = resolve_allowed_versions_by_date(
         event_date=event_date,
         chunks_map=chunks_map,
@@ -343,7 +614,21 @@ def _prepare_context(
         query=query,
         validity_unknown=unknown,
     )
-    return chunks_map, allowed, date_allowed, unknown
+
+    if document_types is not None:
+        date_allowed = _filter_by_document_types(
+            date_allowed, chunks_map, document_types
+        )
+        allowed = _filter_by_document_types(
+            allowed, chunks_map, document_types
+        )
+
+    before = len(allowed) + len(date_allowed)
+    date_allowed = select_dominant_versions(date_allowed, chunks_map, check_date)
+    allowed = select_dominant_versions(allowed, chunks_map, check_date)
+    unknown &= allowed
+    deduped_versions = max(before - (len(allowed) + len(date_allowed)), 0)
+    return chunks_map, allowed, date_allowed, unknown, deduped_versions
 
 
 def _apply_context_stats(
@@ -375,6 +660,26 @@ def _apply_bm25_stats(
     )
 
 
+def _merge_where_filter(
+    where_filter: Optional[Dict[str, Any]],
+    document_types: Optional[Set[str]],
+) -> Optional[Dict[str, Any]]:
+    """Добавляет к Chroma-фильтру условие ``document_type`` через ``$in``."""
+    if not document_types:
+        return where_filter
+    normalized = sorted(_normalize_document_types(document_types))
+    if not normalized:
+        return where_filter
+    type_clause: Dict[str, Any] = (
+        {"document_type": normalized[0]}
+        if len(normalized) == 1
+        else {"document_type": {"$in": normalized}}
+    )
+    if where_filter is None:
+        return type_clause
+    return {"$and": [where_filter, type_clause]}
+
+
 def _dense_hits(
     query: str,
     top_k: int,
@@ -385,6 +690,7 @@ def _dense_hits(
     chunks_map: Optional[Dict[str, Dict[str, Any]]] = None,
     selected_doc_ids: Optional[Set[str]] = None,
     event_date: Optional[str] = None,
+    document_types: Optional[Set[str]] = None,
 ) -> List[str]:
     """Векторные кандидаты с пре-фильтрацией Chroma where и проверкой по allowed."""
     if not allowed:
@@ -395,9 +701,11 @@ def _dense_hits(
     collection = get_chroma_collection()
     validate_query_embedding_dimension(collection, query_vector)
 
-    use_where = bool(selected_doc_ids) or bool(event_date and str(event_date).strip())
+    need_allowed_clause = bool(selected_doc_ids) or bool(
+        event_date and str(event_date).strip()
+    )
     where_filter: Optional[Dict[str, Any]] = None
-    if use_where and chunks_map:
+    if need_allowed_clause and chunks_map:
         allowed_doc_ids = [
             chunks_map[cid]["document_id"]
             for cid in allowed
@@ -412,6 +720,7 @@ def _dense_hits(
             document_ids=allowed_doc_ids,
             version_ids=allowed_ver_ids,
         )
+    where_filter = _merge_where_filter(where_filter, document_types)
 
     chroma_res = query_chroma_collection(
         collection=collection,
@@ -436,10 +745,52 @@ def _dense_hits(
     return [cid for cid in dense_ids if cid in allowed]
 
 
+def _annotate_chunk(
+    chunk: Dict[str, Any],
+    check_date: Optional[str],
+    date_mode: str,
+    date_precision: str,
+) -> Dict[str, Any]:
+    """Проставляет назначение источника, статус версии и признак неопределённости."""
+    chunk["document_type"] = chunk.get("document_type")
+    chunk["source_kind"] = source_kind_for_document_type(
+        chunk.get("document_type")
+    )
+    status = effective_status(chunk, check_date) if check_date else None
+    chunk["version_status"] = status
+    chunk["validity_uncertain"] = bool(
+        status in _UNCERTAIN_STATUSES
+        or date_precision in _UNCERTAIN_PRECISIONS
+    )
+    chunk["effective_date_mode"] = date_mode
+    return chunk
+
+
+def _set_chunk_field_stats(
+    stats: Dict[str, Any], chunks: Iterable[Dict[str, Any]]
+) -> None:
+    """Считает распределение итоговых чанков по назначению и статусу версии."""
+    source_counts: Dict[str, int] = {}
+    status_counts: Dict[str, int] = {}
+    for chunk in chunks:
+        source_kind = chunk.get("source_kind") or SOURCE_KIND_UNKNOWN
+        source_counts[str(source_kind)] = (
+            source_counts.get(str(source_kind), 0) + 1
+        )
+        status = chunk.get("version_status")
+        if status:
+            status_counts[str(status)] = status_counts.get(str(status), 0) + 1
+    stats["source_kind_counts"] = source_counts
+    stats["version_status_counts"] = status_counts
+
+
 def _build_candidates(
     rrf_scores: Dict[str, float],
     chunks_map: Dict[str, Dict[str, Any]],
     boost_amendments: bool = False,
+    check_date: Optional[str] = None,
+    date_mode: str = "current",
+    date_precision: str = "day",
 ) -> List[Dict[str, Any]]:
     """Единый постпроцессинг: условный приоритет соглашений + лимит пула 40."""
     scored = dict(rrf_scores)
@@ -459,7 +810,10 @@ def _build_candidates(
     for cid in sorted_cids:
         chunk = chunks_map.get(cid)
         if chunk is not None:
-            chunk_copy = dict(chunk)
+            # Копия: исходный chunks_map не мутируется (кэш/повторные вызовы).
+            chunk_copy = _annotate_chunk(
+                dict(chunk), check_date, date_mode, date_precision
+            )
             chunk_copy["score"] = round(float(scored[cid]), 6)
             candidate_chunks.append(chunk_copy)
     return candidate_chunks
@@ -495,9 +849,17 @@ def _finalize(
     stats: Dict[str, Any],
     diagnostics: Optional[Dict[str, Any]],
     boost_amendments: bool = False,
+    check_date: Optional[str] = None,
+    date_mode: str = "current",
+    date_precision: str = "day",
 ) -> List[Dict[str, Any]]:
     candidate_chunks = _build_candidates(
-        rrf_scores, chunks_map, boost_amendments=boost_amendments
+        rrf_scores,
+        chunks_map,
+        boost_amendments=boost_amendments,
+        check_date=check_date,
+        date_mode=date_mode,
+        date_precision=date_precision,
     )
     if rerank:
         result = rerank_candidates(query, candidate_chunks, top_k=top_k)
@@ -505,6 +867,7 @@ def _finalize(
         result = candidate_chunks[:top_k]
 
     stats["final_chunks_count"] = len(result)
+    _set_chunk_field_stats(stats, result)
     _publish_stats(stats, diagnostics)
     return result
 
@@ -518,12 +881,23 @@ def hybrid_search(
     intent: Optional[str] = None,
     rerank: bool = True,
     diagnostics: Optional[Dict[str, Any]] = None,
+    document_types: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """BM25 + dense с взвешенным RRF; неизвестный intent → mixed_query."""
-    chunks_map, allowed, date_allowed, unknown = _prepare_context(
-        query, event_date, selected_doc_ids
+    check_date, date_mode, date_precision = resolve_check_date_details(
+        event_date, query
     )
+    (
+        chunks_map,
+        allowed,
+        date_allowed,
+        unknown,
+        deduped_versions,
+    ) = _prepare_context(query, event_date, selected_doc_ids, document_types)
     stats = _new_stats(diagnostics)
+    stats["date_mode"] = date_mode
+    stats["date_precision"] = date_precision
+    stats["deduped_versions_count"] = deduped_versions
     _apply_context_stats(stats, allowed, unknown, selected_doc_ids)
 
     if not allowed:
@@ -552,6 +926,7 @@ def hybrid_search(
         chunks_map=chunks_map,
         selected_doc_ids=selected_doc_ids,
         event_date=event_date,
+        document_types=document_types,
     )
 
     # 3. Взвешенный RRF
@@ -566,6 +941,9 @@ def hybrid_search(
         stats=stats,
         diagnostics=diagnostics,
         boost_amendments=should_boost_amendments(query, intent),
+        check_date=check_date,
+        date_mode=date_mode,
+        date_precision=date_precision,
     )
 
 
@@ -578,12 +956,23 @@ def bm25_search(
     intent: Optional[str] = None,
     rerank: bool = True,
     diagnostics: Optional[Dict[str, Any]] = None,
+    document_types: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Только лексический канал: без вызова эмбеддингов и Chroma."""
-    chunks_map, allowed, date_allowed, unknown = _prepare_context(
-        query, event_date, selected_doc_ids
+    check_date, date_mode, date_precision = resolve_check_date_details(
+        event_date, query
     )
+    (
+        chunks_map,
+        allowed,
+        date_allowed,
+        unknown,
+        deduped_versions,
+    ) = _prepare_context(query, event_date, selected_doc_ids, document_types)
     stats = _new_stats(diagnostics)
+    stats["date_mode"] = date_mode
+    stats["date_precision"] = date_precision
+    stats["deduped_versions_count"] = deduped_versions
     _apply_context_stats(stats, allowed, unknown, selected_doc_ids)
 
     if not allowed:
@@ -614,6 +1003,9 @@ def bm25_search(
         stats=stats,
         diagnostics=diagnostics,
         boost_amendments=should_boost_amendments(query, intent),
+        check_date=check_date,
+        date_mode=date_mode,
+        date_precision=date_precision,
     )
 
 
@@ -626,12 +1018,23 @@ def dense_search(
     intent: Optional[str] = None,
     rerank: bool = True,
     diagnostics: Optional[Dict[str, Any]] = None,
+    document_types: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Только векторный канал: без BM25."""
-    chunks_map, allowed, date_allowed, unknown = _prepare_context(
-        query, event_date, selected_doc_ids
+    check_date, date_mode, date_precision = resolve_check_date_details(
+        event_date, query
     )
+    (
+        chunks_map,
+        allowed,
+        date_allowed,
+        unknown,
+        deduped_versions,
+    ) = _prepare_context(query, event_date, selected_doc_ids, document_types)
     stats = _new_stats(diagnostics)
+    stats["date_mode"] = date_mode
+    stats["date_precision"] = date_precision
+    stats["deduped_versions_count"] = deduped_versions
     _apply_context_stats(stats, allowed, unknown, selected_doc_ids)
 
     if not allowed:
@@ -650,6 +1053,7 @@ def dense_search(
         chunks_map=chunks_map,
         selected_doc_ids=selected_doc_ids,
         event_date=event_date,
+        document_types=document_types,
     )
 
     rrf_scores: Dict[str, float] = {}
@@ -665,6 +1069,9 @@ def dense_search(
         stats=stats,
         diagnostics=diagnostics,
         boost_amendments=should_boost_amendments(query, intent),
+        check_date=check_date,
+        date_mode=date_mode,
+        date_precision=date_precision,
     )
 
 
