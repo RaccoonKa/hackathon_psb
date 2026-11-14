@@ -1036,7 +1036,7 @@ def test_analyze_query_event_date_flows_to_tasks():
     assert all(t.event_date == "2024-05-15" for t in date_tasks)
 
 
-def test_analyze_query_subquestion_flows_as_dense_task():
+def test_analyze_query_subquestion_flows_into_single_hybrid_query():
     with patch(LLM_PATH, return_value=(_payload(
         intent="semantic", task_type="explain",
         decomposition=[
@@ -1047,7 +1047,9 @@ def test_analyze_query_subquestion_flows_as_dense_task():
         spec, _, _ = analyze_query("q")
 
     tasks, _ = plan(spec)
-    assert any(t.purpose.startswith("subquestion:") for t in tasks)
+    assert len(tasks) == 1
+    assert tasks[0].mode == "hybrid"
+    assert "подвопрос 1" in tasks[0].query
 
 
 # ---------------------------------------------------------------------------
@@ -1075,8 +1077,11 @@ def test_plan_compare_with_decomposition_uses_sq_texts():
         required_slots=["rent_amount", "payment_deadline"],
     )
     tasks, _ = plan(spec)
-    hybrid_purposes = [t.purpose for t in tasks if t.mode == "hybrid"]
-    assert any("compare" in p for p in hybrid_purposes)
+    assert len(tasks) == 1
+    assert tasks[0].mode == "hybrid"
+    assert tasks[0].purpose == "compare_hybrid"
+    assert "запрос сравнения 1" in tasks[0].query
+    assert "запрос сравнения 2" in tasks[0].query
 
 
 def test_plan_deduplicates_queries():
@@ -1086,8 +1091,9 @@ def test_plan_deduplicates_queries():
         rewritten_queries_dense=["b", "a", "b"],
     )
     tasks, _ = plan(spec)
-    queries = [t.query for t in tasks]
-    assert len(queries) == len(set(queries))
+    assert len(tasks) == 1
+    # Дедуп исключает повторные фрагменты единого hybrid-запроса.
+    assert tasks[0].query == "b a"
 
 
 def test_plan_user_selected_doc_ids_pass_through():
@@ -1120,22 +1126,29 @@ def test_plan_trace_contains_limits():
     _, step = plan(spec)
     assert "top_k" in step.output["limits"]
     assert "max_slot_queries" in step.output["limits"]
+    assert "max_workers" not in step.output["limits"]
+    assert step.output["hybrid_intent"] == "semantic_query"
+    assert "query_parts" in step.output
 
 
 # ---------------------------------------------------------------------------
 # planner.followup
 # ---------------------------------------------------------------------------
 
-def test_followup_builds_dense_and_bm25_per_slot():
+def test_followup_builds_single_hybrid_task_for_slots():
     spec = make_query_spec(
         intent="semantic",
         required_slots=["penalty", "accrual_period"],
         rewritten_queries_bm25=["оригинальный запрос"],
     )
-    tasks, _ = followup(["penalty", "accrual_period"], spec)
-    modes = {t.mode for t in tasks}
-    assert modes == {"bm25", "dense"}
-    assert len(tasks) == 4
+    tasks, step = followup(["penalty", "accrual_period"], spec)
+    assert len(tasks) == 1
+    assert tasks[0].mode == "hybrid"
+    assert tasks[0].intent == "semantic_query"
+    assert "penalty" in tasks[0].purpose
+    assert "accrual_period" in tasks[0].purpose
+    assert step.output["tasks_count"] == 1
+    assert step.output["slots_used"] == ["penalty", "accrual_period"]
 
 
 def test_followup_skips_when_full_expanded_query_already_seen():
@@ -1180,7 +1193,13 @@ def test_followup_caps_at_three_slots():
         rewritten_queries_bm25=["q"],
     )
     tasks, step = followup(["rent_amount", "payment_deadline", "penalty", "accrual_period"], spec)
-    assert len(tasks) <= 6
+    assert len(tasks) == 1
+    assert tasks[0].mode == "hybrid"
+    assert step.output["slots_used"] == [
+        "rent_amount",
+        "payment_deadline",
+        "penalty",
+    ]
     assert step.output["limits"]["max_slots"] == 3
 
 
@@ -1658,7 +1677,8 @@ def test_plan_semantic_general_slot_task_count():
         rewritten_queries_dense=["a", "b", "c", "d"],
     )
     tasks, _ = plan(spec)
-    assert len(tasks) == 2
+    assert len(tasks) == 1
+    assert tasks[0].purpose == "semantic_hybrid"
 
 
 def test_plan_semantic_two_slots_task_count():
@@ -1669,7 +1689,8 @@ def test_plan_semantic_two_slots_task_count():
         rewritten_queries_dense=["a", "b", "c", "d"],
     )
     tasks, _ = plan(spec)
-    assert len(tasks) == 3
+    assert len(tasks) == 1
+    assert tasks[0].purpose == "semantic_hybrid"
 
 
 def test_plan_unknown_intent_uses_semantic_branch():
@@ -1692,9 +1713,10 @@ def test_plan_checklist_uses_only_dense_queries():
         required_slots=["approval_process"],
     )
     tasks, _ = plan(spec)
-    queries = {t.query for t in tasks}
-    assert "dense unique" in queries
-    assert "bm25 unique" not in queries
+    assert len(tasks) == 1
+    query = tasks[0].query
+    assert "dense unique" in query
+    assert "bm25 unique" not in query
 
 
 # ---------------------------------------------------------------------------

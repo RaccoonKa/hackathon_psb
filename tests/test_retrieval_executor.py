@@ -1,24 +1,20 @@
-"""Тесты Этапа 1: warm-up, per-task дедлайны, сбор результатов, lifecycle.
+"""Тесты последовательного retrieval pipeline (Этап 1).
 
 Проверяются:
 * single dense/bm25/hybrid возвращают ожидаемую структуру;
-* параллельные задачи завершаются без дедлока и потери быстрых результатов;
-* искусственный тайм-аут одной задачи не выбрасывает результаты остальных;
-* уже завершённая задача не помечается timeout (done() раньше дедлайна);
-* queue_timeout отличается от task_timeout;
+* задачи исполняются последовательно, без retrieval-потоков;
+* post-hoc тайм-аут отбрасывает результат задачи;
+* частичный сбой даёт degraded, полный сбой — контролируемое исключение;
 * prewarm делает warm-up forward и первый батч после него «горячий»;
-* после тайм-аута следующий батч работает, потоки не растут;
-* новый executor не создаётся, пока живы потоки предыдущего;
 * диагностика timeout-задач не содержит фиктивных ``0``/``success: true``.
 """
 
-import concurrent.futures
 import sys
 import threading
 import time
 from unittest.mock import patch
 
-from rag_core.generation.errors import RetrievalBusyError, RetrievalTimeoutError
+from rag_core.generation.errors import RetrievalAPIError, RetrievalTimeoutError
 from rag_core.generation.retrieval import bridge as bridge_mod
 from rag_core.generation.types import RetrievalTask
 from rag_core.retrieval import vector_store as vs_mod
@@ -35,15 +31,6 @@ def _task(purpose: str = "t", mode: str = "hybrid", query: str = "запрос")
         event_date=None,
         top_k=5,
     )
-
-
-def _drain_last_executor(timeout: float = 2.0) -> None:
-    """Дожидается потоков последнего пула, чтобы не влиять на следующие тесты."""
-    executor = bridge_mod._LAST_EXECUTOR
-    if executor is None:
-        return
-    for thread in list(getattr(executor, "_threads", ()) or ()):
-        thread.join(timeout=timeout)
 
 
 def _retrieval_threads() -> set[threading.Thread]:
@@ -113,31 +100,33 @@ def test_single_modes_return_expected_structure():
         assert diagnostics["executor"]["submitted"] == 1
         assert diagnostics["executor"]["started"] == 1
         assert diagnostics["executor"]["completed"] == 1
+        assert diagnostics["executor"]["timed_out"] == 0
+        assert diagnostics["executor"]["queue_timeout"] == 0
         assert diagnostics["executor"]["threads_alive_after_grace"] == 0
 
         if mode == "bm25":
-            # bm25 не использует эмбеддинги: provider none, но не success=true.
             assert entry["embeddings"]["provider"] == "none"
             assert entry["embeddings"]["success"] is None
             assert entry["embeddings"]["measured"] is False
 
 
-# --- 2. Параллельные задачи ------------------------------------------------
+# --- 2. Последовательное исполнение без потоков ----------------------------
 
 
-def test_parallel_tasks_complete_without_deadlock_or_lost_results():
-    def worker(task):
-        time.sleep(0.05)
+def test_tasks_execute_sequentially_without_retrieval_threads():
+    thread_ids: list[int] = []
+
+    def worker(task, state=None):
+        thread_ids.append(threading.get_ident())
         return (
             [make_retrieved_chunk(chunk_id=f"c_{task.purpose}")],
             {},
             {},
-            50,
+            1,
         )
 
     tasks = [_task(purpose=f"p{index}") for index in range(5)]
     diagnostics: dict = {}
-    started = time.monotonic()
     with patch.object(
         bridge_mod,
         "prewarm_retrieval_backends",
@@ -145,40 +134,32 @@ def test_parallel_tasks_complete_without_deadlock_or_lost_results():
     ), patch.object(
         bridge_mod, "_run_single_task", side_effect=worker
     ), patch.object(
-        bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 4
-    ), patch.object(
         bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 5.0
     ):
-        chunks, _step = bridge_mod.retrieve_tasks(
+        chunks, step = bridge_mod.retrieve_tasks(
             tasks, diagnostics_out=diagnostics
         )
-    elapsed = time.monotonic() - started
 
-    assert elapsed < 2.0, f"parallel batch занял слишком много: {elapsed:.2f} с"
+    assert len(thread_ids) == 5
+    assert len(set(thread_ids)) == 1, "задачи должны идти в одном потоке"
+    assert not _retrieval_threads()
+    assert step.extra["execution"] == "sequential"
     assert diagnostics["executor"]["completed"] == 5
     assert diagnostics["executor"]["failed"] == 0
-    assert diagnostics["executor"]["timed_out"] == 0
-    statuses = {entry["status"] for entry in diagnostics["tasks"]}
-    assert statuses == {"ok"}
+    assert diagnostics["executor"]["queued"] == 0
+    assert diagnostics["executor"]["threads_alive_after_grace"] == 0
     assert {chunk.chunk_id for chunk in chunks} == {
         f"c_p{index}" for index in range(5)
     }
-    # Задача, ждавшая в очереди, имеет собственный queue_wait_ms.
-    queue_waits = [entry["queue_wait_ms"] for entry in diagnostics["tasks"]]
-    assert all(value is not None for value in queue_waits)
-    assert diagnostics["executor"]["threads_alive_after_grace"] == 0
 
 
-# --- 3. Искусственный тайм-аут одной задачи --------------------------------
+# --- 3. Post-hoc тайм-аут одной задачи -------------------------------------
 
 
-def test_slow_task_times_out_and_fast_results_are_kept():
-    def worker(task):
+def test_slow_task_times_out_post_hoc_and_fast_result_is_kept():
+    def worker(task, state=None):
         if task.purpose == "slow":
-            time.sleep(0.4)
-            return ([make_retrieved_chunk(chunk_id="late")], {}, {}, 400)
+            return ([make_retrieved_chunk(chunk_id="late")], {}, {}, 500)
         return (
             [make_retrieved_chunk(chunk_id=f"fast_{task.purpose}")],
             {},
@@ -186,42 +167,24 @@ def test_slow_task_times_out_and_fast_results_are_kept():
             5,
         )
 
-    tasks = [
-        _task(purpose="fast1"),
-        _task(purpose="slow"),
-        _task(purpose="fast2"),
-        _task(purpose="fast3"),
-    ]
+    tasks = [_task(purpose="fast1"), _task(purpose="slow")]
     diagnostics: dict = {}
-    try:
-        with patch.object(
-            bridge_mod,
-            "prewarm_retrieval_backends",
-            return_value={"errors": []},
-        ), patch.object(
-            bridge_mod, "_run_single_task", side_effect=worker
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 4
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.1
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 5.0
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_SHUTDOWN_GRACE_S", 0.05
-        ):
-            chunks, step = bridge_mod.retrieve_tasks(
-                tasks, diagnostics_out=diagnostics
-            )
-    finally:
-        _drain_last_executor()
+    with patch.object(
+        bridge_mod,
+        "prewarm_retrieval_backends",
+        return_value={"errors": []},
+    ), patch.object(
+        bridge_mod, "_run_single_task", side_effect=worker
+    ), patch.object(
+        bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.1
+    ):
+        chunks, step = bridge_mod.retrieve_tasks(
+            tasks, diagnostics_out=diagnostics
+        )
 
-    assert diagnostics["executor"]["completed"] == 3
-    assert diagnostics["executor"]["timed_out"] >= 1
-    assert {chunk.chunk_id for chunk in chunks} == {
-        "fast_fast1",
-        "fast_fast2",
-        "fast_fast3",
-    }
+    assert diagnostics["executor"]["completed"] == 1
+    assert diagnostics["executor"]["timed_out"] == 1
+    assert {chunk.chunk_id for chunk in chunks} == {"fast_fast1"}
     slow_entry = next(
         entry for entry in diagnostics["tasks"] if entry["purpose"] == "slow"
     )
@@ -239,18 +202,15 @@ def test_slow_task_times_out_and_fast_results_are_kept():
     assert any(
         error["type"] == "TimeoutError" for error in diagnostics["errors"]
     )
-    assert isinstance(
-        diagnostics["executor"]["threads_alive_after_grace"], int
-    )
     assert diagnostics["executor"]["batch_duration_ms"] >= 0
+    assert not _retrieval_threads()
 
 
-# --- 4. Завершённая задача не помечается timeout ---------------------------
+# --- 4. Задача в пределах дедлайна не помечается timeout -------------------
 
 
-def test_completed_future_is_not_marked_timeout():
-    def worker(task):
-        time.sleep(0.02)
+def test_task_under_timeout_is_not_marked_timeout():
+    def worker(task, state=None):
         return ([make_retrieved_chunk(chunk_id="quick")], {}, {}, 20)
 
     diagnostics: dict = {}
@@ -261,11 +221,7 @@ def test_completed_future_is_not_marked_timeout():
     ), patch.object(
         bridge_mod, "_run_single_task", side_effect=worker
     ), patch.object(
-        bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 1
-    ), patch.object(
         bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 0.0
     ):
         chunks, _step = bridge_mod.retrieve_tasks(
             [_task(purpose="quick")], diagnostics_out=diagnostics
@@ -273,24 +229,20 @@ def test_completed_future_is_not_marked_timeout():
 
     entry = diagnostics["tasks"][0]
     assert [chunk.chunk_id for chunk in chunks] == ["quick"]
-    # future.done() проверяется раньше дедлайна: результат не выбрасывается,
-    # несмотря на нулевой queue-бюджет.
     assert entry["status"] == "ok"
     assert entry["timeout_reason"] is None
     assert diagnostics["executor"]["completed"] == 1
 
 
-# --- 5. queue_timeout отличается от task_timeout ----------------------------
+# --- 5. Частичный и полный сбой --------------------------------------------
 
 
-def test_queue_timeout_differs_from_task_timeout():
-    def worker(task):
-        if task.purpose == "first":
-            time.sleep(0.5)
-            return ([make_retrieved_chunk(chunk_id="first")], {}, {}, 500)
-        return ([make_retrieved_chunk(chunk_id="second")], {}, {}, 1)
+def test_partial_failure_marks_degraded_and_keeps_success():
+    def worker(task, state=None):
+        if task.purpose == "bad":
+            raise ValueError("boom")
+        return ([make_retrieved_chunk(chunk_id="ok")], {}, {}, 1)
 
-    tasks = [_task(purpose="first"), _task(purpose="second")]
     diagnostics: dict = {}
     with patch.object(
         bridge_mod,
@@ -299,36 +251,61 @@ def test_queue_timeout_differs_from_task_timeout():
     ), patch.object(
         bridge_mod, "_run_single_task", side_effect=worker
     ), patch.object(
-        bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 1
-    ), patch.object(
         bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 0.1
     ):
-        chunks, _step = bridge_mod.retrieve_tasks(
-            tasks, diagnostics_out=diagnostics
+        chunks, step = bridge_mod.retrieve_tasks(
+            [_task(purpose="bad"), _task(purpose="good")],
+            diagnostics_out=diagnostics,
         )
 
-    first = next(
-        entry for entry in diagnostics["tasks"] if entry["purpose"] == "first"
-    )
-    second = next(
-        entry for entry in diagnostics["tasks"] if entry["purpose"] == "second"
-    )
-    assert [chunk.chunk_id for chunk in chunks] == ["first"]
-    assert first["status"] == "ok"
-    assert first["timeout_reason"] is None
-    # Задача из очереди не стартовала и получила собственный queue_timeout.
-    assert second["status"] == "queue_timeout"
-    assert second["timeout_reason"] == "queue_timeout"
-    assert second["started_at"] is None
-    assert second["stage"] == "queued"
-    assert second["queue_wait_ms"] is not None
-    assert second["queue_wait_ms"] >= 50
-    assert diagnostics["executor"]["queue_timeout"] == 1
-    assert diagnostics["executor"]["timed_out"] == 1
-    assert diagnostics["executor"]["started"] == 1
-    assert diagnostics["executor"]["queued"] == 1
+    assert [chunk.chunk_id for chunk in chunks] == ["ok"]
+    assert diagnostics["executor"]["completed"] == 1
+    assert diagnostics["executor"]["failed"] == 1
+    assert diagnostics["degraded"] is True
+    assert step.output["degraded"] is True
+    assert any(error["type"] == "ValueError" for error in diagnostics["errors"])
+
+
+def test_all_tasks_failed_raises_api_error():
+    def worker(task, state=None):
+        raise RuntimeError("boom")
+
+    with patch.object(
+        bridge_mod,
+        "prewarm_retrieval_backends",
+        return_value={"errors": []},
+    ), patch.object(
+        bridge_mod, "_run_single_task", side_effect=worker
+    ), patch.object(
+        bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
+    ):
+        try:
+            bridge_mod.retrieve_tasks([_task()])
+        except RetrievalAPIError:
+            pass
+        else:
+            raise AssertionError("Ожидался RetrievalAPIError")
+
+
+def test_all_tasks_timed_out_raises_timeout_error():
+    def worker(task, state=None):
+        return ([make_retrieved_chunk(chunk_id="late")], {}, {}, 500)
+
+    with patch.object(
+        bridge_mod,
+        "prewarm_retrieval_backends",
+        return_value={"errors": []},
+    ), patch.object(
+        bridge_mod, "_run_single_task", side_effect=worker
+    ), patch.object(
+        bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.1
+    ):
+        try:
+            bridge_mod.retrieve_tasks([_task()])
+        except RetrievalTimeoutError:
+            pass
+        else:
+            raise AssertionError("Ожидался RetrievalTimeoutError")
 
 
 # --- 6. Cold/warm: prewarm делает warm-up forward --------------------------
@@ -437,7 +414,7 @@ def test_prewarm_warms_first_forward_and_first_batch_is_warm():
             # Warm-up уже израсходовал медленный первый forward.
             assert fake_model.calls == 1
 
-            def worker(task):
+            def worker(task, state=None):
                 vs_mod.compute_embeddings([task.query])
                 return (
                     [make_retrieved_chunk(chunk_id="warm")],
@@ -455,8 +432,6 @@ def test_prewarm_warms_first_forward_and_first_batch_is_warm():
                 bridge_mod, "_run_single_task", side_effect=worker
             ), patch.object(
                 bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.2
-            ), patch.object(
-                bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 5.0
             ):
                 chunks, _step = bridge_mod.retrieve_tasks(
                     [_task(purpose="warmup")], diagnostics_out=diagnostics
@@ -473,120 +448,3 @@ def test_prewarm_warms_first_forward_and_first_batch_is_warm():
             sys.modules.pop("torch", None)
         else:
             sys.modules["torch"] = saved_torch
-
-
-# --- 7. Последовательные батчи после тайм-аута -----------------------------
-
-
-def test_sequential_batches_after_timeout_do_not_block():
-    def worker(task):
-        if task.purpose == "slow":
-            time.sleep(0.25)
-            return ([make_retrieved_chunk(chunk_id="late")], {}, {}, 250)
-        return ([make_retrieved_chunk(chunk_id="ok")], {}, {}, 1)
-
-    first_diag: dict = {}
-    try:
-        with patch.object(
-            bridge_mod,
-            "prewarm_retrieval_backends",
-            return_value={"errors": []},
-        ), patch.object(
-            bridge_mod, "_run_single_task", side_effect=worker
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 1
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.1
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_QUEUE_TIMEOUT_S", 5.0
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_SHUTDOWN_GRACE_S", 0.02
-        ):
-            try:
-                bridge_mod.retrieve_tasks(
-                    [_task(purpose="slow")], diagnostics_out=first_diag
-                )
-            except RetrievalTimeoutError:
-                pass
-            else:
-                raise AssertionError("Ожидался RetrievalTimeoutError")
-    finally:
-        _drain_last_executor()
-
-    assert first_diag["executor"]["timed_out"] == 1
-
-    before = _retrieval_threads()
-    second_diag: dict = {}
-    with patch.object(
-        bridge_mod,
-        "prewarm_retrieval_backends",
-        return_value={"errors": []},
-    ), patch.object(
-        bridge_mod, "_run_single_task", side_effect=worker
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 1
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
-    ):
-        chunks, _step = bridge_mod.retrieve_tasks(
-            [_task(purpose="fast")], diagnostics_out=second_diag
-        )
-
-    assert [chunk.chunk_id for chunk in chunks] == ["ok"]
-    assert second_diag["tasks"][0]["status"] == "ok"
-    # Число рабочих потоков не растёт бесконтрольно (зомби-поток дожидается
-    # в пределах grace и не блокирует следующий батч).
-    assert not (_retrieval_threads() - before)
-
-
-# --- 8. Новый executor при живых потоках предыдущего -----------------------
-
-
-def test_new_executor_not_created_while_previous_threads_alive():
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="retrieval"
-    )
-    started = threading.Event()
-    release = threading.Event()
-
-    def hold():
-        started.set()
-        release.wait(2.0)
-        return 1
-
-    try:
-        future = executor.submit(hold)
-        assert started.wait(1.0)
-        bridge_mod._LAST_EXECUTOR = executor
-
-        diagnostics: dict = {}
-        with patch.object(
-            bridge_mod,
-            "prewarm_retrieval_backends",
-            return_value={"errors": []},
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_SHUTDOWN_GRACE_S", 0.02
-        ), patch.object(
-            bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 1.0
-        ):
-            try:
-                bridge_mod.retrieve_tasks(
-                    [_task(purpose="busy")], diagnostics_out=diagnostics
-                )
-            except RetrievalBusyError as exc:
-                assert getattr(exc, "threads_alive", 0) >= 1
-            else:
-                raise AssertionError(
-                    "Ожидался RetrievalBusyError при живых потоках"
-                )
-
-        assert diagnostics["executor"]["threads_alive_after_grace"] >= 1
-        assert diagnostics["degraded"] is True
-        assert diagnostics["errors"][-1]["type"] == "RetrievalBusyError"
-        # Новый пул не создавался: последним остаётся ручной executor.
-        assert bridge_mod._LAST_EXECUTOR is executor
-    finally:
-        release.set()
-        future.result(timeout=2.0)
-        executor.shutdown(wait=True)
-        bridge_mod._LAST_EXECUTOR = None

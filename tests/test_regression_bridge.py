@@ -1,22 +1,18 @@
-"""Регрессионные тесты пула retrieval-задач (пункты 11–13).
+"""Регрессионные тесты последовательного retrieval-моста (пункты 11–13).
 
-Проверяются: ограниченный по времени таймаут, ровно один shutdown пула с
-завершением рабочих потоков и отсутствие ошибки
-``cannot schedule new futures after interpreter shutdown`` при штатном
-завершении процесса.
+Проверяются: post-hoc тайм-аут без пула потоков, отсутствие retrieval-потоков
+и ошибки ``cannot schedule new futures after interpreter shutdown`` при
+штатном завершении процесса.
 """
 
-import concurrent.futures
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 from unittest import SkipTest
 from unittest.mock import patch
 
-from rag_core import config
 from rag_core.generation.errors import RetrievalTimeoutError
 from rag_core.generation.retrieval import bridge as bridge_mod
 from rag_core.generation.types import RetrievalTask
@@ -35,21 +31,22 @@ def _task(purpose: str = "regression") -> RetrievalTask:
     )
 
 
-# --- 11. Таймаут retrieval -------------------------------------------------
+def _retrieval_threads() -> set[threading.Thread]:
+    return {
+        thread
+        for thread in threading.enumerate()
+        if thread.name.startswith("retrieval") and thread.is_alive()
+    }
 
 
-def test_retrieval_task_timeout_raises_and_is_bounded():
-    def slow_task(_task):
-        time.sleep(0.6)
-        return (
-            [make_retrieved_chunk(chunk_id="late")],
-            {},
-            {},
-            600,
-        )
+# --- 11. Post-hoc таймаут retrieval ---------------------------------------
+
+
+def test_retrieval_task_timeout_raises_after_post_hoc_check():
+    def slow_task(_task, state=None):
+        return ([make_retrieved_chunk(chunk_id="late")], {}, {}, 600)
 
     diagnostics: dict = {}
-    started = time.monotonic()
     raised = False
     with patch.object(
         bridge_mod,
@@ -59,47 +56,31 @@ def test_retrieval_task_timeout_raises_and_is_bounded():
         bridge_mod, "_run_single_task", side_effect=slow_task
     ), patch.object(
         bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 0.1
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_SHUTDOWN_GRACE_S", 0.05
-    ), patch.object(
-        bridge_mod.config, "RETRIEVAL_MAX_WORKERS", 1
     ):
         try:
             bridge_mod.retrieve_tasks([_task()], diagnostics_out=diagnostics)
         except RetrievalTimeoutError:
             raised = True
-    elapsed = time.monotonic() - started
 
     assert raised, "Ожидался RetrievalTimeoutError при превышении дедлайна"
-    # Возврат ограничен по времени: не ждём полного сна задачи (0.6 с).
-    assert elapsed < 0.5, f"Таймаут не ограничил время возврата: {elapsed:.3f} с"
 
     executor = diagnostics["executor"]
     assert executor["timed_out"] >= 1
     assert executor["completed"] == 0
+    assert executor["threads_alive_after_grace"] == 0
     statuses = [task["status"] for task in diagnostics["tasks"]]
     assert "timeout" in statuses
 
 
-# --- 12. Корректное завершение ThreadPoolExecutor --------------------------
+# --- 12. Нет пула потоков и нет утечки retrieval-потоков -------------------
 
 
-def test_retrieve_tasks_shuts_down_executor_once_and_joins_threads():
-    before = {
-        thread
-        for thread in threading.enumerate()
-        if thread.name.startswith("retrieval") and thread.is_alive()
-    }
+def test_retrieve_tasks_does_not_create_threads_or_executor():
+    before = _retrieval_threads()
 
-    def fast_task(_task):
-        return (
-            [make_retrieved_chunk(chunk_id="ok_1")],
-            {},
-            {},
-            5,
-        )
+    def fast_task(_task, state=None):
+        return ([make_retrieved_chunk(chunk_id="ok_1")], {}, {}, 5)
 
-    original_shutdown = concurrent.futures.ThreadPoolExecutor.shutdown
     with patch.object(
         bridge_mod,
         "prewarm_retrieval_backends",
@@ -107,43 +88,20 @@ def test_retrieve_tasks_shuts_down_executor_once_and_joins_threads():
     ), patch.object(
         bridge_mod, "_run_single_task", side_effect=fast_task
     ), patch.object(
-        concurrent.futures.ThreadPoolExecutor,
-        "shutdown",
-        autospec=True,
-        side_effect=original_shutdown,
-    ) as shutdown_spy:
-        chunks, _step = bridge_mod.retrieve_tasks([_task()])
+        bridge_mod.config, "RETRIEVAL_TASK_TIMEOUT_S", 5.0
+    ):
+        chunks, step = bridge_mod.retrieve_tasks([_task()])
 
     assert [chunk.chunk_id for chunk in chunks] == ["ok_1"]
-    assert shutdown_spy.call_count == 1, "shutdown пула должен вызываться ровно один раз"
-
-    still_alive = {
-        thread
-        for thread in threading.enumerate()
-        if thread.name.startswith("retrieval") and thread.is_alive()
-    }
-    # Сравнение с baseline: потоки других (возможно, ещё завершающихся)
-    # тестов не считаются утечкой текущего пула.
-    leaked = still_alive - before
-    assert not leaked, (
-        "После retrieve_tasks остались живые рабочие потоки пула: "
-        f"{[thread.name for thread in leaked]}"
+    assert step.extra["execution"] == "sequential"
+    assert not hasattr(bridge_mod, "_LAST_EXECUTOR")
+    assert not hasattr(bridge_mod, "_aggregate_task_results")
+    assert not (_retrieval_threads() - before), (
+        "После retrieve_tasks появились retrieval-потоки"
     )
-
-
-def test_executor_double_shutdown_is_safe():
-    executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="regression"
-    )
-    try:
-        future = executor.submit(lambda: 42)
-        assert future.result(timeout=5) == 42
-        executor.shutdown(wait=True)
-        # Повторный shutdown не должен падать.
-        executor.shutdown(wait=True)
-    finally:
-        if not executor._shutdown:
-            executor.shutdown(wait=False, cancel_futures=True)
+    source = Path(bridge_mod.__file__).read_text(encoding="utf-8")
+    assert "ThreadPoolExecutor" not in source
+    assert "concurrent.futures" not in source
 
 
 # --- 13. Нет ошибки "cannot schedule new futures after interpreter shutdown" --
@@ -159,8 +117,8 @@ def test_normal_shutdown_has_no_interpreter_shutdown_future_error():
 import sys
 sys.path.insert(0, {str(root)!r})
 import rag_core.generation.retrieval.bridge as bridge
-# Пропускаем тяжёлую предзагрузку модели: тест про завершение пула, а не
-# про инициализацию бэкендов. Сам поиск BM25 остаётся реальным.
+# Пропускаем тяжёлую предзагрузку модели: тест про последовательное
+# завершение, а не про инициализацию бэкендов. Сам поиск BM25 остаётся реальным.
 bridge.prewarm_retrieval_backends = lambda: {{"errors": []}}
 from rag_core.generation.types import RetrievalTask
 

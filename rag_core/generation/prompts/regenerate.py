@@ -1,7 +1,7 @@
 from rag_core.generation.prompts.generator import DRAFT_ANSWER_JSON_SCHEMA
 
 REGENERATE_TEMPERATURE: float = 0.2
-REGENERATE_MAX_TOKENS: int = 2048
+REGENERATE_MAX_TOKENS: int = 4096
 
 REGENERATE_SYSTEM: str = (
     "Ты — модуль исправления ответа юридического ИИ-ассистента после автоматической верификации.\n"

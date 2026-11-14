@@ -1,15 +1,12 @@
-import concurrent.futures
 from dataclasses import replace
 import datetime
 import inspect
 import logging
-import threading
 import time
 
 from rag_core import config
 from rag_core.generation.errors import (
     RetrievalAPIError,
-    RetrievalBusyError,
     RetrievalTimeoutError,
 )
 from rag_core.generation.stubs import stub_rag_retrieve, stub_reranker
@@ -80,19 +77,6 @@ _SEARCH_NOT_EXECUTED_DEFAULTS: dict = {
     key: None for key in _SEARCH_DIAGNOSTICS_DEFAULTS
 }
 
-# Период опроса pending-futures, чтобы замечать старт задач и per-task
-# дедлайны без busy-wait. Батч ограничен per-task дедлайнами и завершается
-# сам; глобального бесконечного ожидания нет.
-_DEADLINE_POLL_S: float = 0.05
-
-# Учёт последнего пула: новый пул не создаётся, пока живы потоки предыдущего.
-_EXECUTOR_LOCK = threading.Lock()
-_LAST_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
-
-# Пер-поточное состояние текущей задачи (нужно _run_single_task для стадий),
-# без изменения его сигнатуры для обратной совместимости.
-_TASK_STATE_LOCAL = threading.local()
-
 _SIGNATURE_CACHE: dict = {}
 
 
@@ -101,38 +85,6 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="milliseconds"
     )
-
-
-def _current_task_state() -> dict | None:
-    return getattr(_TASK_STATE_LOCAL, "state", None)
-
-
-def _mark_execution_start(state: dict) -> None:
-    state["started_at_mono"] = time.monotonic()
-    state["started_at"] = _now_iso()
-    state["stage"] = "started"
-
-
-def _mark_execution_finish(state: dict) -> None:
-    state["finished_at_mono"] = time.monotonic()
-    state["finished_at"] = _now_iso()
-
-
-def _execute_single_task(
-    task: RetrievalTask, task_state: dict
-) -> tuple[list[RetrievedChunk], dict, dict, int]:
-    """Обёртка исполнителя: фиксирует старт/финиш и thread-local состояние.
-
-    Обратная совместимость: ``_run_single_task`` получает только ``task``,
-    поэтому monkeypatch-функции с прежней сигнатурой продолжают работать.
-    """
-    _mark_execution_start(task_state)
-    _TASK_STATE_LOCAL.state = task_state
-    try:
-        return _run_single_task(task)
-    finally:
-        _mark_execution_finish(task_state)
-        _TASK_STATE_LOCAL.state = None
 
 
 def _apply_diagnostics_to_state(
@@ -310,7 +262,7 @@ def _postprocess_task_chunks(
     ``task.boost_doc_ids`` здесь намеренно не применяется: score канала
     дальше полностью перезаписывается RRF-агрегацией, поэтому любое
     приращение на этом этапе было бы декоративным. Мягкий doc-boost
-    выполняется один раз в :func:`_aggregate_task_results`.
+    выполняется один раз в :func:`_finalize_single_task_results`.
     """
     best_by_id: dict[str, RetrievedChunk] = {}
     order: list[str] = []
@@ -331,12 +283,10 @@ def _run_single_task(
 ) -> tuple[list[RetrievedChunk], dict, dict, int]:
     """Выполняет одну задачу; возвращает (chunks, search, embeddings, ms).
 
-    ``task_state`` — необязательное пер-задачное состояние для диагностики
-    стадий. Если не передан, используется thread-local состояние, которое
-    выставляет обёртка пула; прямой вызов с одним аргументом (тесты,
-    обратная совместимость) продолжает работать.
+    Последовательный режим: ``task_state`` передаётся напрямую, thread-local
+    состояние и пул потоков больше не используются.
     """
-    state = task_state if task_state is not None else _current_task_state()
+    state = task_state
     started = time.perf_counter()
     reset_embedding_diagnostics()
 
@@ -500,65 +450,9 @@ def _publish_diagnostics(
     diagnostics_out.update(payload)
 
 
-def _join_executor_threads(executor, grace_s: float) -> int:
-    """Ограниченное ожидание завершения потоков; возвращает число живых.
-
-    ``shutdown(wait=False, cancel_futures=True)`` не останавливает уже
-    выполняющийся код, поэтому здесь только ожидаем потоки в пределах
-    grace и честно возвращаем число не завершившихся (зомби) потоков.
-    """
-    threads = list(getattr(executor, "_threads", ()) or ())
-    deadline = time.monotonic() + max(0.0, float(grace_s))
-    for thread in threads:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        thread.join(timeout=remaining)
-    alive = [t for t in threads if t.is_alive()]
-    if alive:
-        logger.warning(
-            "Retrieval executor: %d поток(ов) не завершились за %.1f с",
-            len(alive),
-            grace_s,
-        )
-    return len(alive)
-
-
-def _acquire_executor(
-    max_workers: int, grace_s: float
-) -> concurrent.futures.ThreadPoolExecutor:
-    """Создаёт пул, только если потоки предыдущего батча завершились.
-
-    Ожидание ограничено ``grace_s``; если потоки живы — контролируемая
-    техническая ошибка :class:`RetrievalBusyError`, а не бесконечный lock.
-    """
-    global _LAST_EXECUTOR
-    with _EXECUTOR_LOCK:
-        previous = _LAST_EXECUTOR
-        if previous is not None:
-            alive = _join_executor_threads(previous, grace_s)
-            if alive:
-                error = RetrievalBusyError(
-                    "Предыдущий батч retrieval всё ещё удерживает "
-                    f"{alive} поток(ов) после ожидания {grace_s} с; "
-                    "новый батч не запускается, чтобы не накапливать "
-                    "зомби-потоки"
-                )
-                error.threads_alive = alive
-                raise error
-        executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="retrieval"
-        )
-        _LAST_EXECUTOR = executor
-        return executor
-
-
-# H-2B: константа RRF-агрегации рангов задач (стандартная формула RRF).
-RRF_AGGREGATION_K: int = 60
 # Мягкий doc-boost неоднозначных кандидатов (``boost_doc_ids``): это
-# множитель к уже посчитанному RRF-скору, а не дополнительный RRF-вклад
-# рангов. Чтобы порядок и score реально менялись, boost применяется после
-# агрегации, один раз на чанк.
+# множитель к уже посчитанному внутри hybrid_search RRF-скору, а не
+# дополнительный RRF-вклад рангов. Применяется один раз на чанк.
 DOC_BOOST_FACTOR: float = 1.1
 
 
@@ -578,56 +472,42 @@ def _collect_boost_doc_ids(tasks) -> set[str]:
     return boost_ids
 
 
-def _aggregate_task_results(
+def _finalize_single_task_results(
     task_results: list[tuple[RetrievalTask, list[RetrievedChunk]]],
 ) -> tuple[dict[str, RetrievedChunk], list[str]]:
-    """Суммирующая RRF-агрегация результатов задач по ``chunk_id``.
+    """Финализирует результаты последовательных задач БЕЗ второго RRF.
 
-    ``RRF(chunk) = Σ weight_i / (RRF_AGGREGATION_K + rank_i + 1)``,
-    где ``rank_i`` — позиция чанка в списке конкретной задачи (с 0), а
-    ``weight_i`` — вес задачи (``getattr(task, "weight", 1.0)``).
+    Единственный RRF уже выполнен внутри ``hybrid_search``. Здесь только:
+    * дедуп по ``chunk_id`` с сохранением лучшего score;
+    * однократный мягкий doc-boost ``* DOC_BOOST_FACTOR`` по
+      ``boost_doc_ids``;
+    * защита первых трёх чанков (``protected_top_ids``).
 
-    Raw score каналов не смешиваются: ``hybrid_search`` внутри задачи уже
-    нормализует dense/bm25 через собственный RRF, поэтому на уровне моста
-    складываются только вклады рангов задач.
-
-    Мягкий doc-boost (``boost_doc_ids`` всех успешных задач) применяется к
-    итоговому RRF-скору один раз на чанк:
-    ``score = round(RRF * DOC_BOOST_FACTOR, 6)``, если ``document_id`` чанка
-    входит в объединение boost-документов. Это не RRF-вклад и не меняет
-    суммирующую формулу.
+    Scores не пересчитываются, поэтому порядок и значения из hybrid_search
+    сохраняются.
     """
     merged_by_id: dict[str, RetrievedChunk] = {}
-    rrf_scores: dict[str, float] = {}
+    order: list[str] = []
     protected_top_ids: list[str] = []
     boost_ids = _collect_boost_doc_ids(
         task for task, _chunks in task_results
     )
 
-    for task, chunk_list in task_results:
-        try:
-            weight = float(getattr(task, "weight", 1.0))
-        except (TypeError, ValueError):
-            weight = 1.0
-        seen_in_task: set[str] = set()
+    for _task, chunk_list in task_results:
         for rank_idx, chunk in enumerate(chunk_list):
             cid = chunk.chunk_id
-            if cid in seen_in_task:
-                # Внутри одного списка chunk_id уникален: повтор не даёт
-                # дополнительного вклада и не создаёт дубликат.
-                continue
-            seen_in_task.add(cid)
             if rank_idx < 3 and cid not in protected_top_ids:
                 protected_top_ids.append(cid)
-            rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (
-                weight / (RRF_AGGREGATION_K + rank_idx + 1)
-            )
             if cid not in merged_by_id:
+                order.append(cid)
+                merged_by_id[cid] = chunk
+            elif chunk.score > merged_by_id[cid].score:
                 merged_by_id[cid] = chunk
 
     deduped_map: dict[str, RetrievedChunk] = {}
-    for cid, chunk in merged_by_id.items():
-        score = rrf_scores[cid]
+    for cid in order:
+        chunk = merged_by_id[cid]
+        score = float(chunk.score)
         document_id = getattr(chunk, "document_id", None)
         if document_id is not None and document_id in boost_ids:
             score *= DOC_BOOST_FACTOR
@@ -651,7 +531,7 @@ def retrieve_tasks(
             "cancelled": 0,
             "timed_out": 0,
             "queue_timeout": 0,
-            "threads_alive_after_grace": None,
+            "threads_alive_after_grace": 0,
             "batch_duration_ms": None,
         },
         "tasks": [],
@@ -672,8 +552,8 @@ def retrieve_tasks(
         _publish_diagnostics(diagnostics_out, diagnostics)
         return [], step
 
-    # Предзагрузка (включая warm-up forward) до создания пула: гонок
-    # инициализации нет, а первый реальный forward уже «горячий».
+    # Предзагрузка (включая warm-up forward) до последовательного поиска:
+    # первый реальный forward уже «горячий».
     try:
         prewarm_report = prewarm_retrieval_backends()
     except Exception as exc:  # noqa: BLE001 - предзагрузка не фатальна
@@ -703,38 +583,6 @@ def retrieve_tasks(
             config.RETRIEVAL_TIMEOUT_S,
         )
     )
-    # Queue-бюджет — отдельная централизованная настройка; не маскирует
-    # проблему увеличением общего тайм-аута.
-    queue_timeout_s = float(
-        getattr(config, "RETRIEVAL_QUEUE_TIMEOUT_S", timeout_s)
-    )
-    grace_s = float(
-        getattr(config, "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0)
-    )
-    configured_workers = int(
-        getattr(config, "RETRIEVAL_MAX_WORKERS", 0)
-        or getattr(config, "MAX_WORKERS", 1)
-        or 1
-    )
-    max_workers = max(1, min(configured_workers, len(tasks)))
-
-    # Новый пул создаётся только после завершения потоков предыдущего батча.
-    try:
-        executor = _acquire_executor(max_workers, grace_s)
-    except RetrievalBusyError as exc:
-        alive = getattr(exc, "threads_alive", None)
-        diagnostics["executor"]["threads_alive_after_grace"] = alive
-        diagnostics["executor"]["batch_duration_ms"] = int(
-            round((time.perf_counter() - start_time) * config.MS_PER_SECOND)
-        )
-        diagnostics["degraded"] = True
-        diagnostics["errors"].append(
-            {"type": type(exc).__name__, "message": str(exc)[:300]}
-        )
-        _publish_diagnostics(diagnostics_out, diagnostics)
-        raise
-
-    futures: dict[concurrent.futures.Future, dict] = {}
     task_states: list[dict] = []
     task_results: list[tuple[RetrievalTask, list[RetrievedChunk]]] = []
 
@@ -807,170 +655,76 @@ def retrieve_tasks(
             if default_stage is not None:
                 state["stage"] = default_stage
 
-    try:
-        for index, task in enumerate(tasks):
-            state = _new_state(index, task)
-            task_states.append(state)
-            try:
-                future = executor.submit(_execute_single_task, task, state)
-            except Exception as exc:  # noqa: BLE001 - пул мог быть закрыт
-                _finalize(state, "error", stage="error")
-                state["error_type"] = type(exc).__name__
-                state["error_message"] = str(exc)[:300]
-                diagnostics["executor"]["failed"] += 1
-                diagnostics["errors"].append(
-                    {
-                        "type": state["error_type"],
-                        "message": state["error_message"],
-                    }
-                )
-                continue
-            futures[future] = state
-
-        pending = set(futures)
-        while pending:
-            done, _ = concurrent.futures.wait(
-                pending,
-                timeout=_DEADLINE_POLL_S,
-                return_when=concurrent.futures.FIRST_COMPLETED,
+    # Последовательное исполнение: один hybrid-поиск, без пула потоков.
+    # Тайм-аут проверяется post-hoc по фактической длительности задачи;
+    # уже выполняющийся код не отменяется (отменять нечего).
+    timeout_ms = timeout_s * config.MS_PER_SECOND
+    for index, task in enumerate(tasks):
+        state = _new_state(index, task)
+        task_states.append(state)
+        state["started_at_mono"] = time.monotonic()
+        state["started_at"] = _now_iso()
+        state["stage"] = "started"
+        diagnostics["executor"]["started"] += 1
+        try:
+            chunks, stats, embeddings, duration_ms = _run_single_task(
+                task, state
             )
-            # 1) Сначала забираем завершённые задачи. Проверка done() идёт
-            #    раньше дедлайнов, поэтому готовый результат никогда не
-            #    помечается timeout и не выбрасывается.
-            for future in done:
-                if future not in pending:
-                    continue
-                state = futures[future]
-                if future.cancelled():
-                    pending.discard(future)
-                    _finalize(state, "cancelled")
-                    diagnostics["executor"]["cancelled"] += 1
-                    continue
-                if not future.done():
-                    continue
-                pending.discard(future)
-                exc = future.exception()
-                if exc is not None:
-                    _finalize(state, "error", stage="error")
-                    state["error_type"] = type(exc).__name__
-                    state["error_message"] = str(exc)[:300]
-                    diagnostics["executor"]["failed"] += 1
-                    diagnostics["errors"].append(
-                        {
-                            "type": state["error_type"],
-                            "message": state["error_message"],
-                        }
-                    )
-                    logger.warning(
-                        "Retrieval task %s (%s) failed: %s: %s",
-                        state["index"],
-                        state["purpose"],
-                        state["error_type"],
-                        state["error_message"],
-                    )
-                    continue
-                chunks, stats, embeddings, duration_ms = future.result()
-                _finalize(state, "ok", stage="done")
-                state["duration_ms"] = duration_ms
-                _apply_diagnostics_to_state(
-                    state, stats=stats, embeddings=embeddings
-                )
-                diagnostics["executor"]["completed"] += 1
-                task_results.append((state["task"], chunks))
+        except Exception as exc:  # noqa: BLE001 - изолируем сбой задачи
+            _finalize(state, "error", stage="error")
+            state["error_type"] = type(exc).__name__
+            state["error_message"] = str(exc)[:300]
+            diagnostics["executor"]["failed"] += 1
+            diagnostics["errors"].append(
+                {
+                    "type": state["error_type"],
+                    "message": state["error_message"],
+                }
+            )
+            logger.warning(
+                "Retrieval task %s (%s) failed: %s: %s",
+                state["index"],
+                state["purpose"],
+                state["error_type"],
+                state["error_message"],
+            )
+            continue
 
-            if not pending:
-                break
+        if duration_ms > timeout_ms:
+            _finalize(state, "timeout", timeout_reason="task_timeout")
+            state["error_type"] = "TimeoutError"
+            state["error_message"] = (
+                "Задача не завершилась за "
+                f"{timeout_s} с (post-hoc тайм-аут)"
+            )
+            diagnostics["executor"]["timed_out"] += 1
+            diagnostics["errors"].append(
+                {
+                    "type": state["error_type"],
+                    "message": state["error_message"],
+                }
+            )
+            logger.warning(
+                "Retrieval task %s (%s): task_timeout после %.2f с",
+                state["index"],
+                state["purpose"],
+                timeout_s,
+            )
+            # Результат просроченной задачи отбрасывается.
+            continue
 
-            now = time.monotonic()
-            # 2) Только теперь проверяем per-task дедлайны. Завершённые
-            #    future не трогаем — их заберём на следующей итерации.
-            for future in list(pending):
-                if future.done() or future.cancelled():
-                    continue
-                state = futures[future]
-                started_mono = state.get("started_at_mono")
-                if started_mono is not None:
-                    if now - started_mono < timeout_s:
-                        continue
-                    # cancel() не прерывает уже выполняющийся код — поток
-                    # останется зомби и будет учтён в grace-ожидании.
-                    future.cancel()
-                    pending.discard(future)
-                    _finalize(
-                        state, "timeout", timeout_reason="task_timeout"
-                    )
-                    state["error_type"] = "TimeoutError"
-                    state["error_message"] = (
-                        f"Задача не завершилась за {timeout_s} с от старта"
-                    )
-                    diagnostics["executor"]["timed_out"] += 1
-                    diagnostics["errors"].append(
-                        {
-                            "type": state["error_type"],
-                            "message": state["error_message"],
-                        }
-                    )
-                    logger.warning(
-                        "Retrieval task %s (%s): task_timeout после %.2f с",
-                        state["index"],
-                        state["purpose"],
-                        timeout_s,
-                    )
-                    continue
-
-                queued_mono = state.get("queued_at_mono")
-                if (
-                    queued_mono is None
-                    or now - queued_mono < queue_timeout_s
-                ):
-                    continue
-                cancelled = future.cancel()
-                if not cancelled:
-                    # Задача успела стартовать между проверкой и cancel —
-                    # её судьбу решит per-task дедлайн от started_at.
-                    continue
-                pending.discard(future)
-                _finalize(
-                    state, "queue_timeout", timeout_reason="queue_timeout"
-                )
-                state["error_type"] = "QueueTimeoutError"
-                state["error_message"] = (
-                    "Задача не началась за queue-бюджет "
-                    f"{queue_timeout_s} с"
-                )
-                diagnostics["executor"]["cancelled"] += 1
-                diagnostics["executor"]["timed_out"] += 1
-                diagnostics["executor"]["queue_timeout"] += 1
-                diagnostics["errors"].append(
-                    {
-                        "type": state["error_type"],
-                        "message": state["error_message"],
-                    }
-                )
-                logger.warning(
-                    "Retrieval task %s (%s): queue_timeout после %.2f с",
-                    state["index"],
-                    state["purpose"],
-                    queue_timeout_s,
-                )
-    finally:
-        for future in futures:
-            future.cancel()
-        # Ровно один shutdown; потоки дожидаются ограниченно. cancel() не
-        # останавливает уже выполняющийся код — это фиксируется числом
-        # threads_alive_after_grace, а не выдаётся за успешную отмену.
-        executor.shutdown(wait=False, cancel_futures=True)
-        diagnostics["executor"]["threads_alive_after_grace"] = (
-            _join_executor_threads(executor, grace_s)
+        _finalize(state, "ok", stage="done")
+        state["duration_ms"] = duration_ms
+        _apply_diagnostics_to_state(
+            state, stats=stats, embeddings=embeddings
         )
+        diagnostics["executor"]["completed"] += 1
+        task_results.append((task, chunks))
 
-    started_count = sum(
-        1
-        for state in task_states
-        if state.get("started_at_mono") is not None
-    )
-    diagnostics["executor"]["started"] = started_count
-    diagnostics["executor"]["queued"] = max(0, len(tasks) - started_count)
+    diagnostics["executor"]["queued"] = 0
+    diagnostics["executor"]["cancelled"] = 0
+    diagnostics["executor"]["queue_timeout"] = 0
+    diagnostics["executor"]["threads_alive_after_grace"] = 0
     diagnostics["tasks"] = [
         _task_diag(
             state["index"],
@@ -1001,15 +755,15 @@ def retrieve_tasks(
         if only_timeouts or timed_out >= len(tasks):
             raise RetrievalTimeoutError(
                 "Все retrieval-задачи превысили дедлайн "
-                f"(task={timeout_s} с, queue={queue_timeout_s} с; "
-                f"причины: {summary})"
+                f"(task={timeout_s} с; причины: {summary})"
             )
         raise RetrievalAPIError(
             f"Все retrieval-задачи завершились ошибкой ({summary})"
         )
 
-    # H-2B: суммирующая RRF-агрегация рангов задач вместо max(score)+increment.
-    deduped_map, protected_top_ids = _aggregate_task_results(task_results)
+    # Второго RRF нет: scores из hybrid_search только дедуплицируются и
+    # получают однократный мягкий doc-boost.
+    deduped_map, protected_top_ids = _finalize_single_task_results(task_results)
     boost_ids = _collect_boost_doc_ids(
         task for task, _chunks in task_results
     )
@@ -1061,8 +815,10 @@ def retrieve_tasks(
             "executor": dict(diagnostics["executor"]),
             "errors_count": len(diagnostics["errors"]),
             "degraded": diagnostics["degraded"],
-            "aggregation": "sum_rrf",
-            "rrf_k": RRF_AGGREGATION_K,
+            "execution": "sequential",
+            "aggregation": "none",
+            "rrf_levels": 1,
+            "hybrid_rrf_k": 60,
             "doc_boost_factor": DOC_BOOST_FACTOR,
             "boost_doc_ids_count": len(boost_ids),
             "doc_boost_applied": doc_boost_applied,
