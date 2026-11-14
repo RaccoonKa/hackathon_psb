@@ -216,7 +216,7 @@ _RESOLVED_PREFIX_RE = re.compile(
 
 
 _INJECTION_TOKENS_RE = re.compile(
-    r"(?:<\|im_start\|>|<\|im_end\|>|[INST]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
+    r"(?:<\|im_start\|>|<\|im_end\|>|\[INST\]|\[/INST\]|<system>|</system>|<\|endoftext\|>|---\s*system)",
     re.IGNORECASE,
 )
 

@@ -266,29 +266,23 @@ def _has_contradicted_premise(spec: QuerySpec, policy: PolicyVerdict | None) -> 
 def _source_role_mismatch(
     claim: Claim,
     cited_chunks: list[RetrievedChunk],
+    required_slots: list[str] | None = None,
 ) -> tuple[bool, str]:
-    """Консервативная проверка соответствия роли источника слоту claim.
-
-    Возвращает ``(True, "source_role_mismatch")`` только если у всех
-    цитируемых чанков известен ``source_kind`` и все они противоположны
-    ожидаемому назначению для слота. При отсутствии данных проверка не
-    срабатывает.
-    """
+    # Если слотов больше одного — claim мог быть размечен "не тем" слотом,
+    # не отклоняем по роли источника.
+    if required_slots and len(required_slots) > 1:
+        return False, ""
+    # Если хотя бы один чанк правильной роли — не отклоняем.
     expected = expected_source_kind_for_slot(claim.slot)
-    if expected is None:
+    if expected is None or not cited_chunks:
         return False, ""
-    if not cited_chunks:
+    known = [str(getattr(c, "source_kind", "") or "").lower() for c in cited_chunks]
+    known = [k for k in known if k and k != "unknown"]
+    if not known:
         return False, ""
-
-    known_kinds: list[str] = []
-    for chunk in cited_chunks:
-        kind = getattr(chunk, "source_kind", None)
-        normalized = str(kind).strip().lower() if kind else ""
-        if not normalized or normalized == SOURCE_KIND_UNKNOWN:
-            return False, ""
-        known_kinds.append(normalized)
-
-    if known_kinds and all(kind != expected for kind in known_kinds):
+    if any(k == expected for k in known):
+        return False, ""
+    if all(k != expected for k in known):
         return True, "source_role_mismatch"
     return False, ""
 
@@ -589,7 +583,7 @@ def verify(
         ]
 
         role_mismatch, role_mismatch_reason = _source_role_mismatch(
-            claim, valid_cited_chunks
+            claim, valid_cited_chunks, spec.required_slots
         )
         if role_mismatch and verdict_obj.status == ClaimStatus.SUPPORTED:
             verdict_obj.status = ClaimStatus.NOT_IN_SOURCE
@@ -611,15 +605,12 @@ def verify(
                 )
                 verdict_obj.status = ClaimStatus.NOT_IN_SOURCE
 
-        if verdict_obj.status == ClaimStatus.SUPPORTED:
-            claim_dates = _ISO_DATE_RE.findall(claim.text)
-            if claim_dates and valid_cited_chunks:
-                for c_date in claim_dates:
-                    for ch in valid_cited_chunks:
-                        if ch.effective_from and c_date < ch.effective_from:
-                            verdict_obj.status = ClaimStatus.CONTRADICTED
-                        if ch.effective_to and c_date >= ch.effective_to:
-                            verdict_obj.status = ClaimStatus.CONTRADICTED
+        if verdict_obj.status == ClaimStatus.SUPPORTED and spec.event_date:
+            for ch in valid_cited_chunks:
+                if ch.effective_from and spec.event_date < ch.effective_from and ch.document_type != "law":
+                    verdict_obj.status = ClaimStatus.CONTRADICTED
+                if ch.effective_to and spec.event_date >= ch.effective_to:
+                    verdict_obj.status = ClaimStatus.CONTRADICTED
 
         if (
             verdict_obj.status == ClaimStatus.SUPPORTED

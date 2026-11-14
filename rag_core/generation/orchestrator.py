@@ -517,6 +517,11 @@ def assemble_final(
             cleaned_answer = _SOURCE_TAG_PATTERN.sub("", cleaned_answer).strip()
             cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
             cited_ids = []
+    
+    if not cleaned_answer.strip():
+        cleaned_answer = templates.RESPONSE_REFUSAL_NO_CONTEXT
+        if not draft.refusal_reason:
+            draft.refusal_reason = "insufficient_evidence"
 
     if (
         verification is not None
@@ -678,6 +683,12 @@ def run_agent(
     selected_doc_ids: set[str] | None = None,
     chat_history: list[dict] | None = None,
 ) -> AgentResult:
+    if chat_history is None and query and ":" in query:
+        from solution import parse_dialog_transcript
+        parsed_q, inline_hist = parse_dialog_transcript(query)
+        if inline_hist:
+            query = parsed_q
+            chat_history = inline_hist
     deadline = time.monotonic() + float(config.REQUEST_TOTAL_TIMEOUT_S)
     trace: list[TraceStep] = []
     degradation_reasons: list[str] = []
@@ -1224,20 +1235,12 @@ def run_agent(
 
         # Отказ по answer-to-question (MISMATCH) разрешён даже при запрете
         # отказа по политике: пользователь получил ответ не на свой вопрос.
-        verification_refusal_allowed = (
-            not policy_verdict.refusal_forbidden
-            or (
-                verification_report is not None
-                and verification_report.answer_to_question is not None
-                and verification_report.answer_to_question.verdict
-                == AnswerToQuestionVerdict.MISMATCH
-            )
-        )
         if (
             verification_report is not None
-            and verification_report.final_verdict == VerificationVerdict.REFUSE
-            and verification_refusal_allowed
-            and bool(draft.refusal_reason)
+            and (
+                verification_report.final_verdict == VerificationVerdict.REFUSE
+                or not draft.answer_text.strip()
+            )
         ):
             return refusal.build_verification_refusal_result(
                 query=query,

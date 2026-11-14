@@ -1,5 +1,5 @@
 VERIFIER_TEMPERATURE: float = 0.0
-VERIFIER_MAX_TOKENS: int = 4096
+VERIFIER_MAX_TOKENS: int = 800
 
 VERIFIER_JSON_SCHEMA: str = """{
   "verdicts": [

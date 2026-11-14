@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 _CHUNK_INJECTION_PATTERNS = [
     re.compile(r"игнорируй(?:те)?\s+(?:все\s+)?(?:другие|предыдущие|остальные)\s+(?:документы|инструкции|правила)", re.IGNORECASE),
     re.compile(r"новое\s+системное\s+(?:правило|указание)", re.IGNORECASE),
-    re.compile(r"внимание\s+(?:для\s+)?(?:ии|ассистента|модели)", re.IGNORECASE),
     re.compile(r"измени(?:ть)?\s+порядок\s+ответов", re.IGNORECASE),
     re.compile(r"ignore\s+previous\s+instructions", re.IGNORECASE),
 ]
@@ -415,7 +414,15 @@ def precheck(
             pat.search(ch.text) for pat in _CHUNK_INJECTION_PATTERNS
         ):
             injection_flagged = True
-            updated_chunks.append(replace(ch, untrusted=True))
+            safe_lines = [
+                line for line in ch.text.splitlines()
+                if not any(pat.search(line) for pat in _CHUNK_INJECTION_PATTERNS)
+            ]
+            cleaned_text = "\n".join(safe_lines).strip()
+            if len(cleaned_text) >= 40:
+                updated_chunks.append(replace(ch, text=cleaned_text, untrusted=False))
+            else:
+                updated_chunks.append(replace(ch, untrusted=True))
         else:
             updated_chunks.append(ch)
     bundle.chunks = updated_chunks
