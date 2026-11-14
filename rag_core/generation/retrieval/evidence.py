@@ -445,6 +445,12 @@ def assess(
             substantive_bodies[chunk_id] = body
             viable_chunks.append(c)
 
+    # Явные счётчики состояний: пустой retrieval (retrieved == 0) и
+    # "выдача есть, но нет ни одного пригодного чанка" (retrieved > 0,
+    # viable == 0). Порог viable и substantive body не меняются.
+    retrieved_count = len(chunks)
+    viable_count = len(viable_chunks)
+
     if viable_chunks:
         for slot in required_slots:
             if slot not in SLOT_KEYWORDS:
@@ -597,6 +603,8 @@ def assess(
         sufficiency=sufficiency,
         degraded_intents=degraded_intents,
         reason=reason,
+        viable_chunks_count=viable_count,
+        retrieved_chunks_count=retrieved_count,
     )
 
     latency_ms = round(
@@ -607,13 +615,15 @@ def assess(
         step="assess_evidence",
         input={
             "chunks_count": len(chunks),
-            "viable_chunks_count": len(viable_chunks),
+            "viable_chunks_count": viable_count,
             "required_slots": required_slots,
             "event_date": spec.event_date,
         },
         output={
             "sufficiency": sufficiency.value,
             "reason": reason,
+            "viable_chunks_count": viable_count,
+            "retrieved_chunks_count": retrieved_count,
             "required_slots": required_slots,
             "covered_slots": covered_slots,
             "uncovered_slots": missing_slots,

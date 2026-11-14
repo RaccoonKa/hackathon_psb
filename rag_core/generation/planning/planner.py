@@ -34,6 +34,11 @@ _SLOT_SEARCH_EXPANSIONS: dict[str, str] = {
     "seasonal_work": "срочный трудовой договор для выполнения сезонных работ условия",
 }
 
+# Служебные слоты не являются поисковыми терминами: они описывают
+# "общий" запрос и не должны попадать в hybrid-query (ни в основной
+# план, ни в followup), иначе разбавляют реальные слоты.
+_SERVICE_SLOTS: frozenset[str] = frozenset({"general"})
+
 # Арендные слоты: позволяют определить тип документа без отраслевых догадок.
 _RENTAL_SLOTS: frozenset[str] = frozenset(
     {
@@ -130,6 +135,8 @@ def _detect_document_type(spec: QuerySpec) -> str:
 
 def _slot_expansion(slot: str, document_type: str) -> str:
     """Расширение слота без терминов из чужих типов документов."""
+    if slot in _SERVICE_SLOTS:
+        return ""
     if slot == "payment_deadline" and document_type == "supply":
         return _PAYMENT_DEADLINE_NEUTRAL
     return _SLOT_SEARCH_EXPANSIONS.get(slot, slot.replace("_", " "))
@@ -204,9 +211,11 @@ def _collect_query_parts(
     dense_q = spec.rewritten_queries_dense or (
         spec.rewritten_queries_bm25[:1] or [""]
     )
+    searchable_slots = [
+        slot for slot in spec.required_slots if slot not in _SERVICE_SLOTS
+    ][:3]
     slot_expansions = [
-        _slot_expansion(slot, document_type)
-        for slot in spec.required_slots[:3]
+        _slot_expansion(slot, document_type) for slot in searchable_slots
     ]
     decomposition = [
         (sq.text or "").strip()
@@ -234,7 +243,7 @@ def _collect_query_parts(
             slot_key = sq.aspect or (
                 spec.required_slots[0] if spec.required_slots else ""
             )
-            if slot_key:
+            if slot_key and slot_key not in _SERVICE_SLOTS:
                 compare_parts.append(_slot_expansion(slot_key, document_type))
             if sq.target_doc_raw:
                 compare_parts.append(sq.target_doc_raw)
@@ -527,8 +536,14 @@ def followup(
     target_slots = list(
         (missing_slots or spec.required_slots or ["general"])[:3]
     )
+    # В поисковую часть идут только реальные слоты: служебный ``general``
+    # остаётся в purpose/slots_used для совместимости, но не становится
+    # поисковым термином.
+    expansion_slots = [
+        slot for slot in target_slots if slot not in _SERVICE_SLOTS
+    ]
     slot_expansions = [
-        _slot_expansion(slot, document_type) for slot in target_slots
+        _slot_expansion(slot, document_type) for slot in expansion_slots
     ]
     combined_query = _merge_query_parts(
         [base_query, entity_context, *slot_expansions],

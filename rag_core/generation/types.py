@@ -238,6 +238,11 @@ class EvidenceAssessment:
     sufficiency: Sufficiency
     degraded_intents: list[str]
     reason: str
+    # Явные счётчики выдачи retrieval/пригодных чанков. ``None`` означает
+    # "legacy/неизвестно": оркестратор НЕ должен трактовать его как ноль
+    # пригодных чанков. Реальный ``evidence.assess`` всегда выставляет int.
+    viable_chunks_count: int | None = None
+    retrieved_chunks_count: int | None = None
 
 
 @dataclass

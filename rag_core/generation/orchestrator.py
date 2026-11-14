@@ -629,6 +629,49 @@ def _safe_no_context_refusal(
     )
 
 
+def _refuse_no_viable_chunks(
+    query: str,
+    intent_val: str,
+    trace: list[TraceStep],
+    spec: QuerySpec | None,
+    missing_info: list[str] | None,
+    degradation_reasons: list[str],
+    used_history: bool,
+    retrieved_chunks_count: int,
+    retrieval_attempt: int,
+) -> AgentResult:
+    """Ранний штатный отказ при нуле пригодных чанков.
+
+    Retrieval завершился успешно (не технический сбой) и вернул чанки, но
+    ни один не прошёл существующий порог релевантности/substantive body.
+    Никаких LLM-вызовов: используется существующий контракт
+    ``refusal.build_no_context_refusal_result``; дополнительно в шаг
+    ``refusal`` пишется диагностика, отличающая это состояние от пустого
+    retrieval.
+    """
+    result = _safe_no_context_refusal(
+        query=query,
+        intent_val=intent_val,
+        trace=trace,
+        refusal_reason="no_relevant_documents",
+        spec=spec,
+        missing_info=missing_info,
+        degradation_reasons=degradation_reasons,
+        used_history=used_history,
+    )
+    if result.trace and result.trace[-1].step == config.STEP_REFUSAL:
+        result.trace[-1].output.update(
+            {
+                "refusal_kind": "no_relevant_documents",
+                "retrieval_returned_chunks": retrieved_chunks_count,
+                "viable_chunks_count": 0,
+                "sufficiency": "insufficient",
+                "retrieval_attempt": retrieval_attempt,
+            }
+        )
+    return result
+
+
 def run_agent(
     query: str,
     event_date: str | None = None,
@@ -960,15 +1003,27 @@ def run_agent(
             # Состояние A (поиск завершился, покрытие слотов неполное) —
             # followup допустим. Состояние B (техническая ошибка поиска) —
             # followup запрещён: он лишь повторит падающий retrieval и выдаст
-            # инфраструктурный сбой за нехватку доказательств.
-            followup_allowed = not technical_retrieval_failure
+            # инфраструктурный сбой за нехватку доказательств. Состояние C
+            # (выдача есть, но ни один чанк не пригоден) — followup тоже
+            # бессмысленен: расширять нечего, документов по теме нет.
+            viable_count = getattr(assessment, "viable_chunks_count", None)
+            has_no_viable = viable_count == 0
+            followup_allowed = not technical_retrieval_failure and not has_no_viable
             if not followup_allowed:
-                logger.warning(
-                    "Followup suppressed after technical retrieval failure "
-                    "(attempt=%d, chunks=%d)",
-                    retrieval_attempt,
-                    len(accumulated_chunks),
-                )
+                if technical_retrieval_failure:
+                    logger.warning(
+                        "Followup suppressed after technical retrieval failure "
+                        "(attempt=%d, chunks=%d)",
+                        retrieval_attempt,
+                        len(accumulated_chunks),
+                    )
+                else:
+                    logger.info(
+                        "Followup skipped: no viable chunks "
+                        "(attempt=%d, chunks=%d)",
+                        retrieval_attempt,
+                        len(accumulated_chunks),
+                    )
 
             if (
                 (
@@ -1051,7 +1106,38 @@ def run_agent(
                 used_history=used_history,
             )
 
-        if assessment is not None and assessment.sufficiency == Sufficiency.INSUFFICIENT:
+        # Выдача есть, но ни один чанк не прошёл существующий порог
+        # релевантности — штатный отказ без followup/generate/verify.
+        if (
+            assessment is not None
+            and accumulated_chunks
+            and getattr(assessment, "viable_chunks_count", None) == 0
+            and not technical_retrieval_failure
+        ):
+            retrieved_count = getattr(
+                assessment, "retrieved_chunks_count", None
+            )
+            if retrieved_count is None:
+                retrieved_count = len(accumulated_chunks)
+            return _refuse_no_viable_chunks(
+                query=query,
+                intent_val=spec.intent,
+                trace=trace,
+                spec=spec,
+                missing_info=assessment.missing_slots,
+                degradation_reasons=degradation_reasons,
+                used_history=used_history,
+                retrieved_chunks_count=int(retrieved_count),
+                retrieval_attempt=retrieval_attempt,
+            )
+
+        # ``None`` (legacy/моки) и ``> 0`` сохраняют прежнее поведение;
+        # реальный ``0`` до этой строки не доходит (ранний отказ выше).
+        if (
+            assessment is not None
+            and assessment.sufficiency == Sufficiency.INSUFFICIENT
+            and getattr(assessment, "viable_chunks_count", None) != 0
+        ):
             assessment.sufficiency = Sufficiency.PARTIAL
             assessment.core_slot_covered = True
 
