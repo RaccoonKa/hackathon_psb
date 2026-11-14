@@ -10,14 +10,17 @@ from pathlib import Path
 from unittest import SkipTest
 from unittest.mock import patch
 
+from rag_core import config
 from rag_core.generation.analysis.entity_resolver import (
     extract_doc_routing_sets,
     resolve_single_entity,
 )
+from rag_core.generation.planning.planner import plan
 from rag_core.generation.retrieval import bridge as bridge_mod
 from rag_core.generation.retrieval import evidence as evidence_mod
 from rag_core.generation.types import (
     Ambiguity,
+    DocRef,
     QuerySpec,
     RetrievalTask,
     Sufficiency,
@@ -501,6 +504,50 @@ def test_evidence_assessment_covers_both_rent_slots_on_real_chunks():
     assert step.output["slot_match_counts"]["rent_amount"] >= 1
     assert step.output["slot_match_counts"]["payment_deadline"] >= 1
     assert step.output["checked_chunks_count"] == 2
+
+
+def test_plan_single_hybrid_task_preserves_routing_and_event_date():
+    spec = make_query_spec(
+        intent="mixed",
+        event_date="2025-01-01",
+        entities_raw=["ООО «Северный Склад»"],
+        entities_resolved=[
+            DocRef(
+                raw="ООО «Северный Склад»",
+                document_id=CONTRACT_DOC_ID,
+                candidates=[CONTRACT_DOC_ID],
+                resolved=True,
+            )
+        ],
+        required_slots=["rent_amount", "payment_deadline"],
+        rewritten_queries_bm25=["арендная плата срок внесения"],
+        rewritten_queries_dense=["какая арендная плата и срок оплаты"],
+    )
+
+    tasks, _ = plan(spec)
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.mode == "hybrid"
+    assert task.intent == "mixed_query"
+    assert task.selected_doc_ids == {CONTRACT_DOC_ID}
+    assert task.event_date == "2025-01-01"
+    assert task.top_k == int(config.RAG_TOP_K)
+
+    with patch.object(
+        bridge_mod,
+        "prewarm_retrieval_backends",
+        return_value={"errors": []},
+    ), patch.object(
+        bridge_mod, "hybrid_search", return_value=[]
+    ) as mock_search:
+        bridge_mod.retrieve_tasks(tasks)
+
+    kwargs = mock_search.call_args.kwargs
+    assert kwargs["selected_doc_ids"] == {CONTRACT_DOC_ID}
+    assert kwargs["event_date"] == "2025-01-01"
+    assert kwargs["intent"] == "mixed_query"
+    assert kwargs["rerank"] is False
+    assert kwargs["top_k"] == int(config.RAG_TOP_K)
 
 
 def test_query_spec_helper_is_constructible():

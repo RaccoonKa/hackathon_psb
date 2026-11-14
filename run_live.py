@@ -415,6 +415,10 @@ QUERY_HORROR = [
 ]
 QUERY = QUERY_HORROR if FULL_TEST_QUERRY else QUERY
 
+QUERY = [
+    "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
+]
+
 
 def main():
     print("=== Интерактивный тест RAG-ассистента (End-to-End) ===")

@@ -25,6 +25,7 @@ MODULES = [
     "tests.test_hybrid",
     "tests.test_hybrid_deep",
     "tests.test_h2_hybrid_routing",
+    "tests.test_single_hybrid_pipeline",
     "tests.test_reranker",
     "tests.test_intent",
     "tests.test_context_builder",
