@@ -18,10 +18,10 @@ import threading
 import time
 from unittest.mock import patch
 
-from src.generation.errors import RetrievalBusyError, RetrievalTimeoutError
-from src.generation.retrieval import bridge as bridge_mod
-from src.generation.types import RetrievalTask
-from src.retrieval import vector_store as vs_mod
+from rag_core.generation.errors import RetrievalBusyError, RetrievalTimeoutError
+from rag_core.generation.retrieval import bridge as bridge_mod
+from rag_core.generation.types import RetrievalTask
+from rag_core.retrieval import vector_store as vs_mod
 from tests._common import make_chunk_dict, make_retrieved_chunk
 
 

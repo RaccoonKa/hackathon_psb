@@ -1,38 +1,38 @@
 {
-  "index_build_id": "index_2026_11_13_115917",
+  "index_build_id": "index_2026_11_13_194526",
   "embedding_model": "BAAI/bge-m3",
-  "reranker_model": "Qwen/Qwen3-Reranker-8B",
+  "reranker_model": "qwen3-reranker-8b",
   "chunker_version": "structural-1.0",
-  "indexed_at": "2026-11-13T11:59:17Z",
-  "total_chunks": 453,
+  "indexed_at": "2026-11-13T19:45:26Z",
+  "total_chunks": 357,
   "documents": [
     {
       "document_id": "doc_proverka",
       "version_id": "doc_proverka_v1",
       "source_hash": "sha256:2461d5c0fcf1dc59b49c6c55f6199099cc94c8e689880d32a7e097dadeeb2d4c",
       "amends_document_id": null,
-      "chunks_count": 20
+      "chunks_count": 12
     },
     {
       "document_id": "contract_а-08-2024",
       "version_id": "contract_а-08-2024_v1",
       "source_hash": "sha256:ea312cfd0c2727eb321a8a764512ec977725e93e08131048fb77af6bd9700b29",
       "amends_document_id": null,
-      "chunks_count": 25
+      "chunks_count": 19
     },
     {
       "document_id": "contract_п-17-2024",
       "version_id": "contract_п-17-2024_v1",
       "source_hash": "sha256:b5df5ca3e2b746cbbaa1757e77697f28ad87d015c66d44fade45a10aae754e25",
       "amends_document_id": null,
-      "chunks_count": 34
+      "chunks_count": 25
     },
     {
       "document_id": "contract_пт-05-2023",
       "version_id": "contract_пт-05-2023_v1",
       "source_hash": "sha256:8c2171e4c1bfe5a915a5d3cd7fdfb64ead0866858bf7914f8b84c67be618530d",
       "amends_document_id": null,
-      "chunks_count": 25
+      "chunks_count": 17
     },
     {
       "document_id": "amend_1_п-17-2024",
@@ -60,7 +60,7 @@
       "version_id": "doc_регламент-согласования-договоров-ред-2025_v1",
       "source_hash": "sha256:6b899e69657be2b5357d37619cbe31e151bf8ab02f838603a4d55b4257f00e44",
       "amends_document_id": null,
-      "chunks_count": 22
+      "chunks_count": 17
     },
     {
       "document_id": "doc_служебная-записка-об-архиве-договоров",
@@ -74,14 +74,14 @@
       "version_id": "doc_152фз_ст9_действующая_v1",
       "source_hash": "sha256:26fc061b84c6f730cfbcc2c2a6a143ba391c5e0988befa694ec8afa2c36d71ec",
       "amends_document_id": null,
-      "chunks_count": 20
+      "chunks_count": 11
     },
     {
       "document_id": "doc_коап_ст13-11_действующая",
       "version_id": "doc_коап_ст13-11_действующая_v1",
       "source_hash": "sha256:d982e1ebdc409e93fe4434ada02e7a0801971eacb9dfaad511186004628e097f",
       "amends_document_id": null,
-      "chunks_count": 29
+      "chunks_count": 28
     },
     {
       "document_id": "doc_мрот_ст1_действующая",
@@ -95,14 +95,14 @@
       "version_id": "doc_нк_ст112_действующая_v1",
       "source_hash": "sha256:9f6e55f1968576d70d195cabffbdd1bca1f9747a29f9af665fa29025e43b3d9a",
       "amends_document_id": null,
-      "chunks_count": 10
+      "chunks_count": 5
     },
     {
       "document_id": "doc_нк_ст114_действующая",
       "version_id": "doc_нк_ст114_действующая_v1",
       "source_hash": "sha256:ef0c299cf34b6a7e2ab91c08f46e6bfb0d157557d7bd9161d7a40f5e13b42941",
       "amends_document_id": null,
-      "chunks_count": 9
+      "chunks_count": 8
     },
     {
       "document_id": "doc_нк_ст145_действующая",
@@ -116,7 +116,7 @@
       "version_id": "doc_нк_ст164_действующая_v1",
       "source_hash": "sha256:90f7d1f6c472be5e5a89fc1fe9bcdc3a1b57171c475c772150bb463333bb7066",
       "amends_document_id": null,
-      "chunks_count": 98
+      "chunks_count": 67
     },
     {
       "document_id": "doc_нк_ст224_действующая",
@@ -130,7 +130,7 @@
       "version_id": "doc_нк_ст284_действующая_v1",
       "source_hash": "sha256:f4805aaa721b5256be3ba2d5a19a4a650623f11598863ff98ee98d313e6558e3",
       "amends_document_id": null,
-      "chunks_count": 100
+      "chunks_count": 92
     },
     {
       "document_id": "doc_тк_ст152_действующая",
@@ -158,7 +158,7 @@
       "version_id": "doc_тк_ст99_действующая_v1",
       "source_hash": "sha256:428df66e32e77301db52f526ae76b47b11ad239b0562b787cf2235c984e07d8b",
       "amends_document_id": null,
-      "chunks_count": 11
+      "chunks_count": 6
     }
   ]
 }

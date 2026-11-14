@@ -42,8 +42,8 @@ CHROMA_DIR = ROOT / "storage" / "chroma_db"
 CHUNKS_FILE = ROOT / "data" / "processed" / "chunks.jsonl"
 
 CONTRACT_DOC_ID = "contract_а-08-2024"
-RENT_CHUNK_ID = "contract_а-08-2024_v1_0009_65851a01"
-DEADLINE_CHUNK_ID = "contract_а-08-2024_v1_0010_3b16c866"
+RENT_CHUNK_ID = "contract_а-08-2024_v1_0006_f0f28c05"
+DEADLINE_CHUNK_ID = "contract_а-08-2024_v1_0007_e4e9b757"
 CONTROL_QUESTION = (
     "Какая арендная плата по договору с ООО «Северный Склад» "
     "и до какого числа её нужно вносить?"

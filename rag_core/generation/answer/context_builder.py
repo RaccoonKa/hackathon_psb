@@ -149,11 +149,6 @@ def build_context_and_sources(
 
 _SOURCE_TAG_RE = re.compile(r"<source>(.*?)</source>", re.DOTALL)
 
-_SKIP_STRUCTURE_ITEMS = {
-    "введение / общие положения",
-    "введение",
-}
-
 
 def _parse_source_ids(raw_ids: str) -> list[str]:
     return [sid.strip() for sid in (raw_ids or "").split(",") if sid.strip()]
@@ -189,8 +184,6 @@ def format_source_label(metadata: dict | None) -> str:
     for item in structure_path:
         text = str(item or "").strip()
         if not text:
-            continue
-        if text.lower() in _SKIP_STRUCTURE_ITEMS:      # «Введение / Общие положения»
             continue
         if _is_covered_by_title(text, title_lower):    # уже есть в заголовке
             continue
