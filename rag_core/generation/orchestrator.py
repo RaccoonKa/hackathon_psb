@@ -722,6 +722,20 @@ def run_agent(
             last_error = str(exc)
             return _trigger_bailout()
 
+        if (spec.intent or "").strip().lower() == Intent.OUT_OF_SCOPE.value or (
+            not spec.rewritten_queries_bm25 and not spec.rewritten_queries_dense
+        ):
+            off_topic_res = refusal.build_template_intent_result(
+                query=query,
+                intent=Intent.OUT_OF_SCOPE,
+                prior_trace=trace,
+                template_key="RESPONSE_OUT_OF_SCOPE",
+                reason="out_of_scope",
+            )
+            off_topic_res.query_spec = spec
+            off_topic_res.used_history = used_history
+            return off_topic_res
+
         if _budget_or_deadline_exceeded():
             return _trigger_bailout()
 
