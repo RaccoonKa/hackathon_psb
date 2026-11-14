@@ -1,12 +1,16 @@
 PROVISION_LINE_PREFIX: str = "Пункт/Статья:"
 EFFECTIVE_LINE_PREFIX: str = "Редакция:"
 AMENDS_LINE_PREFIX: str = "Изменяет документ:"
+SOURCE_ROLE_LINE_PREFIX: str = "Назначение источника:"
+VERSION_STATUS_LINE_PREFIX: str = "Статус редакции:"
 
 CONTEXT_ITEM_TEMPLATE: str = (
     "[{source_id}] {document_title}\n"
     "Раздел: {structure_path_str}\n"
     "Пункт/Статья: {provision_id}\n"
     "Редакция: {effective_str}\n"
+    "Назначение источника: {source_role}\n"
+    "Статус редакции: {version_status}\n"
     "Изменяет документ: {amends_document_id}\n"
     "Текст:\n"
     "{text}"

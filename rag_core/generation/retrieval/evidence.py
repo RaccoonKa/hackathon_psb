@@ -1,3 +1,4 @@
+from datetime import date
 from functools import lru_cache
 import json
 import logging
@@ -7,6 +8,7 @@ import statistics
 import time
 from typing import Any, Callable, Optional
 from rag_core import config
+from rag_core.generation.analysis.source_kind import SOURCE_KIND_UNKNOWN
 from rag_core.generation.errors import LLMError, LLMFormatError
 from rag_core.generation.llm.client import llm_complete_with_usage
 from rag_core.generation.prompts import evidence as ev_prompts
@@ -295,6 +297,126 @@ def _resolve_contradictions_with_llm(
         return contradictions, 0, 0
 
 
+def _parse_iso_date(value: Any) -> date | None:
+    """Безопасно разбирает ISO-дату, не выбрасывая исключений."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    candidates = [text]
+    if len(text) > 10:
+        candidates.append(text[:10])
+    for candidate in candidates:
+        try:
+            return date.fromisoformat(candidate)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _chunk_source_kind(chunk: RetrievedChunk) -> str | None:
+    """Возвращает каноническое назначение источника чанка или ``None``."""
+    value = _field(chunk, "source_kind")
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
+def _warning_dedup_key(warning: dict[str, Any]) -> str:
+    """Стабильный ключ дедупликации предупреждений."""
+    try:
+        return json.dumps(warning, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(sorted((str(k), str(v)) for k, v in warning.items()))
+
+
+def _collect_version_warnings(
+    spec: QuerySpec,
+    chunks: list[RetrievedChunk],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Собирает предупреждения о неопределённости и недостающих типах источника.
+
+    Новые предупреждения НЕ добавляются в ``version_issues``: этот список
+    влияет на ``sufficiency``/``degraded_intents``, а пересчёт confidence
+    в рамках P1 запрещён.
+    """
+    warnings: list[dict[str, Any]] = []
+
+    for chunk in chunks:
+        version_status = _field(chunk, "version_status")
+        status = str(version_status).strip().lower() if version_status else ""
+        validity_uncertain = bool(_field(chunk, "validity_uncertain", False))
+        document_id = _field(chunk, "document_id")
+        chunk_id = _field(chunk, "chunk_id")
+
+        if status == "current_only":
+            warnings.append(
+                {
+                    "kind": "only_current_revision_available",
+                    "document_id": document_id,
+                    "chunk_id": chunk_id,
+                }
+            )
+            continue
+        if status == "unknown" or validity_uncertain:
+            warnings.append(
+                {
+                    "kind": "validity_unknown",
+                    "document_id": document_id,
+                    "chunk_id": chunk_id,
+                    "source_kind": _chunk_source_kind(chunk),
+                }
+            )
+
+    date_precision = getattr(spec, "date_precision", None)
+    if date_precision in {"year", "month"}:
+        warnings.append(
+            {"kind": "approximate_event_date", "precision": date_precision}
+        )
+
+    event_date = getattr(spec, "event_date", None)
+    if event_date and _parse_iso_date(event_date) is None:
+        warnings.append(
+            {"kind": "invalid_event_date", "event_date": event_date}
+        )
+
+    present_kinds = {
+        kind
+        for kind in (_chunk_source_kind(chunk) for chunk in chunks)
+        if kind
+    }
+    missing_source_kinds: list[str] = []
+    seen_required: set[str] = set()
+    for kind in list(getattr(spec, "required_source_kinds", None) or []):
+        normalized = str(kind).strip().lower()
+        if not normalized or normalized in seen_required:
+            continue
+        seen_required.add(normalized)
+        if normalized not in present_kinds:
+            missing_source_kinds.append(normalized)
+
+    if missing_source_kinds:
+        warnings.append(
+            {
+                "kind": "missing_source_kind",
+                "source_kinds": list(missing_source_kinds),
+            }
+        )
+
+    deduped: list[dict[str, Any]] = []
+    seen_warnings: set[str] = set()
+    for warning in warnings:
+        key = _warning_dedup_key(warning)
+        if key in seen_warnings:
+            continue
+        seen_warnings.add(key)
+        deduped.append(warning)
+
+    return deduped, missing_source_kinds
+
+
 def assess(
     spec: QuerySpec,
     chunks: list[RetrievedChunk],
@@ -445,11 +567,28 @@ def assess(
         sufficiency = Sufficiency.SUFFICIENT
         reason = "all_required_slots_covered"
 
+    generation_warnings, missing_source_kinds = _collect_version_warnings(
+        spec, chunks
+    )
+
+    source_kind_counts: dict[str, int] = {}
+    version_uncertainty_count = 0
+    for c in chunks:
+        kind = _chunk_source_kind(c) or SOURCE_KIND_UNKNOWN
+        source_kind_counts[kind] = source_kind_counts.get(kind, 0) + 1
+        status = str(_field(c, "version_status") or "").strip().lower()
+        if status in {"unknown", "current_only"} or bool(
+            _field(c, "validity_uncertain", False)
+        ):
+            version_uncertainty_count += 1
+
     bundle = EvidenceBundle(
         chunks=chunks,
         slot_map=slot_map,
         contradictions=contradictions,
         version_issues=version_issues,
+        missing_source_kinds=missing_source_kinds,
+        generation_warnings=generation_warnings,
     )
     assessment = EvidenceAssessment(
         covered_slots=covered_slots,
@@ -488,6 +627,9 @@ def assess(
             "retrieval_fallback": retrieval_fallback,
             "contradictions_count": 0 if not contradictions else len(contradictions),
             "version_issues_count": len(version_issues),
+            "source_kind_counts": source_kind_counts,
+            "missing_source_kinds_count": len(missing_source_kinds),
+            "version_uncertainty_count": version_uncertainty_count,
         },
         latency_ms=latency_ms,
         model=config.LLM_MODEL if prompt_tokens is not None else None,

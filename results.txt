@@ -1,27 +1,651 @@
 RAG ASSISTANT TEST RESULTS
 
-Всего запросов: 1
+Всего запросов: 3
 
 ######################################################################
 
 
 ======================================================================
-ЗАПРОС 1/1
+ЗАПРОС 1/3
+======================================================================
+ВОПРОС: Какой размер пособия по беременности и родам?
+
+ОТВЕТ:
+Не удалось корректно обработать запрос в установленное время. Пожалуйста, переформулируйте вопрос более конкретно, указав название или номер договора/нормативного акта и интересующее условие.
+
+ИСТОЧНИКИ:
+  (нет источников)
+
+ИНТЕНТ: semantic
+ОТКАЗ: True | Причина: cannot_parse
+УВЕРЕННОСТЬ: low
+ДЕГРАДАЦИИ: ['deadline_exceeded']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.745,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "lookup",
+      "required_slots": [
+        "general"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 0,
+      "rewritten_bm25": [
+        "размер пособия по беременности и родам",
+        "пособие по беременности и родам размер средний заработок порядок расчета"
+      ],
+      "rewritten_dense": [
+        "В каком размере выплачивается пособие по беременности и родам и как определяется его сумма?",
+        "Правила расчета пособия по беременности и родам: средний дневной заработок, предельная база, продолжительность отпуска, минимальный и максимальный размер."
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [],
+      "entities_raw": []
+    },
+    "latency_ms": 12098.059,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1568,
+    "completion_tokens": 604,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "general"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "В каком размере выплачивается пособие по беременности и родам и как определяется его сумма? Правила расчета пособия по беременности и родам: средний дневной заработок, предельная база, продолжительность отпуска, минимальный и максимальный размер. размер пособия по беременности и родам пособие по беременности и родам размер средний заработок порядок расчета general",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative",
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "В каком размере выплачивается пособие по беременности и родам и как определяется его сумма?",
+          "Правила расчета пособия по беременности и родам: средний дневной заработок, предельная база, продолжительность отпуска, минимальный и максимальный размер."
+        ],
+        "bm25_rewrites": [
+          "размер пособия по беременности и родам",
+          "пособие по беременности и родам размер средний заработок порядок расчета"
+        ],
+        "slot_expansions": [
+          "general"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 366,
+      "required_source_kinds": [
+        "normative",
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "unknown"
+    },
+    "latency_ms": 0.241,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "В каком размере выплачивается пособие по беременности и родам и как определяется его сумма? Правила расчета пособия по беременности и родам: средний дневной заработок, предельная база, продолжительность отпуска, минимальный и максимальный размер. размер пособия по беременности и родам пособие по беременности и родам размер средний заработок порядок расчета general"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_пт-05-2023_v1_0009_2c4881f5",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "doc_тк_ст152_действующая_v1_0002_074d41c0",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "contract_пт-05-2023_v1_0003_a050be22",
+        "doc_тк_ст70_действующая_v1_0001_95de68f7",
+        "doc_тк_ст152_действующая_v1_0001_237f0690",
+        "doc_тк_ст99_действующая_v1_0004_0c70769c",
+        "doc_тк_ст59_действующая_v1_0002_3f07934f"
+      ],
+      "scores": [
+        0.016393,
+        0.016237,
+        0.015699,
+        0.015344,
+        0.015063,
+        0.014982,
+        0.01484,
+        0.014623,
+        0.014428,
+        0.013826
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 16842
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "В каком размере выплачивается пособие по беременности и родам и как определяется его сумма? Правила расчета пособия по беременности и родам: средний дневной заработок, предельная база, продолжительно…",
+          "status": "ok",
+          "duration_ms": 16842,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 62,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 370,
+            "candidates_after_date_filter": 94,
+            "candidates_after_document_filter": 94,
+            "final_chunks_count": 20,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 16842.274,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 16842
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8460
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_пт-05-2023_v1_0009_2c4881f5",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "doc_тк_ст152_действующая_v1_0002_074d41c0",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "contract_пт-05-2023_v1_0003_a050be22",
+        "doc_тк_ст70_действующая_v1_0001_95de68f7",
+        "doc_тк_ст152_действующая_v1_0001_237f0690",
+        "doc_тк_ст99_действующая_v1_0004_0c70769c",
+        "doc_тк_ст59_действующая_v1_0002_3f07934f"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "doc_тк_ст152_действующая_v1_0002_074d41c0",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "doc_тк_ст152_действующая_v1_0001_237f0690"
+      ],
+      "scores": [
+        0.00016513734590262175,
+        8.539398550055921e-05,
+        7.948467828100547e-05,
+        5.501204213942401e-05,
+        5.15833125973586e-05
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 44842.299,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 0,
+      "required_slots": [
+        "general"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "insufficient",
+      "reason": "core_slot_not_covered",
+      "required_slots": [
+        "general"
+      ],
+      "covered_slots": [],
+      "uncovered_slots": [
+        "general"
+      ],
+      "missing_slots": [
+        "general"
+      ],
+      "core_slot_covered": false,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 0,
+      "slot_match_counts": {
+        "general": 0
+      },
+      "retrieval_fallback": true,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "normative": 4,
+        "specific": 1
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 0.302,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_followup_retrieval",
+    "input": {
+      "missing_slots": [
+        "general"
+      ],
+      "existing_queries_count": 1
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "followup_task_0",
+          "query": "размер пособия по беременности и родам general",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:general",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative",
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "slot_expansions": [
+          "general"
+        ]
+      },
+      "combined_query_chars": 46,
+      "slots_used": [
+        "general"
+      ],
+      "required_source_kinds": [
+        "normative",
+        "specific"
+      ],
+      "document_type": "unknown",
+      "skipped_duplicate_slots": [],
+      "limits": {
+        "top_k": 10,
+        "max_slots": 3
+      },
+      "followup_cycle": 1
+    },
+    "latency_ms": 0.727,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "размер пособия по беременности и родам general"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 2
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "contract_пт-05-2023_v1_0009_2c4881f5",
+        "contract_а-08-2024_v1_0009_65851a01",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "contract_п-17-2024_v1_0024_d1e9f7a7",
+        "amend_1_п-17-2024_v1_0000_57fd0d01",
+        "contract_а-08-2024_v1_0018_39aa1186",
+        "contract_п-17-2024_v1_0003_2f65da79",
+        "contract_а-08-2024_v1_0001_7d4a3d55",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0008_bc08cdb8"
+      ],
+      "scores": [
+        0.016393,
+        0.016208,
+        0.015776,
+        0.015531,
+        0.015181,
+        0.013657,
+        0.0126,
+        0.0125,
+        0.012481,
+        0.01218,
+        0.01129
+      ],
+      "count": 11,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 15814
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:general",
+          "query": "размер пособия по беременности и родам general",
+          "status": "ok",
+          "duration_ms": 15814,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 62,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 317,
+            "candidates_after_date_filter": 77,
+            "candidates_after_document_filter": 77,
+            "final_chunks_count": 20,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 15814.144,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 15814
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8460
+      },
+      "attempt": 2,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "contract_пт-05-2023_v1_0009_2c4881f5",
+        "contract_а-08-2024_v1_0009_65851a01",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "contract_п-17-2024_v1_0024_d1e9f7a7",
+        "amend_1_п-17-2024_v1_0000_57fd0d01",
+        "contract_а-08-2024_v1_0018_39aa1186",
+        "contract_п-17-2024_v1_0003_2f65da79",
+        "contract_а-08-2024_v1_0001_7d4a3d55",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0008_bc08cdb8"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_мрот_ст1_действующая_v1_0001_5e8ad74a",
+        "contract_п-17-2024_v1_0019_0852f7d4",
+        "doc_тк_ст99_действующая_v1_0003_2153988f",
+        "contract_пт-05-2023_v1_0009_2c4881f5",
+        "contract_а-08-2024_v1_0009_65851a01"
+      ],
+      "scores": [
+        0.00016528574633412063,
+        8.52440862217918e-05,
+        5.5205866374308243e-05,
+        3.8584606954827905e-05,
+        3.0245073503465392e-05
+      ],
+      "count": 5,
+      "before_count": 11,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 32119.869,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "refusal",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "reason": "cannot_parse"
+    },
+    "output": {
+      "refused": true,
+      "answer_length": 191
+    },
+    "latency_ms": 0.001,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": null,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": "cannot_parse"
+  }
+]
+
+
+======================================================================
+ЗАПРОС 2/3
 ======================================================================
 ВОПРОС: Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?
 
 ОТВЕТ:
-Предпосылка о договоре на 12 млн рублей, заключённом в августе 2024 года, не подтверждается документами: найден договор поставки No П-17/2024 от 12 февраля 2024 г. с ориентировочной общей ценой 8 400 000 рублей <source>S2</source><source>S4</source>. По регламенту договоры на сумму свыше 10 000 000 рублей подлежат одобрению генеральным директором до подписания <source>S1</source>, а договоры на сумму свыше 1 000 000 рублей дополнительно согласуются с финансовым директором <source>S1</source>; для фактически заключённого договора на 8 400 000 рублей одобрение генерального директора по п. 2.4 не требовалось.
+Да. На дату события действовала редакция Регламента согласования договоров ООО «Меридиан» (действует с 2023-01-10 по 2025-03-01, применима на дату события) <source>S1</source>, согласно которой договоры на сумму свыше 10 000 000 рублей подлежат одобрению генеральным директором до подписания <source>S1</source>. Договор на 12 000 000 рублей превышает этот порог, следовательно, одобрение генерального директора до подписания требовалось.
 
 ИСТОЧНИКИ:
-  [S2] ДОГОВОР ПОСТАВКИ № П-17/2024 | Преамбула | score=0.7268772125244141 | chunk=contract_п-17-2024_v1_0000_e32d7419
-  [S4] ДОГОВОР ПОСТАВКИ № П-17/2024 | 2. Цена договора -> Пункт 2.2 | score=0.34907233715057373 | chunk=contract_п-17-2024_v1_0004_265f1249
-  [S1] РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). | Полный текст документа | score=0.9911078810691833 | chunk=doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667
+  [S1] РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). | Полный текст документа | score=0.9909337759017944 | chunk=doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667
 
 ИНТЕНТ: semantic
 ОТКАЗ: False | Причина: None
-УВЕРЕННОСТЬ: high
-ДОПУЩЕНИЯ: ['Речь идет о необходимости одобрения сделки генеральным директором по внутренним правилам компании или уставу.', 'интерпретация: договор на 8 400 000 рублей не подпадает под требование п. 2.4 (свыше 10 млн), поэтому одобрение генерального директора по этому пункту для него не требовалось.', 'интерпретация: для гипотетического договора на 12 млн рублей, заключённого в августе 2024 года (в период действия редакции регламента), одобрение генерального директора по п. 2.4 требовалось бы.']
+УВЕРЕННОСТЬ: low
+ДОПУЩЕНИЯ: ['Под «одобрением генерального директора» понимается внутренний порядок согласования (одобрения) сделок в организации', 'Сумма 12 млн рублей сопоставляется с порогом, требующим одобрения генерального директора', 'интерпретация: сумма договора 12 000 000 рублей превышает установленный п. 2.4 порог 10 000 000 рублей, поэтому договор подпадает под требование об одобрении генеральным директором.', 'интерпретация: август 2024 года входит в период действия редакции Регламента с 2023-01-10 по 2025-03-01.']
 ИСПОЛЬЗОВАНА ИСТОРИЯ: False
 
 ПОЛНЫЙ ТРЕЙС:
@@ -36,7 +660,7 @@ RAG ASSISTANT TEST RESULTS
       "template_key": null,
       "reason": null
     },
-    "latency_ms": 0.141,
+    "latency_ms": 0.526,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -55,29 +679,29 @@ RAG ASSISTANT TEST RESULTS
     },
     "output": {
       "intent": "semantic",
-      "task_type": "explain",
+      "task_type": "premise_check",
       "required_slots": [
         "approval_process"
       ],
       "decomposition_count": 0,
       "premises_count": 2,
       "rewritten_bm25": [
-        "одобрение генерального директора договор 12 млн рублей август 2024 на",
-        "порядок одобрения сделки генеральным директором договор 12 млн рублей"
+        "одобрение генерального директора сделка договор 12 млн рублей август 2024 на",
+        "порядок одобрения генеральным директором крупной сделки порог суммы"
       ],
       "rewritten_dense": [
-        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года",
-        "Каков порядок одобрения генеральным директором сделки или договора на сумму 12 млн рублей и когда такое одобрение необходимо"
+        "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключённого в августе 2024 года, и какой порядок согласования крупных сделок установлен",
+        "Каков порядок одобрения сделок генеральным директором и при какой сумме договора (пороговое значение) необходимо такое одобрение"
       ],
       "event_date": "2024-08-01",
       "degradation_reason": null,
       "entities": [],
       "entities_raw": []
     },
-    "latency_ms": 10380.379,
+    "latency_ms": 8206.009,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 1626,
-    "completion_tokens": 1066,
+    "prompt_tokens": 1588,
+    "completion_tokens": 580,
     "extra": {},
     "stage_idx": 1,
     "failures_global": 0,
@@ -98,21 +722,24 @@ RAG ASSISTANT TEST RESULTS
       "tasks": [
         {
           "task_id": "task_0",
-          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года Каков порядок одобрения генеральным директором сделки или договора на сумму 12 млн рублей и когда такое одобрение необходимо одобрение генерального директора договор 12 млн рублей август 2024 на порядок одобрения сделки генеральным директором договор 12 млн рублей порядок согласования договора одобрение руководителем пороговая сумма",
+          "query": "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключённого в августе 2024 года, и какой порядок согласования крупных сделок установлен Каков порядок одобрения сделок генеральным директором и при какой сумме договора (пороговое значение) необходимо такое одобрение одобрение генерального директора сделка договор 12 млн рублей август 2024 на порядок одобрения генеральным директором крупной сделки порог суммы порядок согласования договора одобрение руководителем пороговая сумма",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "intent": "semantic_query"
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative"
+          ]
         }
       ],
       "hybrid_intent": "semantic_query",
       "query_parts": {
         "dense_rewrites": [
-          "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года",
-          "Каков порядок одобрения генеральным директором сделки или договора на сумму 12 млн рублей и когда такое одобрение необходимо"
+          "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключённого в августе 2024 года, и какой порядок согласования крупных сделок установлен",
+          "Каков порядок одобрения сделок генеральным директором и при какой сумме договора (пороговое значение) необходимо такое одобрение"
         ],
         "bm25_rewrites": [
-          "одобрение генерального директора договор 12 млн рублей август 2024 на",
-          "порядок одобрения сделки генеральным директором договор 12 млн рублей"
+          "одобрение генерального директора сделка договор 12 млн рублей август 2024 на",
+          "порядок одобрения генеральным директором крупной сделки порог суммы"
         ],
         "slot_expansions": [
           "порядок согласования договора одобрение руководителем пороговая сумма"
@@ -120,7 +747,10 @@ RAG ASSISTANT TEST RESULTS
         "decomposition": [],
         "amendment_markers": []
       },
-      "combined_query_chars": 449,
+      "combined_query_chars": 532,
+      "required_source_kinds": [
+        "normative"
+      ],
       "limits": {
         "top_k": 10,
         "max_slot_queries": 2,
@@ -129,7 +759,7 @@ RAG ASSISTANT TEST RESULTS
       },
       "document_type": "unknown"
     },
-    "latency_ms": 0.15,
+    "latency_ms": 0.27,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -144,7 +774,7 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "tasks_count": 1,
       "queries": [
-        "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года Каков порядок одобрения генеральным директором сделки или договора на сумму 12 млн рублей и когда такое одобрение необходимо одобрение генерального директора договор 12 млн рублей август 2024 на порядок одобрения сделки генеральным директором договор 12 млн рублей порядок согласования договора одобрение руководителем пороговая сумма"
+        "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключённого в августе 2024 года, и какой порядок согласования крупных сделок установлен Каков порядок одобрения сделок генеральным директором и при какой сумме договора (пороговое значение) необходимо такое одобрение одобрение генерального директора сделка договор 12 млн рублей август 2024 на порядок одобрения генеральным директором крупной сделки порог суммы порядок согласования договора одобрение руководителем пороговая сумма"
       ],
       "modes": [
         "hybrid"
@@ -157,27 +787,27 @@ RAG ASSISTANT TEST RESULTS
     "output": {
       "chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0000_e32d7419",
-        "contract_п-17-2024_v1_0004_265f1249",
-        "contract_пт-05-2023_v1_0000_54dc4895",
-        "contract_пт-05-2023_v1_0009_2c4881f5",
-        "contract_п-17-2024_v1_0020_731af8ef",
-        "contract_а-08-2024_v1_0016_66c908b6",
-        "contract_пт-05-2023_v1_0002_9d1e8cde",
-        "contract_п-17-2024_v1_0008_e52243af"
+        "doc_proverka_v1_0007_c251a248",
+        "doc_152фз_ст9_действующая_v1_0006_25fa652e",
+        "doc_нк_ст145_действующая_v1_0012_9ed7fdf3",
+        "doc_коап_ст13-11_действующая_v1_0019_d9baed4c",
+        "doc_коап_ст13-11_действующая_v1_0022_c3e5f127",
+        "doc_тк_ст99_действующая_v1_0005_371aee1d",
+        "doc_коап_ст13-11_действующая_v1_0016_a5662633",
+        "doc_нк_ст145_действующая_v1_0003_549cd17a",
+        "doc_коап_ст13-11_действующая_v1_0020_3dd40420"
       ],
       "scores": [
         0.016393,
-        0.015873,
-        0.015445,
-        0.015223,
-        0.013152,
-        0.01129,
-        0.010769,
-        0.010448,
-        0.010294,
-        0.010145
+        0.01486,
+        0.014642,
+        0.012642,
+        0.012627,
+        0.012447,
+        0.01233,
+        0.011769,
+        0.011762,
+        0.011316
       ],
       "count": 10,
       "degraded": false,
@@ -191,7 +821,7 @@ RAG ASSISTANT TEST RESULTS
         "timed_out": 0,
         "queue_timeout": 0,
         "threads_alive_after_grace": 0,
-        "batch_duration_ms": 8237
+        "batch_duration_ms": 8687
       },
       "status": "ok",
       "errors": [],
@@ -200,19 +830,19 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_0",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "Требовалось ли одобрение генерального директора для заключения договора на сумму 12 млн рублей в августе 2024 года Каков порядок одобрения генеральным директором сделки или договора на сумму 12 млн р…",
+          "query": "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключённого в августе 2024 года, и какой порядок согласования крупных сделок установлен Каков поря…",
           "status": "ok",
-          "duration_ms": 8236,
+          "duration_ms": 8687,
           "error_type": null,
           "error_message": null,
           "search": {
             "selected_doc_ids": null,
-            "allowed_chunk_ids_count": 248,
+            "allowed_chunk_ids_count": 186,
             "bm25_candidates_count": 20,
             "dense_candidates_count": 40,
             "candidates_before_filters": 384,
-            "candidates_after_date_filter": 281,
-            "candidates_after_document_filter": 281,
+            "candidates_after_date_filter": 219,
+            "candidates_after_document_filter": 219,
             "final_chunks_count": 10,
             "validity_unknown_count": 0
           },
@@ -227,7 +857,7 @@ RAG ASSISTANT TEST RESULTS
         }
       ]
     },
-    "latency_ms": 8236.906,
+    "latency_ms": 8686.977,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -242,7 +872,7 @@ RAG ASSISTANT TEST RESULTS
         "timed_out": 0,
         "queue_timeout": 0,
         "threads_alive_after_grace": 0,
-        "batch_duration_ms": 8237
+        "batch_duration_ms": 8687
       },
       "errors_count": 0,
       "degraded": false,
@@ -257,7 +887,7 @@ RAG ASSISTANT TEST RESULTS
         "local_model": "ok",
         "collection": "ok",
         "warmup": "ok",
-        "warmup_ms": 8756
+        "warmup_ms": 8460
       },
       "attempt": 1,
       "status": "ok"
@@ -274,39 +904,40 @@ RAG ASSISTANT TEST RESULTS
       "top_n": 5,
       "input_chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0000_e32d7419",
-        "contract_п-17-2024_v1_0004_265f1249",
-        "contract_пт-05-2023_v1_0000_54dc4895",
-        "contract_пт-05-2023_v1_0009_2c4881f5",
-        "contract_п-17-2024_v1_0020_731af8ef",
-        "contract_а-08-2024_v1_0016_66c908b6",
-        "contract_пт-05-2023_v1_0002_9d1e8cde",
-        "contract_п-17-2024_v1_0008_e52243af"
+        "doc_proverka_v1_0007_c251a248",
+        "doc_152фз_ст9_действующая_v1_0006_25fa652e",
+        "doc_нк_ст145_действующая_v1_0012_9ed7fdf3",
+        "doc_коап_ст13-11_действующая_v1_0019_d9baed4c",
+        "doc_коап_ст13-11_действующая_v1_0022_c3e5f127",
+        "doc_тк_ст99_действующая_v1_0005_371aee1d",
+        "doc_коап_ст13-11_действующая_v1_0016_a5662633",
+        "doc_нк_ст145_действующая_v1_0003_549cd17a",
+        "doc_коап_ст13-11_действующая_v1_0020_3dd40420"
       ],
       "mode": "real"
     },
     "output": {
       "chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "contract_п-17-2024_v1_0000_e32d7419",
-        "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0004_265f1249",
-        "contract_пт-05-2023_v1_0000_54dc4895"
+        "doc_нк_ст145_действующая_v1_0012_9ed7fdf3",
+        "doc_нк_ст145_действующая_v1_0003_549cd17a",
+        "doc_коап_ст13-11_действующая_v1_0016_a5662633",
+        "doc_коап_ст13-11_действующая_v1_0022_c3e5f127"
       ],
       "scores": [
-        0.9911078810691833,
-        0.7268772125244141,
-        0.3549608886241913,
-        0.34907233715057373,
-        0.03248928487300873
+        0.9909337759017944,
+        0.0054095471277832985,
+        0.0007857102318666875,
+        0.0007065054378472269,
+        0.0006202543154358864
       ],
       "count": 5,
       "before_count": 10,
       "after_count": 5,
-      "top_n": 5
+      "top_n": 5,
+      "preserved_source_kinds": []
     },
-    "latency_ms": 29646.463,
+    "latency_ms": 50312.757,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -320,7 +951,7 @@ RAG ASSISTANT TEST RESULTS
     "step": "assess_evidence",
     "input": {
       "chunks_count": 5,
-      "viable_chunks_count": 5,
+      "viable_chunks_count": 2,
       "required_slots": [
         "approval_process"
       ],
@@ -339,15 +970,20 @@ RAG ASSISTANT TEST RESULTS
       "missing_slots": [],
       "core_slot_covered": true,
       "min_viable_score": 0.005,
-      "checked_chunks_count": 5,
+      "checked_chunks_count": 2,
       "slot_match_counts": {
-        "approval_process": 4
+        "approval_process": 1
       },
       "retrieval_fallback": false,
       "contradictions_count": 0,
-      "version_issues_count": 0
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "normative": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 2
     },
-    "latency_ms": 14.976,
+    "latency_ms": 18.806,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -362,18 +998,38 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "premises_count": 2,
       "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
       "sufficiency": "sufficient"
     },
     "output": {
-      "premise_mismatch": true,
-      "premise_details": [
-        "Предпосылка пользователя 'Договор на 12 млн рублей' (значение '12000000') не подтверждается текстом найденных документов.",
-        "Предпосылка пользователя 'Договор заключали в августе 2024 года' (значение '2024-08') не подтверждается текстом найденных документов."
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 2,
+      "premises": [
+        {
+          "text": "Договор на сумму 12 млн рублей",
+          "kind": "amount",
+          "value": "12000000",
+          "status": "unknown",
+          "reason": "no_anchored_match",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        },
+        {
+          "text": "Договор заключался в августе 2024 года",
+          "kind": "date",
+          "value": "2024-08-01",
+          "status": "unknown",
+          "reason": "no_anchored_match",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
       ],
       "injection_flagged": false,
       "refusal_forbidden": true
     },
-    "latency_ms": 0.95,
+    "latency_ms": 5.791,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -388,10 +1044,10 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "chunk_ids": [
         "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_ff097667",
-        "contract_п-17-2024_v1_0000_e32d7419",
-        "amend_1_п-17-2024_v1_0000_57fd0d01",
-        "contract_п-17-2024_v1_0004_265f1249",
-        "contract_пт-05-2023_v1_0000_54dc4895"
+        "doc_нк_ст145_действующая_v1_0012_9ed7fdf3",
+        "doc_нк_ст145_действующая_v1_0003_549cd17a",
+        "doc_коап_ст13-11_действующая_v1_0016_a5662633",
+        "doc_коап_ст13-11_действующая_v1_0022_c3e5f127"
       ]
     },
     "output": {
@@ -402,9 +1058,9 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "context_length": 4126
+      "context_length": 8186
     },
-    "latency_ms": 13.609,
+    "latency_ms": 23.937,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -418,21 +1074,21 @@ RAG ASSISTANT TEST RESULTS
     "step": "generation",
     "input": {
       "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
-      "context_length": 4126,
+      "context_length": 8186,
       "history_turns": 0,
       "attempts": 1
     },
     "output": {
-      "answer_length": 613,
-      "claims_count": 5,
-      "assumptions_count": 3,
+      "answer_length": 438,
+      "claims_count": 2,
+      "assumptions_count": 4,
       "missing_info_count": 0,
       "refusal_reason": null
     },
-    "latency_ms": 11637.024,
+    "latency_ms": 14706.152,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2866,
-    "completion_tokens": 1567,
+    "prompt_tokens": 4917,
+    "completion_tokens": 640,
     "extra": {},
     "stage_idx": 6,
     "failures_global": 0,
@@ -442,81 +1098,604 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "verify_draft",
     "input": {
-      "claims_count": 5,
-      "core_claims_count": 1,
-      "non_core_claims_count": 4
+      "claims_count": 2,
+      "core_claims_count": 2,
+      "non_core_claims_count": 0,
+      "question_source": "original",
+      "question_length": 103,
+      "answer_length": 438
     },
     "output": {
-      "final_verdict": "regenerate",
-      "supported_locked": [
-        0,
-        1,
-        3,
-        4
-      ],
+      "final_verdict": "partial",
+      "supported_locked": [],
       "citation_errors_count": 0,
-      "injection_signals_count": 0
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "undetermined",
+        "reason": "verifier_error"
+      },
+      "verifier_unavailable": true,
+      "verifier_unavailable_reason": "verifier_error",
+      "auto_accept_blocked": true,
+      "claims_synthesized": false,
+      "supported_claims_count": 0,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 2,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 103,
+      "answer_length": 438,
+      "verdict_reason": "verification_unavailable"
     },
-    "latency_ms": 4613.416,
-    "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2236,
-    "completion_tokens": 712,
+    "latency_ms": 17749.193,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
     "extra": {},
     "stage_idx": 7,
-    "failures_global": 0,
-    "failures_step": 0,
-    "degradation": null
-  },
-  {
-    "step": "regenerate_draft",
-    "input": {
-      "supported_locked": [
-        0,
-        1,
-        3,
-        4
-      ],
-      "failed_claims_count": 1
-    },
-    "output": {
-      "claims_count": 4,
-      "answer_length": 613
-    },
-    "latency_ms": 13840.69,
-    "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2988,
-    "completion_tokens": 2048,
-    "extra": {},
-    "stage_idx": 6,
     "failures_global": 1,
     "failures_step": 1,
     "degradation": null
   },
   {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 438
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 1,
+      "cited_source_ids": [
+        "S1"
+      ],
+      "confidence": "low",
+      "confidence_reasons": [
+        "verifier_unavailable",
+        "auto_accept_blocked"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 1,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 1,
+        "tasks_completed": 1,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.368,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 1,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 3/3
+======================================================================
+ВОПРОС: Человек отозвал согласие на обработку данных. Значит, мы обязаны сразу удалить вообще всё?
+
+ОТВЕТ:
+Нет, отзыв согласия сам по себе не означает безусловной обязанности удалить все данные: согласие может быть отозвано субъектом персональных данных <source>S1</source>, но при отзыве оператор вправе продолжить обработку персональных данных без согласия субъекта при наличии оснований, указанных в пунктах 2 - 11 части 1 статьи 6, части 2 статьи 10 и части 2 статьи 11 Федерального закона N 152-ФЗ <source>S1</source>. Обязанность доказать получение согласия либо наличие таких оснований возлагается на оператора <source>S4</source>. Норма о порядке, сроках и объёме удаления персональных данных при отзыве согласия в предоставленном контексте отсутствует.
+
+ИСТОЧНИКИ:
+  [S1] Статья 9. Согласие субъекта персональных данных на обработку его персональных данных. Федеральный закон от 27.07.2006 N 152-ФЗ "О персональных данных" | Статья 9. Согласие субъекта персональных данных на обработку его персональных -> Часть 2 | score=0.9090758562088013 | chunk=doc_proverka_v1_0003_e43a609b
+  [S4] Статья 9. Согласие субъекта персональных данных на обработку его персональных данных. Федеральный закон от 27.07.2006 N 152-ФЗ "О персональных данных" | Статья 9. Согласие субъекта персональных данных на обработку его персональных данных -> Часть 3 | score=0.5209218859672546 | chunk=doc_152фз_ст9_действующая_v1_0004_d638befb
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['речь идет об обработке персональных данных и последствиях отзыва согласия', 'интерпретация: часть 2 статьи 9 не устанавливает обязанности удалить персональные данные при отзыве согласия, а лишь допускает продолжение обработки без согласия при наличии оснований из п. 2 - 11 ч. 1 ст. 6, ч. 2 ст. 10 и ч. 2 ст. 11']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Человек отозвал согласие на обработку данных. Значит, мы обязаны сразу удалить вообще всё?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.231,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Человек отозвал согласие на обработку данных. Значит, мы обязаны сразу удалить вообще всё?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "explain",
+      "required_slots": [
+        "consent_withdrawal"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 1,
+      "rewritten_bm25": [
+        "отзыв согласия на обработку персональных данных обязанность удалить персональные данные",
+        "отзыв согласия на обработку персональных данных прекращение обработки и удаление данных"
+      ],
+      "rewritten_dense": [
+        "Какие правовые последствия наступают после отзыва субъектом согласия на обработку персональных данных: обязан ли оператор немедленно прекратить обработку и удалить все персональные данные?",
+        "Что именно обязан сделать оператор при отзыве согласия на обработку персональных данных: прекратить обработку, уничтожить данные или удалить только те данные, которые обрабатывались на основании согласия?"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [],
+      "entities_raw": []
+    },
+    "latency_ms": 13939.836,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1583,
+    "completion_tokens": 497,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "consent_withdrawal"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Какие правовые последствия наступают после отзыва субъектом согласия на обработку персональных данных: обязан ли оператор немедленно прекратить обработку и удалить все персональные данные? Что именно обязан сделать оператор при отзыве согласия на обработку персональных данных: прекратить обработку, уничтожить данные или удалить только те данные, которые обрабатывались на основании согласия? отзыв согласия на обработку персональных данных обязанность удалить персональные данные отзыв согласия на обработку персональных данных прекращение обработки и удаление данных",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Какие правовые последствия наступают после отзыва субъектом согласия на обработку персональных данных: обязан ли оператор немедленно прекратить обработку и удалить все персональные данные?",
+          "Что именно обязан сделать оператор при отзыве согласия на обработку персональных данных: прекратить обработку, уничтожить данные или удалить только те данные, которые обрабатывались на основании согласия?"
+        ],
+        "bm25_rewrites": [
+          "отзыв согласия на обработку персональных данных обязанность удалить персональные данные",
+          "отзыв согласия на обработку персональных данных прекращение обработки и удаление данных"
+        ],
+        "slot_expansions": [
+          "отзыв согласия на обработку персональных данных прекращение обработки"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 569,
+      "required_source_kinds": [
+        "normative"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "unknown"
+    },
+    "latency_ms": 0.457,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Какие правовые последствия наступают после отзыва субъектом согласия на обработку персональных данных: обязан ли оператор немедленно прекратить обработку и удалить все персональные данные? Что именно обязан сделать оператор при отзыве согласия на обработку персональных данных: прекратить обработку, уничтожить данные или удалить только те данные, которые обрабатывались на основании согласия? отзыв согласия на обработку персональных данных обязанность удалить персональные данные отзыв согласия на обработку персональных данных прекращение обработки и удаление данных"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_proverka_v1_0003_e43a609b",
+        "doc_152фз_ст9_действующая_v1_0003_1b83d4d5",
+        "doc_152фз_ст9_действующая_v1_0004_d638befb",
+        "doc_proverka_v1_0004_5247b294",
+        "doc_proverka_v1_0002_9776f07b",
+        "doc_152фз_ст9_действующая_v1_0002_58837322",
+        "doc_152фз_ст9_действующая_v1_0010_cc2c53ce",
+        "doc_proverka_v1_0006_c66f3d50",
+        "doc_proverka_v1_0011_750d7957",
+        "doc_152фз_ст9_действующая_v1_0005_872c9436"
+      ],
+      "scores": [
+        0.016393,
+        0.016129,
+        0.015726,
+        0.015483,
+        0.015368,
+        0.015135,
+        0.014772,
+        0.014769,
+        0.014412,
+        0.014255
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 9118
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Какие правовые последствия наступают после отзыва субъектом согласия на обработку персональных данных: обязан ли оператор немедленно прекратить обработку и удалить все персональные данные? Что именно…",
+          "status": "ok",
+          "duration_ms": 9117,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 93,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 344,
+            "candidates_after_date_filter": 121,
+            "candidates_after_document_filter": 121,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 9118.512,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 9118
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8460
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Человек отозвал согласие на обработку данных. Значит, мы обязаны сразу удалить вообще всё?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "doc_proverka_v1_0003_e43a609b",
+        "doc_152фз_ст9_действующая_v1_0003_1b83d4d5",
+        "doc_152фз_ст9_действующая_v1_0004_d638befb",
+        "doc_proverka_v1_0004_5247b294",
+        "doc_proverka_v1_0002_9776f07b",
+        "doc_152фз_ст9_действующая_v1_0002_58837322",
+        "doc_152фз_ст9_действующая_v1_0010_cc2c53ce",
+        "doc_proverka_v1_0006_c66f3d50",
+        "doc_proverka_v1_0011_750d7957",
+        "doc_152фз_ст9_действующая_v1_0005_872c9436"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_proverka_v1_0003_e43a609b",
+        "doc_152фз_ст9_действующая_v1_0003_1b83d4d5",
+        "doc_proverka_v1_0006_c66f3d50",
+        "doc_152фз_ст9_действующая_v1_0004_d638befb",
+        "doc_152фз_ст9_действующая_v1_0002_58837322"
+      ],
+      "scores": [
+        0.9090758562088013,
+        0.8892368674278259,
+        0.5240731239318848,
+        0.5209218859672546,
+        0.445083349943161
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 38717.765,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 5,
+      "required_slots": [
+        "consent_withdrawal"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "required_slots": [
+        "consent_withdrawal"
+      ],
+      "covered_slots": [
+        "consent_withdrawal"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 5,
+      "slot_match_counts": {
+        "consent_withdrawal": 5
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "normative": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 0.926,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 1,
+      "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 1,
+      "premises": [
+        {
+          "text": "субъект персональных данных отозвал согласие на обработку",
+          "kind": "fact",
+          "value": "отзыв согласия",
+          "status": "unknown",
+          "reason": "not_comparable",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 0.299,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "doc_proverka_v1_0003_e43a609b",
+        "doc_152фз_ст9_действующая_v1_0003_1b83d4d5",
+        "doc_proverka_v1_0006_c66f3d50",
+        "doc_152фз_ст9_действующая_v1_0004_d638befb",
+        "doc_152фз_ст9_действующая_v1_0002_58837322"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 4825
+    },
+    "latency_ms": 1.046,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "Человек отозвал согласие на обработку данных. Значит, мы обязаны сразу удалить вообще всё?",
+      "context_length": 4825,
+      "history_turns": 0,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 654,
+      "claims_count": 3,
+      "assumptions_count": 2,
+      "missing_info_count": 1,
+      "refusal_reason": null
+    },
+    "latency_ms": 16194.922,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 3799,
+    "completion_tokens": 1650,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
     "step": "verify_draft",
     "input": {
-      "claims_count": 4,
+      "claims_count": 3,
       "core_claims_count": 1,
-      "non_core_claims_count": 3
+      "non_core_claims_count": 2,
+      "question_source": "original",
+      "question_length": 90,
+      "answer_length": 654
     },
     "output": {
       "final_verdict": "accept",
       "supported_locked": [
         0,
         1,
-        3,
-        4
+        2
       ],
       "citation_errors_count": 0,
-      "injection_signals_count": 0
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо отвечает на заданный вопрос: отрицает безусловную обязанность удалить все данные при отзыве согласия и объясняет, что оператор вправе продолжить обработку при наличии оснований по ст. 6, 10, 11 152-ФЗ; параметр consent_withdrawal покрыт."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 3,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 90,
+      "answer_length": 654,
+      "verdict_reason": "all_verified"
     },
-    "latency_ms": 4700.719,
+    "latency_ms": 11879.147,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2173,
-    "completion_tokens": 584,
+    "prompt_tokens": 2492,
+    "completion_tokens": 743,
     "extra": {},
     "stage_idx": 7,
-    "failures_global": 1,
+    "failures_global": 0,
     "failures_step": 0,
     "degradation": null
   },
@@ -531,15 +1710,14 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "answer_length": 613
+      "answer_length": 654
     },
     "output": {
       "refused": false,
-      "sources_count": 3,
+      "sources_count": 2,
       "cited_source_ids": [
-        "S2",
-        "S4",
-        "S1"
+        "S1",
+        "S4"
       ],
       "confidence": "high",
       "confidence_reasons": [
@@ -558,13 +1736,13 @@ RAG ASSISTANT TEST RESULTS
         "tasks_timed_out": 0
       }
     },
-    "latency_ms": 0.794,
+    "latency_ms": 0.299,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
     "extra": {},
     "stage_idx": 8,
-    "failures_global": 1,
+    "failures_global": 0,
     "failures_step": 0,
     "degradation": null
   }

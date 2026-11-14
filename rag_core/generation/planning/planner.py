@@ -5,6 +5,7 @@ from rag_core.generation.analysis.entity_resolver import (
     extract_doc_routing_sets,
     resolve_single_entity,
 )
+from rag_core.generation.analysis.source_kind import detect_required_source_kinds
 from rag_core.generation.types import QuerySpec, RetrievalTask, TraceStep
 
 logger = logging.getLogger(__name__)
@@ -369,6 +370,7 @@ def _task_trace_entry(idx: int, task: RetrievalTask, prefix: str = "task") -> di
         "mode": task.mode,
         "purpose": task.purpose,
         "intent": task.intent,
+        "source_kinds": list(task.source_kinds or []),
     }
 
 
@@ -387,6 +389,8 @@ def plan(
     )
     top_k = int(config.RAG_TOP_K)
     document_type = _detect_document_type(spec)
+    required_source_kinds = detect_required_source_kinds(spec)
+    spec.required_source_kinds = required_source_kinds
     intent = (spec.intent or "").strip().lower()
     max_slot_queries = max(2, min(4, len(spec.required_slots) + 1))
     tasks: list[RetrievalTask] = []
@@ -417,6 +421,7 @@ def plan(
                     "amendment_markers": [],
                 },
                 "combined_query_chars": 0,
+                "required_source_kinds": list(required_source_kinds),
                 "limits": {
                     "top_k": top_k,
                     "max_slot_queries": 0,
@@ -449,6 +454,7 @@ def plan(
                 event_date=spec.event_date,
                 top_k=top_k,
                 intent=hybrid_intent,
+                source_kinds=required_source_kinds or None,
             )
         )
 
@@ -472,6 +478,7 @@ def plan(
             "hybrid_intent": hybrid_intent,
             "query_parts": _trace_query_parts(parts),
             "combined_query_chars": len(combined_query),
+            "required_source_kinds": list(required_source_kinds),
             "limits": {
                 "top_k": top_k,
                 "max_slot_queries": max_slot_queries,
@@ -506,6 +513,8 @@ def followup(
         spec, user_selected_doc_ids
     )
     top_k = int(config.RAG_TOP_K)
+    required_source_kinds = detect_required_source_kinds(spec)
+    spec.required_source_kinds = required_source_kinds
     entity_context = " ".join(spec.entities_raw + spec.article_refs).strip()
     base_query = (
         spec.rewritten_queries_bm25[0]
@@ -550,6 +559,7 @@ def followup(
                 event_date=spec.event_date,
                 top_k=top_k,
                 intent=_hybrid_intent(spec.intent),
+                source_kinds=required_source_kinds or None,
             )
         )
 
@@ -579,6 +589,7 @@ def followup(
             },
             "combined_query_chars": len(combined_query),
             "slots_used": slots_used,
+            "required_source_kinds": list(required_source_kinds),
             "document_type": document_type,
             "skipped_duplicate_slots": skipped_duplicates,
             "limits": {
