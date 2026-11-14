@@ -8,6 +8,10 @@ from rag_core import config
 from rag_core.generation import bailout, refusal
 from rag_core.generation.analysis.prefilter import run_prefilter
 from rag_core.generation.analysis.query_analysis import analyze_query
+from rag_core.generation.analysis.source_kind import (
+    SOURCE_KIND_NORMATIVE,
+    SOURCE_KIND_SPECIFIC,
+)
 from rag_core.generation.answer.context_builder import build_context_and_sources
 from rag_core.generation.answer.generator import generate_draft, regenerate_draft
 from rag_core.generation.answer.verification import verify
@@ -24,10 +28,12 @@ from rag_core.generation.prompts import templates
 from rag_core.generation.retrieval import bridge, evidence
 from rag_core.generation.types import (
     AgentResult,
+    AnswerToQuestionVerdict,
     BailoutContext,
     DraftAnswer,
     Intent,
     QuerySpec,
+    RetrievedChunk,
     Sufficiency,
     TraceStep,
     VerificationReport,
@@ -336,6 +342,50 @@ def _build_retrieval_error_step(
     )
 
 
+def _preserve_source_kind_representation(
+    reranked: list[RetrievedChunk],
+    before_rerank: list[RetrievedChunk],
+    required_kinds: list[str],
+) -> list[RetrievedChunk]:
+    """Возвращает лучший чанк пропавшего типа источника после реранка.
+
+    Работает только когда одновременно требуются ``normative`` и
+    ``specific``. Существующие чанки, их порядок и score не меняются:
+    недостающий представитель добавляется в конец результата.
+    """
+    required = {
+        str(kind).strip().lower()
+        for kind in (required_kinds or [])
+        if str(kind or "").strip()
+    }
+    if not {SOURCE_KIND_NORMATIVE, SOURCE_KIND_SPECIFIC}.issubset(required):
+        return reranked
+
+    def _kind(chunk: RetrievedChunk) -> str:
+        value = getattr(chunk, "source_kind", None)
+        return str(value).strip().lower() if value else ""
+
+    result = list(reranked)
+    present = {_kind(chunk) for chunk in result}
+    existing_ids = {chunk.chunk_id for chunk in result}
+
+    for kind in (SOURCE_KIND_NORMATIVE, SOURCE_KIND_SPECIFIC):
+        if kind in present:
+            continue
+        best: RetrievedChunk | None = None
+        for chunk in before_rerank:
+            if _kind(chunk) != kind or chunk.chunk_id in existing_ids:
+                continue
+            if best is None or float(chunk.score) > float(best.score):
+                best = chunk
+        if best is not None:
+            result.append(best)
+            existing_ids.add(best.chunk_id)
+            present.add(kind)
+
+    return result
+
+
 def _sanitize_and_extract_citations(
     answer: str,
     available_sources: dict[str, dict[str, Any]],
@@ -407,6 +457,7 @@ def _compute_confidence_and_reasons(
         reasons.append(f"degradation:{deg}")
     if missing_info:
         reasons.append(f"missing_info:{len(missing_info)}")
+    low_confidence = False
     if verification is not None:
         if verification.citation_errors:
             reasons.append(f"citation_errors:{len(verification.citation_errors)}")
@@ -414,7 +465,21 @@ def _compute_confidence_and_reasons(
             reasons.append(f"injection_signals:{len(verification.injection_signals)}")
         if verification.final_verdict == VerificationVerdict.REFUSE:
             reasons.append("verification_verdict:refuse")
+        if verification.verifier_unavailable:
+            reasons.append("verifier_unavailable")
+            low_confidence = True
+        if (
+            verification.answer_to_question is not None
+            and verification.answer_to_question.verdict
+            == AnswerToQuestionVerdict.MISMATCH
+        ):
+            reasons.append("answer_question_mismatch")
+            low_confidence = True
+        if verification.auto_accept_blocked:
+            reasons.append("auto_accept_blocked")
 
+    if low_confidence:
+        return "low", reasons
     if reasons:
         return "medium", reasons
     return "high", ["all_conditions_met"]
@@ -452,6 +517,11 @@ def assemble_final(
             cleaned_answer = _SOURCE_TAG_PATTERN.sub("", cleaned_answer).strip()
             cleaned_answer = re.sub(r" +([.,;:])", r"\1", cleaned_answer)
             cited_ids = []
+    
+    if not cleaned_answer.strip():
+        cleaned_answer = templates.RESPONSE_REFUSAL_NO_CONTEXT
+        if not draft.refusal_reason:
+            draft.refusal_reason = "insufficient_evidence"
 
     if (
         verification is not None
@@ -564,12 +634,61 @@ def _safe_no_context_refusal(
     )
 
 
+def _refuse_no_viable_chunks(
+    query: str,
+    intent_val: str,
+    trace: list[TraceStep],
+    spec: QuerySpec | None,
+    missing_info: list[str] | None,
+    degradation_reasons: list[str],
+    used_history: bool,
+    retrieved_chunks_count: int,
+    retrieval_attempt: int,
+) -> AgentResult:
+    """Ранний штатный отказ при нуле пригодных чанков.
+
+    Retrieval завершился успешно (не технический сбой) и вернул чанки, но
+    ни один не прошёл существующий порог релевантности/substantive body.
+    Никаких LLM-вызовов: используется существующий контракт
+    ``refusal.build_no_context_refusal_result``; дополнительно в шаг
+    ``refusal`` пишется диагностика, отличающая это состояние от пустого
+    retrieval.
+    """
+    result = _safe_no_context_refusal(
+        query=query,
+        intent_val=intent_val,
+        trace=trace,
+        refusal_reason="no_relevant_documents",
+        spec=spec,
+        missing_info=missing_info,
+        degradation_reasons=degradation_reasons,
+        used_history=used_history,
+    )
+    if result.trace and result.trace[-1].step == config.STEP_REFUSAL:
+        result.trace[-1].output.update(
+            {
+                "refusal_kind": "no_relevant_documents",
+                "retrieval_returned_chunks": retrieved_chunks_count,
+                "viable_chunks_count": 0,
+                "sufficiency": "insufficient",
+                "retrieval_attempt": retrieval_attempt,
+            }
+        )
+    return result
+
+
 def run_agent(
     query: str,
     event_date: str | None = None,
     selected_doc_ids: set[str] | None = None,
     chat_history: list[dict] | None = None,
 ) -> AgentResult:
+    if chat_history is None and query and ":" in query:
+        from solution import parse_dialog_transcript
+        parsed_q, inline_hist = parse_dialog_transcript(query)
+        if inline_hist:
+            query = parsed_q
+            chat_history = inline_hist
     deadline = time.monotonic() + float(config.REQUEST_TOTAL_TIMEOUT_S)
     trace: list[TraceStep] = []
     degradation_reasons: list[str] = []
@@ -832,20 +951,36 @@ def run_agent(
             # Qwen-reranker применяется здесь, до оценки доказательств.
             if new_chunks:
                 before_count = len(new_chunks)
+                before_rerank_chunks = list(new_chunks)
                 rerank_query = (
                     spec.rewritten_queries_dense[0]
                     if (used_history and spec.rewritten_queries_dense)
                     else query
                 )
                 try:
-                    new_chunks, rerank_step = bridge.rerank_chunks(
+                    reranked_chunks, rerank_step = bridge.rerank_chunks(
                         chunks=new_chunks,
                         query=rerank_query,
                         top_n=int(config.RERANKER_TOP_N),
                     )
+                    new_chunks = _preserve_source_kind_representation(
+                        reranked_chunks,
+                        before_rerank_chunks,
+                        required_kinds=list(
+                            getattr(spec, "required_source_kinds", None) or []
+                        ),
+                    )
+                    preserved_source_kinds = [
+                        str(chunk.source_kind)
+                        for chunk in new_chunks[len(reranked_chunks):]
+                        if chunk.source_kind
+                    ]
                     rerank_step.output["before_count"] = before_count
                     rerank_step.output["after_count"] = len(new_chunks)
                     rerank_step.output["top_n"] = int(config.RERANKER_TOP_N)
+                    rerank_step.output["preserved_source_kinds"] = (
+                        preserved_source_kinds
+                    )
                     _append_step(rerank_step, stage_idx=3)
                 except Exception as exc:  # noqa: BLE001 - реранкер необязателен
                     _record_failure(exc)
@@ -879,15 +1014,27 @@ def run_agent(
             # Состояние A (поиск завершился, покрытие слотов неполное) —
             # followup допустим. Состояние B (техническая ошибка поиска) —
             # followup запрещён: он лишь повторит падающий retrieval и выдаст
-            # инфраструктурный сбой за нехватку доказательств.
-            followup_allowed = not technical_retrieval_failure
+            # инфраструктурный сбой за нехватку доказательств. Состояние C
+            # (выдача есть, но ни один чанк не пригоден) — followup тоже
+            # бессмысленен: расширять нечего, документов по теме нет.
+            viable_count = getattr(assessment, "viable_chunks_count", None)
+            has_no_viable = viable_count == 0
+            followup_allowed = not technical_retrieval_failure and not has_no_viable
             if not followup_allowed:
-                logger.warning(
-                    "Followup suppressed after technical retrieval failure "
-                    "(attempt=%d, chunks=%d)",
-                    retrieval_attempt,
-                    len(accumulated_chunks),
-                )
+                if technical_retrieval_failure:
+                    logger.warning(
+                        "Followup suppressed after technical retrieval failure "
+                        "(attempt=%d, chunks=%d)",
+                        retrieval_attempt,
+                        len(accumulated_chunks),
+                    )
+                else:
+                    logger.info(
+                        "Followup skipped: no viable chunks "
+                        "(attempt=%d, chunks=%d)",
+                        retrieval_attempt,
+                        len(accumulated_chunks),
+                    )
 
             if (
                 (
@@ -970,7 +1117,38 @@ def run_agent(
                 used_history=used_history,
             )
 
-        if assessment is not None and assessment.sufficiency == Sufficiency.INSUFFICIENT:
+        # Выдача есть, но ни один чанк не прошёл существующий порог
+        # релевантности — штатный отказ без followup/generate/verify.
+        if (
+            assessment is not None
+            and accumulated_chunks
+            and getattr(assessment, "viable_chunks_count", None) == 0
+            and not technical_retrieval_failure
+        ):
+            retrieved_count = getattr(
+                assessment, "retrieved_chunks_count", None
+            )
+            if retrieved_count is None:
+                retrieved_count = len(accumulated_chunks)
+            return _refuse_no_viable_chunks(
+                query=query,
+                intent_val=spec.intent,
+                trace=trace,
+                spec=spec,
+                missing_info=assessment.missing_slots,
+                degradation_reasons=degradation_reasons,
+                used_history=used_history,
+                retrieved_chunks_count=int(retrieved_count),
+                retrieval_attempt=retrieval_attempt,
+            )
+
+        # ``None`` (legacy/моки) и ``> 0`` сохраняют прежнее поведение;
+        # реальный ``0`` до этой строки не доходит (ранний отказ выше).
+        if (
+            assessment is not None
+            and assessment.sufficiency == Sufficiency.INSUFFICIENT
+            and getattr(assessment, "viable_chunks_count", None) != 0
+        ):
             assessment.sufficiency = Sufficiency.PARTIAL
             assessment.core_slot_covered = True
 
@@ -1029,6 +1207,8 @@ def run_agent(
                 on_failure=_record_failure,
                 on_llm_success=_record_llm_success,
                 timeout=_llm_timeout(),
+                question=query,
+                policy=policy_verdict,
             )
             _append_step(ver_step, stage_idx=7)
 
@@ -1053,11 +1233,14 @@ def run_agent(
                 continue
             break
 
+        # Отказ по answer-to-question (MISMATCH) разрешён даже при запрете
+        # отказа по политике: пользователь получил ответ не на свой вопрос.
         if (
             verification_report is not None
-            and verification_report.final_verdict == VerificationVerdict.REFUSE
-            and not policy_verdict.refusal_forbidden
-            and bool(draft.refusal_reason)
+            and (
+                verification_report.final_verdict == VerificationVerdict.REFUSE
+                or not draft.answer_text.strip()
+            )
         ):
             return refusal.build_verification_refusal_result(
                 query=query,

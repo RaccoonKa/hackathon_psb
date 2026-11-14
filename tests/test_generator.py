@@ -229,7 +229,8 @@ def test_regenerate_draft_locks_supported_claims():
     assert draft.claims[0].source_ids == ["S1"]
 
 
-def test_regenerate_draft_keeps_previous_on_error():
+def test_regenerate_draft_error_rebuilds_answer_from_supported_claim():
+    """Сценарий A: старый полный answer_text не возвращается вместе с claims."""
     with patch(LLM_PATH, side_effect=LLMAPIError("boom")):
         draft, step = regenerate_draft(
             previous=_previous_draft(),
@@ -238,6 +239,25 @@ def test_regenerate_draft_keeps_previous_on_error():
             spec=_spec(intent="semantic_query"),
         )
     assert step.step == "regenerate_draft"
-    assert draft.answer_text == _previous_draft().answer_text
+    assert step.degradation == "regen_fallback"
+    assert step.extra["fallback_scenario"] == "A"
+    assert draft.answer_text != _previous_draft().answer_text
+    assert "исходный факт" in draft.answer_text
     assert len(draft.claims) == 1
     assert draft.claims[0].text == "исходный факт"
+
+
+def test_regenerate_draft_error_without_supported_claims_refuses():
+    """Сценарий B: подтверждённых claims нет — пустой ответ и отказ."""
+    with patch(LLM_PATH, side_effect=LLMAPIError("boom")):
+        draft, step = regenerate_draft(
+            previous=_previous_draft(),
+            report=make_verification_report(supported_locked=[]),
+            chunks=[make_retrieved_chunk(chunk_id="c1")],
+            spec=_spec(intent="semantic_query"),
+        )
+    assert step.degradation == "regen_fallback"
+    assert step.extra["fallback_scenario"] == "B"
+    assert draft.answer_text == ""
+    assert draft.claims == []
+    assert draft.refusal_reason

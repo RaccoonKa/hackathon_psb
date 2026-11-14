@@ -46,6 +46,28 @@ class ClaimStatus(str, Enum):
     SUPPORTED = "supported"
     CONTRADICTED = "contradicted"
     NOT_IN_SOURCE = "not_in_source"
+    # Проверка не состоялась: верификатор отключён, упал или не вернул вердикт.
+    # UNVERIFIED никогда не попадает в supported_locked и не даёт ACCEPT.
+    UNVERIFIED = "unverified"
+
+
+class AnswerToQuestionVerdict(str, Enum):
+    MATCH = "match"
+    MISMATCH = "mismatch"
+    UNDETERMINED = "undetermined"
+
+
+@dataclass
+class AnswerToQuestionCheck:
+    verdict: AnswerToQuestionVerdict
+    reason: str = ""
+    quote: str | None = None
+
+
+class PremiseStatus(str, Enum):
+    VERIFIED = "verified"
+    CONTRADICTED = "contradicted"
+    UNKNOWN = "unknown"
 
 
 class VerificationVerdict(str, Enum):
@@ -86,6 +108,12 @@ class RetrievedChunk:
     effective_dates_known: bool = True
     amends_document_id: Optional[str] = None
     untrusted: bool = False
+    # Назначение и статус источника (заполняются последующими этапами).
+    document_type: str | None = None
+    source_kind: str | None = None
+    version_status: str | None = None
+    validity_uncertain: bool = False
+    effective_date_mode: str | None = None
 
 
 @dataclass
@@ -102,6 +130,47 @@ class Premise:
     kind: str
     value: str | None
     verified: bool = False
+    status: PremiseStatus = PremiseStatus.UNKNOWN
+    status_reason: str | None = None
+    evidence_source_id: str | None = None
+    conflicting_value: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, PremiseStatus):
+            self.status = PremiseStatus(self.status)
+        # Обратная совместимость: verified=True без явного статуса => VERIFIED.
+        if self.status == PremiseStatus.UNKNOWN and self.verified is True:
+            self.status = PremiseStatus.VERIFIED
+        # ``verified`` остаётся производным от статуса для старого кода/тестов.
+        self.verified = self.status == PremiseStatus.VERIFIED
+
+    def mark_status(
+        self,
+        status: PremiseStatus,
+        *,
+        reason: str | None = None,
+        evidence_source_id: str | None = None,
+        conflicting_value: str | None = None,
+    ) -> None:
+        """Единственная точка записи статуса предпосылки из precheck."""
+        if not isinstance(status, PremiseStatus):
+            status = PremiseStatus(status)
+        self.status = status
+        self.verified = status == PremiseStatus.VERIFIED
+        self.status_reason = reason
+        self.evidence_source_id = evidence_source_id
+        self.conflicting_value = conflicting_value
+
+
+@dataclass
+class PremiseStatusEntry:
+    text: str
+    kind: str
+    value: str | None
+    status: PremiseStatus
+    reason: str | None = None
+    evidence_source_id: str | None = None
+    conflicting_value: str | None = None
 
 
 @dataclass
@@ -130,6 +199,8 @@ class QuerySpec:
     rewritten_queries_dense: list[str]
     history_resolved: bool
     degradation_reason: str | None
+    required_source_kinds: list[str] = field(default_factory=list)
+    date_precision: str = "none"
 
 
 @dataclass
@@ -144,6 +215,9 @@ class RetrievalTask:
     # H-2A: явный hybrid-intent задачи. ``None`` сохраняет обратную
     # совместимость — мост тогда выводит intent из ``mode``.
     intent: str | None = None
+    # Требуемые назначения источника (``normative``/``specific``); ``None``
+    # означает отсутствие фильтра.
+    source_kinds: list[str] | None = None
 
 
 @dataclass
@@ -152,6 +226,8 @@ class EvidenceBundle:
     slot_map: dict[str, list[str]]
     contradictions: list[dict[str, Any]]
     version_issues: list[dict[str, Any]]
+    missing_source_kinds: list[str] = field(default_factory=list)
+    generation_warnings: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -162,6 +238,11 @@ class EvidenceAssessment:
     sufficiency: Sufficiency
     degraded_intents: list[str]
     reason: str
+    # Явные счётчики выдачи retrieval/пригодных чанков. ``None`` означает
+    # "legacy/неизвестно": оркестратор НЕ должен трактовать его как ноль
+    # пригодных чанков. Реальный ``evidence.assess`` всегда выставляет int.
+    viable_chunks_count: int | None = None
+    retrieved_chunks_count: int | None = None
 
 
 @dataclass
@@ -187,6 +268,7 @@ class ClaimVerdict:
     status: ClaimStatus
     quote: str
     source_id: str | None
+    reason: str | None = None
 
 
 @dataclass
@@ -196,6 +278,14 @@ class VerificationReport:
     injection_signals: list[str]
     supported_locked: list[int]
     final_verdict: VerificationVerdict
+    answer_to_question: AnswerToQuestionCheck | None = None
+    verifier_unavailable: bool = False
+    auto_accept_blocked: bool = False
+    claims_synthesized: bool = False
+    # Техническая сверка answer_text ↔ claims: False запрещает ACCEPT.
+    text_claim_consistency: bool = True
+    text_claim_issues: list[str] = field(default_factory=list)
+    source_role_issues: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -204,6 +294,7 @@ class PolicyVerdict:
     premise_details: list[str]
     injection_flagged: bool
     refusal_forbidden: bool
+    premise_statuses: list[PremiseStatusEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -444,7 +535,16 @@ class ClaimVerdictSchema(BaseModel):
     source_id: Optional[str] = None
 
 
+class AnswerToQuestionSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    verdict: AnswerToQuestionVerdict
+    reason: str = ""
+    quote: Optional[str] = None
+
+
 class VerificationBatchSchema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     verdicts: list[ClaimVerdictSchema] = Field(default_factory=list)
+    answer_to_question: Optional[AnswerToQuestionSchema] = None

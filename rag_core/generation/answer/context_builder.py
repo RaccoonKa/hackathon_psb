@@ -4,6 +4,7 @@ import re
 import time
 from typing import Any
 from rag_core import config
+from rag_core.generation.analysis.source_kind import source_kind_label
 from rag_core.generation.prompts import templates as prompts
 from rag_core.generation.types import RetrievedChunk, SourceMetadata, TraceStep
 
@@ -48,12 +49,52 @@ def _get_chunk_location(chunk_id: str) -> dict[str, Any]:
 def _format_effective_dates(chunk: RetrievedChunk) -> str:
     if not chunk.effective_dates_known:
         return ""
+    # Если статус редакции неизвестен, подтверждать период действия нельзя.
+    if chunk.version_status == "unknown":
+        return ""
+    # Неопределённость применимости (без подтверждённого статуса) также
+    # запрещает подтверждать период действия.
+    if chunk.validity_uncertain and chunk.version_status not in (
+        "applicable",
+        "not_applicable",
+    ):
+        return ""
     if chunk.effective_from and chunk.effective_to:
         return f"действует с {chunk.effective_from} по {chunk.effective_to}"
     if chunk.effective_from:
         return f"действует с {chunk.effective_from} по настоящее время"
     if chunk.effective_to:
         return f"действует по {chunk.effective_to}"
+    return ""
+
+
+def _format_source_role(chunk: RetrievedChunk) -> str:
+    kind = chunk.source_kind
+    if kind is None:
+        return ""
+    normalized = str(kind).strip().lower()
+    if not normalized:
+        return ""
+    return source_kind_label(normalized)
+
+
+def _format_version_status(chunk: RetrievedChunk) -> str:
+    status = chunk.version_status
+    if status is None:
+        return ""
+    normalized = str(status).strip().lower()
+    if normalized == "applicable":
+        if chunk.effective_date_mode == "historical":
+            return "применима на дату события"
+        if chunk.effective_date_mode == "current":
+            return "действует на текущую дату"
+        return ""
+    if normalized == "current_only":
+        return "доступна только текущая редакция; период действия не подтверждён"
+    if normalized == "unknown":
+        return "период действия не определён"
+    if normalized == "not_applicable":
+        return "не применима на выбранную дату"
     return ""
 
 
@@ -67,6 +108,10 @@ def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
         chunk.amends_document_id is not None
         and bool(chunk.amends_document_id.strip())
     )
+    source_role = _format_source_role(chunk)
+    has_source_role = bool(source_role)
+    version_status = _format_version_status(chunk)
+    has_version_status = bool(version_status)
 
     structure_path_str = config.STRUCTURE_PATH_SEPARATOR.join(
         chunk.structure_path
@@ -77,6 +122,8 @@ def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
         structure_path_str=structure_path_str,
         provision_id=chunk.provision_id or "",
         effective_str=effective_str,
+        source_role=source_role,
+        version_status=version_status,
         amends_document_id=chunk.amends_document_id or "",
         text=chunk.text,
     )
@@ -86,6 +133,12 @@ def format_single_chunk(source_id: str, chunk: RetrievedChunk) -> str:
         if not has_provision and line.startswith(prompts.PROVISION_LINE_PREFIX):
             continue
         if not has_effective and line.startswith(prompts.EFFECTIVE_LINE_PREFIX):
+            continue
+        if not has_source_role and line.startswith(prompts.SOURCE_ROLE_LINE_PREFIX):
+            continue
+        if not has_version_status and line.startswith(
+            prompts.VERSION_STATUS_LINE_PREFIX
+        ):
             continue
         if not has_amends and line.startswith(prompts.AMENDS_LINE_PREFIX):
             continue

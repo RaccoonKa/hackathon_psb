@@ -250,10 +250,27 @@ def build_verification_refusal_result(
         (time.perf_counter() - start_time) * config.MS_PER_SECOND,
         config.LATENCY_ROUND_DIGITS,
     )
+    a2q = getattr(verification, "answer_to_question", None)
     step = TraceStep(
         step=config.STEP_REFUSAL,
         input={"query": query, "reason": "verification_refused"},
-        output={"refused": True, "final_verdict": verification.final_verdict.value},
+        output={
+            "refused": True,
+            "final_verdict": verification.final_verdict.value,
+            "answer_to_question": (
+                {
+                    "verdict": a2q.verdict.value
+                    if hasattr(a2q.verdict, "value")
+                    else str(a2q.verdict),
+                    "reason": a2q.reason,
+                }
+                if a2q is not None
+                else None
+            ),
+            "verifier_unavailable": bool(
+                getattr(verification, "verifier_unavailable", False)
+            ),
+        },
         latency_ms=latency_ms,
         stage_idx=7,
     )

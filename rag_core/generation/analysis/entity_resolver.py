@@ -275,14 +275,25 @@ def _match_documents(
                 candidates.add(alias)
         candidates.discard("")
 
+        # Word-boundary проверка: "альфа трейд" не должно матчиться
+        # внутри "альфа трейдинг". (?<!...) и (?!...) запрещают совпадение,
+        # если слева/справа есть буква или цифра.
+        core_boundary_re = (
+            re.compile(
+                rf"(?<![0-9a-zа-я]){re.escape(entity_core)}(?![0-9a-zа-я])"
+            )
+            if entity_core and len(entity_core) >= _MIN_CORE_LEN
+            else None
+        )
+
         matched = False
         if norm_entity and norm_entity in candidates:
             matched = True
         elif entity_core and entity_core in candidates:
             matched = True
-        elif (
-            len(entity_core) >= _MIN_CORE_LEN
-            and (entity_core in title_norm or entity_core in haystack)
+        elif core_boundary_re is not None and (
+            core_boundary_re.search(title_norm)
+            or core_boundary_re.search(haystack)
         ):
             # Название контрагента встречается в содержимом документа
             # (преамбула/реквизиты), хотя отсутствует в заголовке.

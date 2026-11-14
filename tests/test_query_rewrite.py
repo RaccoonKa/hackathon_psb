@@ -2034,9 +2034,73 @@ def test_ensure_slot_queries_skips_canonical_when_llm_covered_each_slot():
 
 
 def test_dates_month_and_year_without_day():
-    assert extract_dates_from_text("договор на 12 млн руб. в августе 2024 года") == ["2024-08-01"]
+    assert extract_dates_from_text("договор на 7 тыс. руб. в марте 2023 года") == ["2023-03-01"]
     assert extract_dates_from_text("по состоянию на май 2025") == ["2025-05-01"]
 
 
 def test_dates_day_month_year_not_duplicated_by_month_year():
     assert extract_dates_from_text("с 15 августа 2024 года") == ["2024-08-15"]
+
+
+# ---------------------------------------------------------------------------
+# Служебный слот general не является поисковым термином (сценарий 6)
+# ---------------------------------------------------------------------------
+#
+# Регресс: ``general`` описывает «общий» запрос и не должен попадать в
+# поисковый запрос ни основного плана, ни followup. В purpose/slots_used
+# значение сохраняется для обратной совместимости.
+
+
+def test_plan_excludes_service_slot_general_from_query():
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["general"],
+        rewritten_queries_bm25=["юридический вопрос про право"],
+        rewritten_queries_dense=["юридический вопрос про право"],
+    )
+    tasks, step = plan(spec)
+
+    assert tasks
+    for task in tasks:
+        assert "general" not in task.query.lower()
+    assert step.output["query_parts"]["slot_expansions"] == []
+    assert all(
+        "general" not in entry["query"].lower()
+        for entry in step.output["tasks"]
+    )
+
+
+def test_followup_excludes_service_slot_general_from_query():
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["general"],
+        rewritten_queries_bm25=["юридический вопрос про право"],
+        rewritten_queries_dense=["юридический вопрос про право"],
+    )
+    tasks, step = followup(["general"], spec)
+
+    assert tasks
+    for task in tasks:
+        assert "general" not in task.query.lower()
+    # Совместимость: служебный слот остаётся в slots_used/purpose.
+    assert step.output["slots_used"] == ["general"]
+    assert "general" in tasks[0].purpose
+
+
+def test_followup_excludes_general_but_keeps_real_slot_expansion():
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["general", "penalty"],
+        rewritten_queries_bm25=["оригинальный запрос"],
+        rewritten_queries_dense=["оригинальный запрос"],
+    )
+    tasks, step = followup(["general", "penalty"], spec)
+
+    assert tasks
+    query = tasks[0].query.lower()
+    assert "general" not in query
+    expansion = _SLOT_SEARCH_EXPANSIONS["penalty"]
+    assert any(
+        word.lower() in query for word in expansion.split() if len(word) >= 5
+    )
+    assert step.output["slots_used"] == ["general", "penalty"]

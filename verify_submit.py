@@ -41,6 +41,7 @@ REQUIRED_FILES = {
     "generation_analysis_entity_resolver.py",
     "generation_analysis_prefilter.py",
     "generation_analysis_query_analysis.py",
+    "generation_analysis_source_kind.py",
     # --- generation: answer ---
     "generation_answer_context_builder.py",
     "generation_answer_generator.py",

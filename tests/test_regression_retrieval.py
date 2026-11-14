@@ -33,7 +33,12 @@ from rag_core.retrieval.hybrid import (
     load_canonical_chunks_map,
     resolve_allowed_versions_by_date,
 )
-from tests._common import make_bm25_stats, make_chunk_dict, make_query_spec
+from tests._common import (
+    make_bm25_stats,
+    make_chunk_dict,
+    make_query_spec,
+    make_retrieved_chunk,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 CHUNKS_PATH = ROOT / "data" / "processed" / "chunks.jsonl"
@@ -572,3 +577,82 @@ def test_query_spec_helper_is_constructible():
         degradation_reason=None,
     )
     assert spec.required_slots == ["general"]
+
+
+# --- 16. Явные счётчики состояния evidence.assess (регресс) ----------------
+
+
+def test_assess_marks_low_score_chunks_nonviable():
+    """Выдача есть (retrieved == 1), но ниже порога viable (score < 0.005)."""
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["general"],
+        rewritten_queries_bm25=["произвольный юридический вопрос"],
+        rewritten_queries_dense=["произвольный юридический вопрос"],
+    )
+    chunks = [
+        make_retrieved_chunk(
+            chunk_id="low_score_chunk",
+            text=(
+                "Фрагмент документа содержит общие положения о порядке "
+                "взаимодействия сторон и не относится к вопросу."
+            ),
+            score=0.0006,
+        )
+    ]
+
+    bundle, assessment, step = evidence_mod.assess(spec, chunks)
+
+    assert assessment.retrieved_chunks_count == 1
+    assert assessment.viable_chunks_count == 0
+    assert assessment.sufficiency == Sufficiency.INSUFFICIENT
+    # Все чанки сохраняются в bundle — фильтрация выполняется отдельно.
+    assert len(bundle.chunks) == 1
+    assert step.output["retrieved_chunks_count"] == 1
+    assert step.output["viable_chunks_count"] == 0
+    assert step.output["sufficiency"] == "insufficient"
+
+
+def test_assess_empty_chunks_reports_zero_retrieved():
+    """Пустой retrieval: retrieved == 0 и viable == 0 явно фиксируются."""
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["general"],
+        rewritten_queries_bm25=["произвольный юридический вопрос"],
+        rewritten_queries_dense=["произвольный юридический вопрос"],
+    )
+
+    bundle, assessment, step = evidence_mod.assess(spec, [])
+
+    assert assessment.retrieved_chunks_count == 0
+    assert assessment.viable_chunks_count == 0
+    assert assessment.sufficiency == Sufficiency.INSUFFICIENT
+    assert bundle.chunks == []
+    assert step.output["retrieved_chunks_count"] == 0
+    assert step.output["viable_chunks_count"] == 0
+
+
+def test_assess_marks_relevant_chunk_viable():
+    """Релевантный чанк (score 0.9) даёт viable_chunks_count >= 1."""
+    spec = make_query_spec(
+        intent="semantic",
+        required_slots=["rent_amount"],
+        rewritten_queries_bm25=["размер арендной платы"],
+        rewritten_queries_dense=["размер арендной платы"],
+    )
+    chunks = [
+        make_retrieved_chunk(
+            chunk_id="rent_relevant",
+            text="Арендная плата составляет 450 000 рублей в месяц",
+            score=0.9,
+        )
+    ]
+
+    bundle, assessment, step = evidence_mod.assess(spec, chunks)
+
+    assert assessment.retrieved_chunks_count == 1
+    assert assessment.viable_chunks_count >= 1
+    assert assessment.sufficiency != Sufficiency.INSUFFICIENT
+    assert "rent_amount" in assessment.covered_slots
+    assert step.output["viable_chunks_count"] >= 1
+    assert step.output["retrieved_chunks_count"] == 1

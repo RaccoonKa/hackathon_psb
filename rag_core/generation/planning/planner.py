@@ -5,6 +5,7 @@ from rag_core.generation.analysis.entity_resolver import (
     extract_doc_routing_sets,
     resolve_single_entity,
 )
+from rag_core.generation.analysis.source_kind import detect_required_source_kinds
 from rag_core.generation.types import QuerySpec, RetrievalTask, TraceStep
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,11 @@ _SLOT_SEARCH_EXPANSIONS: dict[str, str] = {
     "consent_withdrawal": "отзыв согласия на обработку персональных данных прекращение обработки",
     "seasonal_work": "срочный трудовой договор для выполнения сезонных работ условия",
 }
+
+# Служебные слоты не являются поисковыми терминами: они описывают
+# "общий" запрос и не должны попадать в hybrid-query (ни в основной
+# план, ни в followup), иначе разбавляют реальные слоты.
+_SERVICE_SLOTS: frozenset[str] = frozenset({"general"})
 
 # Арендные слоты: позволяют определить тип документа без отраслевых догадок.
 _RENTAL_SLOTS: frozenset[str] = frozenset(
@@ -129,6 +135,8 @@ def _detect_document_type(spec: QuerySpec) -> str:
 
 def _slot_expansion(slot: str, document_type: str) -> str:
     """Расширение слота без терминов из чужих типов документов."""
+    if slot in _SERVICE_SLOTS:
+        return ""
     if slot == "payment_deadline" and document_type == "supply":
         return _PAYMENT_DEADLINE_NEUTRAL
     return _SLOT_SEARCH_EXPANSIONS.get(slot, slot.replace("_", " "))
@@ -203,9 +211,11 @@ def _collect_query_parts(
     dense_q = spec.rewritten_queries_dense or (
         spec.rewritten_queries_bm25[:1] or [""]
     )
+    searchable_slots = [
+        slot for slot in spec.required_slots if slot not in _SERVICE_SLOTS
+    ][:3]
     slot_expansions = [
-        _slot_expansion(slot, document_type)
-        for slot in spec.required_slots[:3]
+        _slot_expansion(slot, document_type) for slot in searchable_slots
     ]
     decomposition = [
         (sq.text or "").strip()
@@ -233,7 +243,7 @@ def _collect_query_parts(
             slot_key = sq.aspect or (
                 spec.required_slots[0] if spec.required_slots else ""
             )
-            if slot_key:
+            if slot_key and slot_key not in _SERVICE_SLOTS:
                 compare_parts.append(_slot_expansion(slot_key, document_type))
             if sq.target_doc_raw:
                 compare_parts.append(sq.target_doc_raw)
@@ -369,8 +379,8 @@ def _task_trace_entry(idx: int, task: RetrievalTask, prefix: str = "task") -> di
         "mode": task.mode,
         "purpose": task.purpose,
         "intent": task.intent,
+        "source_kinds": list(task.source_kinds or []),
     }
-
 
 def plan(
     spec: QuerySpec,
@@ -387,6 +397,8 @@ def plan(
     )
     top_k = int(config.RAG_TOP_K)
     document_type = _detect_document_type(spec)
+    required_source_kinds = detect_required_source_kinds(spec)
+    spec.required_source_kinds = required_source_kinds
     intent = (spec.intent or "").strip().lower()
     max_slot_queries = max(2, min(4, len(spec.required_slots) + 1))
     tasks: list[RetrievalTask] = []
@@ -417,6 +429,7 @@ def plan(
                     "amendment_markers": [],
                 },
                 "combined_query_chars": 0,
+                "required_source_kinds": list(required_source_kinds),
                 "limits": {
                     "top_k": top_k,
                     "max_slot_queries": 0,
@@ -449,6 +462,7 @@ def plan(
                 event_date=spec.event_date,
                 top_k=top_k,
                 intent=hybrid_intent,
+                source_kinds=required_source_kinds or None,
             )
         )
 
@@ -472,6 +486,7 @@ def plan(
             "hybrid_intent": hybrid_intent,
             "query_parts": _trace_query_parts(parts),
             "combined_query_chars": len(combined_query),
+            "required_source_kinds": list(required_source_kinds),
             "limits": {
                 "top_k": top_k,
                 "max_slot_queries": max_slot_queries,
@@ -506,6 +521,8 @@ def followup(
         spec, user_selected_doc_ids
     )
     top_k = int(config.RAG_TOP_K)
+    required_source_kinds = detect_required_source_kinds(spec)
+    spec.required_source_kinds = required_source_kinds
     entity_context = " ".join(spec.entities_raw + spec.article_refs).strip()
     base_query = (
         spec.rewritten_queries_bm25[0]
@@ -518,8 +535,14 @@ def followup(
     target_slots = list(
         (missing_slots or spec.required_slots or ["general"])[:3]
     )
+    # В поисковую часть идут только реальные слоты: служебный ``general``
+    # остаётся в purpose/slots_used для совместимости, но не становится
+    # поисковым термином.
+    expansion_slots = [
+        slot for slot in target_slots if slot not in _SERVICE_SLOTS
+    ]
     slot_expansions = [
-        _slot_expansion(slot, document_type) for slot in target_slots
+        _slot_expansion(slot, document_type) for slot in expansion_slots
     ]
     combined_query = _merge_query_parts(
         [base_query, entity_context, *slot_expansions],
@@ -550,6 +573,7 @@ def followup(
                 event_date=spec.event_date,
                 top_k=top_k,
                 intent=_hybrid_intent(spec.intent),
+                source_kinds=required_source_kinds or None,
             )
         )
 
@@ -579,6 +603,7 @@ def followup(
             },
             "combined_query_chars": len(combined_query),
             "slots_used": slots_used,
+            "required_source_kinds": list(required_source_kinds),
             "document_type": document_type,
             "skipped_duplicate_slots": skipped_duplicates,
             "limits": {
