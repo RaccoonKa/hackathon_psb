@@ -90,7 +90,7 @@ def test_preamble_merge_respects_target_max():
 
 
 def test_short_contract_not_bypassed():
-    content = "1. Раздел\n1.1. Пункт\n"
+    content = "1. Раздел\n1.1. Первый пункт\n1.2. Второй пункт\n"
     chunks = chunk_document_structural(_make_doc(content, document_type="contract"))
     assert len(chunks) >= 2
 

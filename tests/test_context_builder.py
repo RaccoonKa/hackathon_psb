@@ -200,3 +200,24 @@ def test_build_context_trace_input_chunk_ids():
     chunks = [make_retrieved_chunk(chunk_id="c1"), make_retrieved_chunk(chunk_id="c2")]
     _, _, step = build_context_and_sources(chunks)
     assert step.input["chunk_ids"] == ["c1", "c2"]
+
+
+def test_format_source_label_clean_hierarchy():
+    from rag_core.generation.answer.context_builder import format_source_label
+    meta = {
+        "document_title": "Договор аренды А-08-2024",
+        "structure_path": ["1. Предмет договора", "Пункт 1.1"],
+    }
+    label = format_source_label(meta)
+    assert label == "Договор аренды А-08-2024, 1. Предмет договора, Пункт 1.1"
+    assert "Введение" not in label
+
+
+def test_format_source_label_preamble():
+    from rag_core.generation.answer.context_builder import format_source_label
+    meta = {
+        "document_title": "Договор аренды А-08-2024",
+        "structure_path": ["Преамбула"],
+    }
+    label = format_source_label(meta)
+    assert label == "Договор аренды А-08-2024, Преамбула"

@@ -37,8 +37,8 @@ CHUNKS_PATH = ROOT / "data" / "processed" / "chunks.jsonl"
 BM25_PATH = ROOT / "storage" / "bm25_index" / "bm25.pkl"
 
 CONTRACT_DOC_ID = "contract_а-08-2024"
-RENT_CHUNK_ID = "contract_а-08-2024_v1_0009_65851a01"
-DEADLINE_CHUNK_ID = "contract_а-08-2024_v1_0010_3b16c866"
+RENT_CHUNK_ID = "contract_а-08-2024_v1_0006_f0f28c05"
+DEADLINE_CHUNK_ID = "contract_а-08-2024_v1_0007_e4e9b757"
 
 
 def _require_real_index() -> None:

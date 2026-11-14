@@ -300,12 +300,12 @@ def test_classify_heading_part_inside_article():
 
 
 def test_classify_heading_paren_subpoint():
-    level, title, pid = classify_heading(
+    # Элементы перечислений со скобкой ("1)") не должны отрываться от родительской нормы
+    res = classify_heading(
         "1) фамилию, имя, отчество",
         in_article=True, current_art_num="9", current_part_num="9.4",
     )
-    assert level == 4
-    assert pid == "9.4.1"
+    assert res is None
 
 
 def test_classify_heading_ignores_modified_note():

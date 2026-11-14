@@ -45,12 +45,11 @@ def test_punkt_word_form_three_levels():
 
 
 def test_paren_multi_dot_inside_article():
-    level, _, pid = classify_heading(
+    res = classify_heading(
         "15.1) какой-то текст",
         in_article=True, current_art_num="1", current_part_num="1.5",
     )
-    assert level == 4
-    assert pid == "1.5.15.1"
+    assert res is None
 
 
 def test_notes_synthetic_full_structure():
