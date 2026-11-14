@@ -44,7 +44,7 @@ _RENTAL_SLOTS: frozenset[str] = frozenset(
     {
         "rent_amount",
         "security_deposit",
-        # "return_procedure",
+        "return_procedure",
     }
 )
 _SUPPLY_SLOTS: frozenset[str] = frozenset(
@@ -382,9 +382,6 @@ def _task_trace_entry(idx: int, task: RetrievalTask, prefix: str = "task") -> di
         "source_kinds": list(task.source_kinds or []),
     }
 
-_SUPPLY_ONLY_SLOTS = {"delivery_terms", "warranty_period"}
-_RENTAL_ONLY_SLOTS = {"return_procedure", "security_deposit"}
-
 def plan(
     spec: QuerySpec,
     user_selected_doc_ids: set[str] | None = None,
@@ -400,13 +397,6 @@ def plan(
     )
     top_k = int(config.RAG_TOP_K)
     document_type = _detect_document_type(spec)
-    if document_type == "rental":
-        filtered = [s for s in spec.required_slots if s not in _SUPPLY_ONLY_SLOTS]
-    elif document_type == "supply":
-        filtered = [s for s in spec.required_slots if s not in _RENTAL_ONLY_SLOTS]
-    else:
-        filtered = spec.required_slots
-    spec.required_slots = filtered or ["general"]
     required_source_kinds = detect_required_source_kinds(spec)
     spec.required_source_kinds = required_source_kinds
     intent = (spec.intent or "").strip().lower()
