@@ -147,6 +147,7 @@ openai==3.45.0
 rank-bm25==0.2.2
 requests==2.32.5
 tiktoken==0.12.0
+pydantic==2.14.2
 """
 
 SUBMIT_README = """# submit — платформенный артефакт

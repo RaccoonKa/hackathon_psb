@@ -82,6 +82,7 @@ EXPECTED_REQUIREMENTS = {
     "rank-bm25": "0.2.2",
     "requests": "2.32.5",
     "tiktoken": "0.12.0",
+    "pydantic": "2.14.2",
 }
 
 FORBIDDEN_NAMES = {
