@@ -15,7 +15,7 @@ from rag_core.indexing.chunker import (
 from rag_core.indexing.parser import load_documents_with_metadata
 from rag_core.retrieval.hybrid import clear_canonical_chunks_cache
 from rag_core.retrieval.keyword_store import BM25KeywordStore
-from rag_core.retrieval.vector_store import save_embeddings_to_chroma
+from rag_core.retrieval.vector_store import clear_chroma_collection, save_embeddings_to_chroma
 
 
 def build_indexes() -> dict:
@@ -62,6 +62,7 @@ def build_indexes() -> dict:
     bm25.save()
 
     print("4. Сохранение эмбеддингов в ChromaDB...")
+    clear_chroma_collection()
     save_embeddings_to_chroma(all_chunks)
 
     # 5. Сохранение манифеста индексации (раздел 4.3 rag.md)

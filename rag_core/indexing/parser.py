@@ -416,14 +416,11 @@ def classify_heading(
         prov_id = f"{art_clean}.прим.{note_num}" if art_clean else f"прим.{note_num}"
         return (4, f"Примечание {note_num}", prov_id)
 
-    # Уровень 4: Подпункты со скобкой ("1)", "1.1)", "2.1)", "15.1)") — проверяем ДО m_sub
-    m_paren = re.match(r"^(\d+(?:[\.\-]\d+)*)\)\s*(.*)$", clean)
-    if m_paren and in_article:
-        sub_num = m_paren.group(1).rstrip(".")
-        parent_id = current_part_num or current_art_num
-        parent_clean = parent_id.rstrip(".") if parent_id else ""
-        prov_id = f"{parent_clean}.{sub_num}" if parent_clean else sub_num
-        return (4, f"Подпункт {sub_num}", prov_id)
+    # Примечание: нумерованные пункты перечислений со скобкой ("1)", "2)", "15.1)") являются элементами
+    # списков внутри статьи/пункта и не классифицируются как отдельные заголовки, чтобы не дробить
+    # нормы на микрочанки и сохранять целостность правовых положений (п. 3 CHUNKING_TASKS.md).
+    if re.match(r"^\d+(?:[\.\-]\d+)*\)", clean):
+        return None
 
     # Уровень 3+: Цифровые пункты договоров ("3.2.", "1.1", "2.2.3") или части закона с дробью (КоАП "1.1.", "2.1.")
     m_sub = re.match(r"^(\d+\.\d+(?:\.\d+)*)\.?\s*(.*)$", clean)
@@ -462,7 +459,7 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     lines = content.splitlines(keepends=True)
     blocks: List[Dict[str, Any]] = []
 
-    path_stack: List[Tuple[int, str]] = [(0, "Введение / Общие положения")]
+    path_stack: List[Tuple[int, str]] = []
     current_provision_id: Optional[str] = None
     current_art_num: Optional[str] = None
     current_part_num: Optional[str] = None
@@ -489,9 +486,10 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
             if current_lines:
                 b_text = "".join(current_lines).strip()
                 if b_text:
+                    block_path = [t for _, t in path_stack] if path_stack else ["Преамбула"]
                     blocks.append({
                         "provision_id": current_provision_id,
-                        "path": [t for _, t in path_stack],
+                        "path": block_path,
                         "start_line": start_line,
                         "end_line": line_no - 1,
                         "char_start": block_char_start,
@@ -540,9 +538,10 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     if current_lines:
         b_text = "".join(current_lines).strip()
         if b_text:
+            block_path = [t for _, t in path_stack] if path_stack else ["Преамбула"]
             blocks.append({
                 "provision_id": current_provision_id,
-                "path": [t for _, t in path_stack],
+                "path": block_path,
                 "start_line": start_line,
                 "end_line": len(lines),
                 "char_start": block_char_start,

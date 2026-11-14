@@ -187,6 +187,26 @@ def reset_chroma_cache() -> None:
         _collection_dimension = None
 
 
+def clear_chroma_collection() -> None:
+    """Удаляет и пересоздаёт коллекцию ChromaDB для чистой переиндексации."""
+    global _chroma_collection, _collection_dimension
+    with _CHROMA_LOCK:
+        import chromadb
+
+        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        try:
+            client.delete_collection(name=COLLECTION_NAME)
+        except Exception:
+            pass
+        _chroma_collection = client.create_collection(
+            name=COLLECTION_NAME,
+            configuration={"hnsw": {"space": "cosine"}},
+        )
+    with _DIMENSION_LOCK:
+        _collection_dimension = None
+
+
 def get_local_model_status() -> Dict[str, Any]:
     """Диагностика локальной модели без раскрытия путей/секретов."""
     return {

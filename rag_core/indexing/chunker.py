@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from rag_core.config import PROCESSED_DATA_DIR
@@ -74,6 +75,37 @@ def _resolve_page_number(
     if target_pos < page_spans[0][0]:
         return page_spans[0][2]
     return page_spans[-1][2]
+
+
+def _is_bare_heading_block(b: Dict[str, Any]) -> bool:
+    """Определяет, является ли блок лишь структурным заголовком без содержательного текста нормы.
+
+    Заголовки разделов договоров ('1. Предмет договора') или статей законов ('Статья 112...'),
+    за которыми сразу следуют подпункты, должны сохраняться в path дочерних элементов, но не
+    порождать пустые чанки-пустышки из 3 слов (п. 2 CHUNKING_TASKS.md).
+    """
+    path = b.get("path") or []
+    if not path:
+        return False
+
+    clean_text = b.get("text", "").strip()
+    if not clean_text:
+        return True
+
+    if len(clean_text) > 300 or len(clean_text.split()) > 40:
+        return False
+
+    last_heading = path[-1].strip()
+    norm_text = re.sub(r"[\s\.\:\;\-]+", " ", clean_text).strip().lower()
+    norm_h = re.sub(r"[\s\.\:\;\-]+", " ", last_heading).strip().lower()
+
+    if norm_text == norm_h:
+        return True
+
+    if clean_text.rstrip(".:") == last_heading.rstrip(".:"):
+        return True
+
+    return False
 
 
 def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -166,6 +198,12 @@ def chunk_document_structural(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
     i = 0
     while i < len(blocks):
         b = blocks[i]
+
+        # Пустые заголовки разделов/статей без собственного тела не порождают чанки
+        if len(blocks) > 1 and _is_bare_heading_block(b):
+            i += 1
+            continue
+
         b_tokens = count_tokens(b["text"])
 
         # 1. Положение превышает лимит (> 750 токенов) -> делим по реальным токенам с перекрытием
