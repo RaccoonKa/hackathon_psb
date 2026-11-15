@@ -18,6 +18,9 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./data:/app/data
+      - ./models:/app/models:ro
+    env_file:
+      - .env
     command: >
       sh -c "if [ ! -f /app/data/manifests/indexing_manifest.json ]; then
                echo 'Indexing manifest not found, running build_index.py...';
