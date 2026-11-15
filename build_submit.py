@@ -98,6 +98,10 @@ MODULE_SOURCES: List[Tuple[str, str]] = [
         "generation_retrieval_evidence.py",
     ),
     # --- indexing / retrieval ---
+    (
+        "rag_core/indexing/version.py",
+        "indexing_version.py",
+    ),
     ("rag_core/indexing/chunker.py", "indexing_chunker.py"),
     ("rag_core/indexing/parser.py", "indexing_parser.py"),
     ("rag_core/indexing/tokenizer_utils.py", "indexing_tokenizer_utils.py"),
@@ -120,6 +124,14 @@ for _source, _target in MODULE_SOURCES:
 
 INTERNAL_MODULES = {
     target[: -len(".py")] for _, target in MODULE_SOURCES
+}
+
+# Реэкспорты на уровне пакетов: `from rag_core.indexing import CHUNKER_VERSION`
+# должны превращаться в `from indexing_version import CHUNKER_VERSION`, чтобы в
+# плоской сборке в переменную попадало значение, а не объект модуля.
+PACKAGE_EXPORTS: dict[str, str] = {
+    "rag_core.indexing.CHUNKER_VERSION": "indexing_version",
+    "src.indexing.CHUNKER_VERSION": "indexing_version",
 }
 
 FORBIDDEN_NAMES = {
@@ -286,8 +298,15 @@ class SrcImportRewriter(ast.NodeTransformer):
 
         if module.startswith(("src.", "rag_core.")):
             new_nodes = []
+            exported: dict[str, List[ast.alias]] = {}
             for alias in node.names:
                 full_name = f"{module}.{alias.name}"
+                export_module = PACKAGE_EXPORTS.get(full_name)
+                if export_module is not None:
+                    exported.setdefault(export_module, []).append(
+                        ast.alias(name=alias.name, asname=alias.asname)
+                    )
+                    continue
                 flat_name = MODULE_MAP.get(full_name)
                 if flat_name is None:
                     raise BuildError(
@@ -301,6 +320,14 @@ class SrcImportRewriter(ast.NodeTransformer):
                                 asname=alias.asname or alias.name,
                             )
                         ]
+                    )
+                )
+            for export_module, export_aliases in exported.items():
+                new_nodes.append(
+                    ast.ImportFrom(
+                        module=export_module,
+                        names=export_aliases,
+                        level=0,
                     )
                 )
             return new_nodes

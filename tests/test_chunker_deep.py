@@ -4,6 +4,7 @@ from rag_core.indexing.chunker import (
     chunk_document_structural,
 )
 from rag_core.indexing.tokenizer_utils import count_tokens
+from rag_core.indexing.version import CHUNKER_VERSION
 from tests._common import all_docs, require_data
 
 
@@ -16,7 +17,7 @@ def _make_doc(content, document_type="contract", amends_document_id=None):
             "document_title": "Тестовый документ",
             "document_type": document_type,
             "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "chunker_version": "structural-1.0",
+            "chunker_version": CHUNKER_VERSION,
             "effective_from": None,
             "effective_to": None,
             "effective_dates_known": False,
@@ -92,7 +93,13 @@ def test_preamble_merge_respects_target_max():
 def test_short_contract_not_bypassed():
     content = "1. Раздел\n1.1. Первый пункт\n1.2. Второй пункт\n"
     chunks = chunk_document_structural(_make_doc(content, document_type="contract"))
-    assert len(chunks) >= 2
+    # По ТЗ пункты одного раздела склеиваются в один чанк, но bypass
+    # ("Полный текст документа") для договора по-прежнему не применяется.
+    assert len(chunks) >= 1
+    assert chunks[0]["structure"]["path"] != ["Полный текст документа"]
+    joined = " ".join(c["text"] for c in chunks)
+    assert "Первый пункт" in joined
+    assert "Второй пункт" in joined
 
 
 def test_short_internal_is_bypassed():

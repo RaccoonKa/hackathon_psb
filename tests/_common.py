@@ -18,6 +18,7 @@ _cfg.USE_STUB_RAG = False
 _cfg.USE_STUB_RERANKER = False
 
 from rag_core.generation.types import RetrievedChunk
+from rag_core.indexing.version import CHUNKER_VERSION
 
 RAW_DIR = ROOT / "data" / "raw"
 _CACHE = {}
@@ -72,7 +73,7 @@ def make_chunk_dict(**kwargs):
         "effective_dates_known": True,
         "amends_document_id": None,
         "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-        "chunker_version": "structural-1.0",
+        "chunker_version": CHUNKER_VERSION,
     }
     base.update(kwargs)
     return base

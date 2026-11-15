@@ -10,6 +10,7 @@ from rag_core.indexing.parser import (
     normalize_contract_number,
     parse_ru_text_date,
 )
+from rag_core.indexing.version import CHUNKER_VERSION
 from tests._common import all_docs, doc_by_filename, raw_files, require_data
 
 
@@ -245,7 +246,7 @@ def test_metadata_all_have_parser_and_chunker_version():
     require_data()
     for d in all_docs():
         assert d["metadata"]["parser_version"]
-        assert d["metadata"]["chunker_version"]
+        assert d["metadata"]["chunker_version"] == CHUNKER_VERSION
 
 
 def test_classify_heading_section():
