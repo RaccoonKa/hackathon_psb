@@ -173,3 +173,29 @@ def test_koap_has_pri_mecaniya():
     blocks = extract_document_structure(d["content"])
     ids = {b["provision_id"] for b in blocks if b["provision_id"]}
     assert any(i and "прим" in i for i in ids), f"Нет примечаний среди {ids}"
+
+
+def test_structure_blocks_have_hierarchy_fields():
+    content = (
+        "Первый абзац преамбулы.\n"
+        "1. Крупный раздел\n"
+        "1.1. Первый пункт\n"
+        "1.1.1. Глубокий подпункт\n"
+    )
+    blocks = extract_document_structure(content)
+    preamble = blocks[0]
+    assert preamble["level"] == 0
+    assert preamble["path_levels"] == [0]
+    assert preamble["heading_title"] is None
+    assert preamble["section_provision_id"] is None
+
+    deep = [b for b in blocks if b["provision_id"] == "1.1.1"][0]
+    # backward-compatible поля не удаляют существующие ключи
+    for key in ("provision_id", "path", "start_line", "end_line", "char_start", "char_end", "text"):
+        assert key in deep
+    assert deep["level"] >= 2
+    assert len(deep["path_levels"]) == len(deep["path"])
+    assert deep["heading_title"]
+    # Ближайший уровень <= 2 — крупный раздел "1."
+    assert deep["section_provision_id"] == "1"
+    assert deep["path_levels"][-1] == deep["level"]

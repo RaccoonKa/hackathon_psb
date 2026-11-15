@@ -99,17 +99,21 @@ def test_contract_p17_p32_chunk_exists():
     require_data()
     d = doc_by_filename("Договор поставки П-17")
     chunks = chunk_document_structural(d)
-    p32 = [c for c in chunks if c["structure"]["provision_id"] == "3.2"]
+    # По ТЗ пункты одного крупного раздела склеиваются, поэтому у группы
+    # provision_id может быть None; ищем чанк по тексту положения.
+    p32 = [c for c in chunks if "Складская" in c["text"]]
     assert len(p32) == 1
-    assert "Складская" in p32[0]["text"]
+    assert "3.2." in p32[0]["text"]
+    assert any("3." in p for p in p32[0]["structure"]["path"])
 
 
 def test_contract_p17_p32_has_path_3():
     require_data()
     d = doc_by_filename("Договор поставки П-17")
     chunks = chunk_document_structural(d)
-    p32 = [c for c in chunks if c["structure"]["provision_id"] == "3.2"][0]
+    p32 = [c for c in chunks if "Складская" in c["text"]][0]
     assert any("3." in p for p in p32["structure"]["path"])
+    assert p32["structure"]["provision_id"] in (None, "3.2")
 
 
 def test_contract_a08_p51_chunk():
@@ -150,17 +154,32 @@ def test_law_152fz_chunk_9_1_exists():
     require_data()
     d = doc_by_filename("152ФЗ_ст9")
     chunks = chunk_document_structural(d)
-    ids = {c["structure"]["provision_id"] for c in chunks if c["structure"]["provision_id"]}
-    assert "9" in ids
-    assert "9.1" in ids
+    # Пункт может быть склеен с соседними положениями статьи (provision_id=None),
+    # поэтому ищем чанк по тексту части 1 и проверяем родительский путь статьи.
+    target = [
+        c for c in chunks
+        if "Субъект персональных данных принимает решение" in c["text"]
+    ]
+    assert len(target) == 1
+    assert any("Статья 9" in p for p in target[0]["structure"]["path"])
 
 
 def test_law_koap_chunks_have_parts():
     require_data()
     d = doc_by_filename("КоАП_ст13")
     chunks = chunk_document_structural(d)
-    ids = {c["structure"]["provision_id"] for c in chunks if c["structure"]["provision_id"]}
-    assert "13.11.2" in ids
+    part2 = [
+        c for c in chunks
+        if "Обработка персональных данных без согласия в письменной форме" in c["text"]
+    ]
+    assert part2
+    assert any("Статья 13.11" in p for p in part2[0]["structure"]["path"])
+    part2_1 = [
+        c for c in chunks
+        if "Повторное совершение административного правонарушения, предусмотренного частью 2" in c["text"]
+    ]
+    assert part2_1
+    assert any("Статья 13.11" in p for p in part2_1[0]["structure"]["path"])
 
 
 def test_chunks_contain_text_body():

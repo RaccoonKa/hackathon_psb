@@ -8,11 +8,13 @@ from rag_core.config import (
     RAW_DATA_DIR,
     RERANKER_MODEL,
 )
+from rag_core.indexing import CHUNKER_VERSION
 from rag_core.indexing.chunker import (
     chunk_document_structural,
     save_canonical_chunks,
 )
 from rag_core.indexing.parser import load_documents_with_metadata
+from rag_core.indexing.tokenizer_utils import count_tokens
 from rag_core.retrieval.hybrid import clear_canonical_chunks_cache
 from rag_core.retrieval.keyword_store import BM25KeywordStore
 from rag_core.retrieval.vector_store import clear_chroma_collection, save_embeddings_to_chroma
@@ -36,9 +38,16 @@ def build_indexes() -> dict:
     print("2. Структурно-адаптивный чанкинг...")
     all_chunks = []
     doc_summary = []
+    chunk_token_counts = []
     for document in docs:
         chunk_list = chunk_document_structural(document)
         all_chunks.extend(chunk_list)
+        # Токены считаем по embedding_text: именно он уходит в эмбеддинги.
+        doc_token_counts = [
+            count_tokens(ch.get("embedding_text", ch.get("text", "")))
+            for ch in chunk_list
+        ]
+        chunk_token_counts.extend(doc_token_counts)
         doc_summary.append(
             {
                 "document_id": document["metadata"]["document_id"],
@@ -48,6 +57,7 @@ def build_indexes() -> dict:
                     "amends_document_id"
                 ),
                 "chunks_count": len(chunk_list),
+                "tokens_count": sum(doc_token_counts),
             }
         )
 
@@ -65,6 +75,26 @@ def build_indexes() -> dict:
     clear_chroma_collection()
     save_embeddings_to_chroma(all_chunks)
 
+    # Сводная статистика размеров чанков (аддитивные поля манифеста).
+    total_tokens = sum(chunk_token_counts)
+    if chunk_token_counts:
+        min_tokens = min(chunk_token_counts)
+        max_tokens = max(chunk_token_counts)
+        avg_tokens = round(total_tokens / len(chunk_token_counts), 2)
+    else:
+        min_tokens = max_tokens = avg_tokens = 0
+    size_distribution = {
+        "le_300": sum(1 for t in chunk_token_counts if t <= 300),
+        "301_600": sum(1 for t in chunk_token_counts if 301 <= t <= 600),
+        "601_750": sum(1 for t in chunk_token_counts if 601 <= t <= 750),
+        "gt_750": sum(1 for t in chunk_token_counts if t > 750),
+    }
+    print(
+        f"Токенов всего: {total_tokens}; "
+        f"размер чанка min/avg/max: {min_tokens}/{avg_tokens}/{max_tokens}; "
+        f"распределение: {size_distribution}"
+    )
+
     # 5. Сохранение манифеста индексации (раздел 4.3 rag.md)
     MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
     manifest_data = {
@@ -74,11 +104,18 @@ def build_indexes() -> dict:
         ),
         "embedding_model": EMBEDDING_MODEL,
         "reranker_model": RERANKER_MODEL,
-        "chunker_version": "structural-1.0",
+        "chunker_version": CHUNKER_VERSION,
         "indexed_at": datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "total_chunks": len(all_chunks),
+        "total_tokens": total_tokens,
+        "chunk_size_tokens": {
+            "min": min_tokens,
+            "avg": avg_tokens,
+            "max": max_tokens,
+            "distribution": size_distribution,
+        },
         "documents": doc_summary,
     }
     with open(

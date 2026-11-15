@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
+from rag_core.indexing.version import CHUNKER_VERSION
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
@@ -453,13 +455,61 @@ def classify_heading(
     return None
 
 
+def _build_structure_block(
+    path_stack: List[Tuple[int, str, Optional[str]]],
+    text: str,
+    start_line: int,
+    end_line: int,
+    char_start: int,
+    char_end: int,
+) -> Dict[str, Any]:
+    """Формирует блок структуры, добавляя backward-compatible поля иерархии.
+
+    Новые поля (``level``, ``path_levels``, ``heading_title``,
+    ``section_provision_id``) используются чанкером для соблюдения границ
+    крупных разделов и не ломают прежних потребителей: все старые ключи
+    сохраняются без изменений.
+    """
+    if path_stack:
+        block_path = [title for _, title, _ in path_stack]
+        path_levels = [level for level, _, _ in path_stack]
+        own_level, own_title, _own_prov = path_stack[-1]
+        heading_title: Optional[str] = own_title
+        section_provision_id: Optional[str] = None
+        for level, _title, prov_id in reversed(path_stack):
+            if level <= 2:
+                section_provision_id = prov_id
+                break
+        level_value = own_level
+    else:
+        block_path = ["Преамбула"]
+        path_levels = [0]
+        heading_title = None
+        section_provision_id = None
+        level_value = 0
+
+    return {
+        "provision_id": path_stack[-1][2] if path_stack else None,
+        "path": block_path,
+        "level": level_value,
+        "path_levels": path_levels,
+        "heading_title": heading_title,
+        "section_provision_id": section_provision_id,
+        "start_line": start_line,
+        "end_line": end_line,
+        "char_start": char_start,
+        "char_end": char_end,
+        "text": text,
+    }
+
+
 def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     """Разбивает документ на блоки с непрерывным ведением стека иерархии."""
     is_nk = "налоговый кодекс" in content[:2000].lower() or "нк рф" in content[:2000].lower()
     lines = content.splitlines(keepends=True)
     blocks: List[Dict[str, Any]] = []
 
-    path_stack: List[Tuple[int, str]] = []
+    path_stack: List[Tuple[int, str, Optional[str]]] = []
     current_provision_id: Optional[str] = None
     current_art_num: Optional[str] = None
     current_part_num: Optional[str] = None
@@ -486,22 +536,22 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
             if current_lines:
                 b_text = "".join(current_lines).strip()
                 if b_text:
-                    block_path = [t for _, t in path_stack] if path_stack else ["Преамбула"]
-                    blocks.append({
-                        "provision_id": current_provision_id,
-                        "path": block_path,
-                        "start_line": start_line,
-                        "end_line": line_no - 1,
-                        "char_start": block_char_start,
-                        "char_end": char_offset,
-                        "text": b_text,
-                    })
+                    blocks.append(
+                        _build_structure_block(
+                            path_stack=path_stack,
+                            text=b_text,
+                            start_line=start_line,
+                            end_line=line_no - 1,
+                            char_start=block_char_start,
+                            char_end=char_offset,
+                        )
+                    )
                 current_lines = []
                 start_line = line_no
                 block_char_start = char_offset
 
             while path_stack and path_stack[-1][0] >= level:
-                popped_level, popped_title = path_stack.pop()
+                popped_level, popped_title, _popped_prov = path_stack.pop()
                 if popped_level == 2:
                     in_article = False
                     current_art_num = None
@@ -512,7 +562,7 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
                 elif popped_level == 3:
                     current_part_num = None
 
-            path_stack.append((level, h_title))
+            path_stack.append((level, h_title, prov_id))
             current_provision_id = prov_id
 
             if level == 2:
@@ -538,16 +588,16 @@ def extract_document_structure(content: str) -> List[Dict[str, Any]]:
     if current_lines:
         b_text = "".join(current_lines).strip()
         if b_text:
-            block_path = [t for _, t in path_stack] if path_stack else ["Преамбула"]
-            blocks.append({
-                "provision_id": current_provision_id,
-                "path": block_path,
-                "start_line": start_line,
-                "end_line": len(lines),
-                "char_start": block_char_start,
-                "char_end": char_offset,
-                "text": b_text,
-            })
+            blocks.append(
+                _build_structure_block(
+                    path_stack=path_stack,
+                    text=b_text,
+                    start_line=start_line,
+                    end_line=len(lines),
+                    char_start=block_char_start,
+                    char_end=char_offset,
+                )
+            )
 
     return blocks
 
@@ -600,7 +650,7 @@ def extract_metadata(
         "ingested_at": now_iso,
         "amends_document_id": amends_id,
         "parser_version": parser_ver,
-        "chunker_version": "structural-1.0",
+        "chunker_version": CHUNKER_VERSION,
     }
     return metadata, cleaned_content
 

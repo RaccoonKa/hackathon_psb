@@ -8,6 +8,7 @@ from rag_core.indexing.chunker import (
     SUB_CHUNK_SIZE_CHARS,
     chunk_document_structural,
 )
+from rag_core.indexing.version import CHUNKER_VERSION
 
 
 def _make_doc(content):
@@ -19,7 +20,7 @@ def _make_doc(content):
             "document_title": "Тестовый документ",
             "document_type": "contract",
             "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "chunker_version": "structural-1.0",
+            "chunker_version": CHUNKER_VERSION,
             "effective_from": None,
             "effective_to": None,
             "effective_dates_known": False,
