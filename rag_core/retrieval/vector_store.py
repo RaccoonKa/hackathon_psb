@@ -1,60 +1,60 @@
-"""Векторное хранилище и провайдеры эмбеддингов (LOCAL/SUBMIT).
+"""Векторное хранилище и HTTP-провайдер эмбеддингов (LOCAL/SUBMIT).
 
-Все ленивые инициализации (модель bge-m3, клиент API, коллекция Chroma)
-защищены модульными блокировками с double-checked locking: параллельные
-retrieval-задачи не должны одновременно выполнять ``import torch`` /
-``from transformers import ...`` или создавать ``PersistentClient``.
+Эмбеддинги считает llama.cpp, запущенный как OpenAI-совместимый сервер:
+``POST {EMBEDDING_API_BASE_URL}/embeddings``. Локальный инференс через
+``transformers``/``torch`` в проекте больше не используется.
+
+Ленивые инициализации (HTTP-клиент ``httpx``, коллекция Chroma) защищены
+модульными блокировками с double-checked locking: параллельные
+retrieval-задачи не должны одновременно создавать ``httpx.Client`` или
+``PersistentClient``.
 """
+
+from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import threading
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+import httpx
+
 from rag_core.config import (
     ALLOW_HASH_FALLBACK,
-    BASE_DIR,
     CHROMA_DIR,
     COLLECTION_NAME,
+    EMBED_BATCH_SIZE,
     EMBEDDING_API_BASE_URL,
     EMBEDDING_API_KEY,
     EMBEDDING_API_MAX_RETRIES,
-    EMBEDDING_API_TIMEOUT_S,
     EMBEDDING_DIMENSION,
     EMBEDDING_MODEL,
-    USE_LOCAL_EMBEDDING_MODEL,
+    EMBEDDING_NORMALIZE,
+    EMBEDDING_TIMEOUT,
     USE_SUBMIT,
 )
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MODEL_PATH = BASE_DIR / "models" / "bge-m3"
-# Размерность bge-m3; используется как ожидаемая, если config не задал явно.
-LOCAL_MODEL_FALLBACK_DIMENSION = 1024
+# Размерность hash-fallback (совпадает с bge-m3).
 HASH_FALLBACK_DIMENSION = 1024
+# Статусы, при которых запрос имеет смысл повторить.
+_RETRYABLE_STATUSES: frozenset = frozenset({429, 500, 502, 503, 504})
+# Верхняя граница паузы между повторами (секунды).
+_MAX_RETRY_BACKOFF_S: float = 5.0
 
-_local_tokenizer = None
-_local_model = None
-_local_device = None
-# Кэш неудачи загрузки: модель не пытаемся грузить на каждый запрос.
-_local_model_error: Optional[BaseException] = None
-_local_model_error_type: Optional[str] = None
-_local_model_error_path: Optional[str] = None
-_local_model_error_logged = False
-_api_client = None
+_http_client: Optional[httpx.Client] = None
+_http_client_signature: Optional[tuple] = None
 _chroma_collection = None
 _collection_dimension: Optional[int] = None
 
-_MODEL_LOCK = threading.Lock()
 _API_LOCK = threading.Lock()
 _CHROMA_LOCK = threading.Lock()
 _DIMENSION_LOCK = threading.Lock()
 _PREWARM_LOCK = threading.Lock()
-# Локальный инференс сериализуем: torch/transformers не гарантируют
-# потокобезопасность модели при конкурентных вызовах.
-_LOCAL_INFERENCE_LOCK = threading.Lock()
 
 _prewarm_done = False
 _prewarm_report: Dict[str, Any] = {}
@@ -75,107 +75,368 @@ class EmbeddingDimensionError(EmbeddingError):
     """Размерность эмбеддингов не совпадает с ожидаемой/сохранённой."""
 
 
+# --- совместимые заглушки локального инференса ------------------------------
+# Локальная torch-модель удалена; функции оставлены, потому что их ожидают
+# тесты, verify_submit.py и внешние импорты.
+
+
 def _local_model_enabled() -> bool:
-    """Локальная модель допустима только в LOCAL-режиме и по флагу config."""
-    return bool(USE_LOCAL_EMBEDDING_MODEL) and not USE_SUBMIT
-
-
-def _record_local_model_failure(exc: BaseException, path: str) -> None:
-    """Кэширует неудачу и печатает предупреждение ровно один раз."""
-    global _local_model_error, _local_model_error_type
-    global _local_model_error_path, _local_model_error_logged
-
-    _local_model_error = exc
-    _local_model_error_type = type(exc).__name__
-    _local_model_error_path = path
-    if not _local_model_error_logged:
-        _local_model_error_logged = True
-        message = (
-            "[Предупреждение] Не удалось загрузить локальную модель "
-            f"bge-m3 ({_local_model_error_type}: {exc}). "
-            "Используются внешние эмбеддинги/hash-fallback."
-        )
-        print(message)
-        logger.warning("%s", message)
+    """Локальный torch-инференс отключён навсегда (no-op совместимость)."""
+    return False
 
 
 def _load_local_model():
-    """Ленивая потокобезопасная загрузка bge-m3 (только LOCAL-режим).
-
-    Неудача загрузки кэшируется в ``_local_model_error`` и повторно не
-    логируется; контролируемый сброс — :func:`reset_local_model_cache`.
-    """
-    global _local_tokenizer, _local_model, _local_device
-
-    if not _local_model_enabled():
-        return None, None, None
-
-    if _local_model is not None:
-        return _local_tokenizer, _local_model, _local_device
-
-    path_str = str(LOCAL_MODEL_PATH)
-    if _local_model_error is not None and _local_model_error_path == path_str:
-        return None, None, None
-
-    with _MODEL_LOCK:
-        # double-checked locking
-        if _local_model is not None:
-            return _local_tokenizer, _local_model, _local_device
-        if _local_model_error is not None and _local_model_error_path == path_str:
-            return None, None, None
-
-        if not LOCAL_MODEL_PATH.exists():
-            _record_local_model_failure(
-                FileNotFoundError(
-                    "Локальная модель bge-m3 не найдена в models/bge-m3"
-                ),
-                path_str,
-            )
-            return None, None, None
-
-        try:
-            # Импорты под lock: параллельный lazy-import transformers
-            # детерминированно падал с cannot import name 'AutoModel'.
-            import torch
-            from transformers import AutoModel, AutoTokenizer
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            tokenizer = AutoTokenizer.from_pretrained(path_str)
-            model = AutoModel.from_pretrained(path_str)
-            model.to(device)
-            model.eval()
-        except Exception as exc:  # noqa: BLE001 - локальная модель опциональна
-            _record_local_model_failure(exc, path_str)
-            return None, None, None
-
-        _local_tokenizer = tokenizer
-        _local_model = model
-        _local_device = device
-        return _local_tokenizer, _local_model, _local_device
+    """Совместимая заглушка: (None, None, None) — локальной модели нет."""
+    return None, None, None
 
 
 def reset_local_model_cache() -> None:
-    """Контролируемый сброс кэша модели (успеха и неудачи).
+    """Сброс служебных кэшей провайдера эмбеддингов и prewarm-отчёта.
 
-    Нужен после смены конфигурации/появления модели; предзагрузка после
-    сброса выполняется заново.
+    Сохранён как публичный контракт (тесты, verify_submit.py).
     """
-    global _local_tokenizer, _local_model, _local_device
-    global _local_model_error, _local_model_error_type
-    global _local_model_error_path, _local_model_error_logged
     global _prewarm_done, _prewarm_report
 
-    with _MODEL_LOCK:
-        _local_tokenizer = None
-        _local_model = None
-        _local_device = None
-        _local_model_error = None
-        _local_model_error_type = None
-        _local_model_error_path = None
-        _local_model_error_logged = False
     with _PREWARM_LOCK:
         _prewarm_done = False
         _prewarm_report = {}
+    reset_embedding_http_client()
+
+
+def get_local_model_status() -> Dict[str, Any]:
+    """Диагностика провайдера эмбеддингов без раскрытия путей/секретов."""
+    return {
+        "enabled": False,
+        "available": False,
+        "device": None,
+        "model": EMBEDDING_MODEL,
+        "provider": "api",
+        "error_type": None,
+        "error_message": None,
+    }
+
+
+def reset_embedding_http_client() -> None:
+    """Закрывает и сбрасывает ленивый HTTP-клиент эмбеддингов."""
+    global _http_client, _http_client_signature
+
+    with _API_LOCK:
+        client = _http_client
+        _http_client = None
+        _http_client_signature = None
+    if client is not None:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 - закрытие кэша не фатально
+            logger.debug("Не удалось закрыть HTTP-клиент эмбеддингов")
+
+
+# --- HTTP-клиент llama.cpp --------------------------------------------------
+
+
+def _http_client_config_signature() -> tuple:
+    """Снимок конфига, при изменении которого клиент пересоздаётся."""
+    return (
+        str(EMBEDDING_API_BASE_URL or ""),
+        str(EMBEDDING_API_KEY or ""),
+        float(EMBEDDING_TIMEOUT),
+    )
+
+
+def _get_http_client() -> httpx.Client:
+    """Ленивый потокобезопасный httpx-клиент (пересоздаётся при смене конфига)."""
+    global _http_client, _http_client_signature
+
+    signature = _http_client_config_signature()
+    client = _http_client
+    if client is not None and _http_client_signature == signature:
+        return client
+
+    with _API_LOCK:
+        # double-checked locking: параллельные задачи не создают клиенты.
+        if _http_client is not None and _http_client_signature == signature:
+            return _http_client
+
+        previous = _http_client
+        _http_client = None
+        if previous is not None:
+            try:
+                previous.close()
+            except Exception:  # noqa: BLE001
+                logger.debug("Не удалось закрыть прежний HTTP-клиент эмбеддингов")
+
+        timeout_value = float(EMBEDDING_TIMEOUT)
+        timeout = httpx.Timeout(
+            timeout_value,
+            connect=timeout_value,
+            read=timeout_value,
+            write=timeout_value,
+            pool=timeout_value,
+        )
+        _http_client = httpx.Client(timeout=timeout)
+        _http_client_signature = signature
+        return _http_client
+
+
+def _embeddings_endpoint() -> str:
+    """URL эндпоинта эмбеддингов; невалидный/пустой base -> ConfigError."""
+    base = (EMBEDDING_API_BASE_URL or "").strip()
+    if not base:
+        raise EmbeddingConfigError(
+            "Не задан EMBEDDING_API_BASE_URL. Укажите URL локального "
+            "llama.cpp эмбеддинг-сервера, например http://127.0.0.1:8082/v1"
+        )
+
+    parsed = urlparse(base)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise EmbeddingConfigError(
+            "EMBEDDING_API_BASE_URL должен быть абсолютным http(s) URL "
+            "(значение не логируется)."
+        )
+    return f"{base.rstrip('/')}/embeddings"
+
+
+def _build_headers() -> Dict[str, str]:
+    """Заголовки запроса; ключ передаётся только в Authorization."""
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    api_key = (EMBEDDING_API_KEY or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _validate_embeddings(
+    vectors: List[List[float]], expected_count: int
+) -> None:
+    if len(vectors) != expected_count:
+        raise EmbeddingError(
+            "API эмбеддингов вернул неверное число векторов: "
+            f"ожидалось {expected_count}, получено {len(vectors)}"
+        )
+
+    dimensions = set()
+    for vector in vectors:
+        if not vector:
+            raise EmbeddingError("API эмбеддингов вернул пустой вектор")
+        dimensions.add(len(vector))
+
+    if len(dimensions) != 1:
+        raise EmbeddingError(
+            "API эмбеддингов вернул векторы разной размерности: "
+            f"{sorted(dimensions)}"
+        )
+
+    actual_dimension = dimensions.pop()
+    if EMBEDDING_DIMENSION and actual_dimension != EMBEDDING_DIMENSION:
+        raise EmbeddingDimensionError(
+            "Размерность эмбеддингов не соответствует ожидаемой: "
+            f"получено {actual_dimension}, ожидалось {EMBEDDING_DIMENSION}. "
+            "Проверьте EMBEDDING_MODEL/EMBEDDING_DIMENSION."
+        )
+
+
+def _parse_embeddings_response(
+    payload: Any, expected_count: int
+) -> List[List[float]]:
+    """Разбирает ответ ``/embeddings``: сортировка по index и валидация."""
+    if not isinstance(payload, dict):
+        raise EmbeddingError(
+            "Ответ сервера эмбеддингов имеет неожиданный формат"
+        )
+
+    error = payload.get("error")
+    if error:
+        if isinstance(error, dict):
+            message = str(
+                error.get("message") or error.get("type") or error
+            )[:300]
+        else:
+            message = str(error)[:300]
+        raise EmbeddingError(f"Сервер эмбеддингов вернул ошибку: {message}")
+
+    raw_items = payload.get("data")
+    if not isinstance(raw_items, list):
+        raise EmbeddingError("В ответе сервера эмбеддингов нет поля data")
+
+    indexed: List[tuple] = []
+    for position, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            raise EmbeddingError(
+                "Элемент data в ответе эмбеддингов не является объектом"
+            )
+        raw_embedding = item.get("embedding")
+        if not isinstance(raw_embedding, (list, tuple)):
+            raise EmbeddingError(
+                "Элемент data в ответе эмбеддингов не содержит embedding"
+            )
+        try:
+            vector = [float(value) for value in raw_embedding]
+        except (TypeError, ValueError) as exc:
+            raise EmbeddingError(
+                "Эмбеддинг содержит нечисловые значения"
+            ) from exc
+
+        index = item.get("index")
+        indexed.append((index if isinstance(index, int) else position, vector))
+
+    # Некоторые серверы/прокси возвращают элементы не по порядку.
+    indexed.sort(key=lambda pair: pair[0])
+    vectors = [vector for _, vector in indexed]
+    _validate_embeddings(vectors, expected_count)
+    return vectors
+
+
+def _normalize_vector(vector: List[float]) -> List[float]:
+    """L2-нормализация; нулевой вектор возвращается как есть."""
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm <= 0.0:
+        return vector
+    return [value / norm for value in vector]
+
+
+def _sanitize_batch(texts: List[str]) -> List[str]:
+    """Пустые/пробельные строки заменяются пробелом (llama.cpp даёт 400)."""
+    cleaned: List[str] = []
+    for text in texts:
+        if isinstance(text, str) and text.strip():
+            cleaned.append(text)
+        else:
+            logger.debug(
+                "Пустой текст в батче эмбеддингов заменён на пробел"
+            )
+            cleaned.append(" ")
+    return cleaned
+
+
+def _sleep_before_retry(attempt: int) -> None:
+    """Экспоненциальный backoff: 0.5, 1, 2, 4 ... с ограничением 5 с."""
+    time.sleep(min(_MAX_RETRY_BACKOFF_S, 0.5 * (2 ** max(0, attempt))))
+
+
+def _request_embeddings(texts: List[str]) -> List[List[float]]:
+    """Один HTTP-запрос ``POST {BASE}/embeddings`` с ретраями."""
+    endpoint = _embeddings_endpoint()
+    headers = _build_headers()
+    payload = {
+        "model": EMBEDDING_MODEL,
+        "input": list(texts),
+    }
+    attempts = max(0, int(EMBEDDING_API_MAX_RETRIES)) + 1
+    last_error: Optional[BaseException] = None
+
+    for attempt in range(attempts):
+        is_last = attempt + 1 >= attempts
+        try:
+            response = _get_http_client().post(
+                endpoint, json=payload, headers=headers
+            )
+        except httpx.TimeoutException as exc:
+            last_error = exc
+            if is_last:
+                raise EmbeddingError(
+                    "Таймаут запроса к серверу эмбеддингов "
+                    f"({type(exc).__name__}); проверьте EMBEDDING_TIMEOUT"
+                ) from exc
+            _sleep_before_retry(attempt)
+            continue
+        except httpx.TransportError as exc:
+            last_error = exc
+            if is_last:
+                raise EmbeddingError(
+                    "Сервер эмбеддингов недоступен "
+                    f"({type(exc).__name__}); проверьте EMBEDDING_API_BASE_URL"
+                ) from exc
+            _sleep_before_retry(attempt)
+            continue
+
+        status = int(response.status_code)
+        if status in _RETRYABLE_STATUSES:
+            last_error = EmbeddingError(
+                f"Сервер эмбеддингов вернул HTTP {status}"
+            )
+            if is_last:
+                raise last_error
+            _sleep_before_retry(attempt)
+            continue
+
+        if status in {401, 403, 404}:
+            raise EmbeddingConfigError(
+                "Сервер эмбеддингов отклонил запрос "
+                f"(HTTP {status}). Проверьте EMBEDDING_API_BASE_URL/"
+                "EMBEDDING_MODEL/EMBEDDING_API_KEY "
+                "(значения ключей не логируются)."
+            )
+
+        if status == 400:
+            raise EmbeddingError(
+                "Сервер эмбеддингов отклонил запрос (HTTP 400): "
+                "проверьте EMBEDDING_MODEL и формат поля input"
+            )
+
+        if status >= 400:
+            raise EmbeddingError(
+                f"Сервер эмбеддингов вернул HTTP {status}"
+            )
+
+        try:
+            response_payload = response.json()
+        except ValueError as exc:
+            raise EmbeddingError(
+                "Сервер эмбеддингов вернул не-JSON ответ"
+            ) from exc
+
+        return _parse_embeddings_response(response_payload, len(texts))
+
+    raise EmbeddingError(
+        "Не удалось получить эмбеддинги"
+        + (f" ({type(last_error).__name__})" if last_error else "")
+    )
+
+
+def _api_embeddings(
+    texts: List[str], batch_size: Optional[int] = None
+) -> List[List[float]]:
+    """Батчевый вызов HTTP-сервера эмбеддингов с L2-нормализацией."""
+    if not texts:
+        return []
+
+    size = int(batch_size or EMBED_BATCH_SIZE) or len(texts)
+    size = max(1, size)
+
+    vectors: List[List[float]] = []
+    for start in range(0, len(texts), size):
+        batch = _sanitize_batch(texts[start : start + size])
+        vectors.extend(_request_embeddings(batch))
+
+    if EMBEDDING_NORMALIZE:
+        return [_normalize_vector(vector) for vector in vectors]
+    return vectors
+
+
+def get_chroma_collection():
+    """Потокобезопасная инициализация персистентного ChromaDB."""
+    global _chroma_collection
+    if _chroma_collection is not None:
+        return _chroma_collection
+
+    with _CHROMA_LOCK:
+        # double-checked locking: 4 потока не создают PersistentClient
+        # одновременно (иначе ValueError: Could not connect to tenant ...).
+        if _chroma_collection is not None:
+            return _chroma_collection
+
+        import chromadb
+
+        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        _chroma_collection = client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            configuration={"hnsw": {"space": "cosine"}},
+        )
+        return _chroma_collection
 
 
 def reset_chroma_cache() -> None:
@@ -206,76 +467,6 @@ def clear_chroma_collection() -> None:
     with _DIMENSION_LOCK:
         _collection_dimension = None
 
-
-def get_local_model_status() -> Dict[str, Any]:
-    """Диагностика локальной модели без раскрытия путей/секретов."""
-    return {
-        "enabled": _local_model_enabled(),
-        "available": _local_model is not None,
-        "device": _local_device,
-        "model": EMBEDDING_MODEL,
-        "error_type": _local_model_error_type,
-        "error_message": (
-            str(_local_model_error)[:300] if _local_model_error else None
-        ),
-    }
-
-
-def _get_api_client():
-    """Создаёт OpenAI-совместимый клиент эмбеддингов по настройкам config."""
-    global _api_client
-    if _api_client is not None:
-        return _api_client
-
-    with _API_LOCK:
-        if _api_client is not None:
-            return _api_client
-
-        if not EMBEDDING_API_BASE_URL or not EMBEDDING_API_KEY:
-            raise EmbeddingConfigError(
-                "Не заданы EMBEDDING_API_BASE_URL/EMBEDDING_API_KEY. "
-                "В SUBMIT-режиме они должны указывать на платформенный прокси."
-            )
-
-        parsed = urlparse(EMBEDDING_API_BASE_URL)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise EmbeddingConfigError(
-                "EMBEDDING_API_BASE_URL должен быть абсолютным http(s) URL "
-                "(значение не логируется)."
-            )
-
-        from openai import OpenAI
-
-        _api_client = OpenAI(
-            base_url=EMBEDDING_API_BASE_URL,
-            api_key=EMBEDDING_API_KEY,
-            max_retries=int(EMBEDDING_API_MAX_RETRIES),
-            timeout=float(EMBEDDING_API_TIMEOUT_S),
-        )
-    return _api_client
-
-
-def get_chroma_collection():
-    """Потокобезопасная инициализация персистентного ChromaDB."""
-    global _chroma_collection
-    if _chroma_collection is not None:
-        return _chroma_collection
-
-    with _CHROMA_LOCK:
-        # double-checked locking: 4 потока не создают PersistentClient
-        # одновременно (иначе ValueError: Could not connect to tenant ...).
-        if _chroma_collection is not None:
-            return _chroma_collection
-
-        import chromadb
-
-        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-        _chroma_collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            configuration={"hnsw": {"space": "cosine"}},
-        )
-        return _chroma_collection
 
 def build_chroma_where_filter(
     document_ids: Optional[List[str]] = None,
@@ -345,19 +536,14 @@ def query_chroma_collection(
             query_kwargs.pop("where", None)
             return collection.query(**query_kwargs)
         raise
-    
+
+
 def expected_embedding_dimension(provider: Optional[str] = None) -> Optional[int]:
     """Ожидаемая размерность векторов для текущего провайдера (или None)."""
     if EMBEDDING_DIMENSION:
         return int(EMBEDDING_DIMENSION)
-    if provider == "local" or _local_model is not None:
-        return LOCAL_MODEL_FALLBACK_DIMENSION
     if provider == "hash_fallback":
         return HASH_FALLBACK_DIMENSION
-    # Локальный режим с установленной bge-m3: ожидаем её размерность даже
-    # до фактической загрузки модели (проверка согласованности индекса).
-    if _local_model_enabled() and LOCAL_MODEL_PATH.exists():
-        return LOCAL_MODEL_FALLBACK_DIMENSION
     return None
 
 
@@ -404,9 +590,9 @@ def get_collection_embedding_dimension(
     return _collection_dimension
 
 
-# Служебные тексты warm-up forward. Не содержат пользовательских данных,
-# секретов и путей; нужны только чтобы прогреть первый forward bge-m3
-# (ленивый импорт CUDA/ядер, аллокации, JIT) до реального поиска.
+# Служебные тексты warm-up. Не содержат пользовательских данных, секретов и
+# путей; нужны только чтобы прогреть HTTP-сервер эмбеддингов (загрузка весов,
+# первые аллокации в llama.cpp) до реального поиска.
 _WARMUP_TEXTS: tuple[str, ...] = (
     "retrieval warmup probe one",
     "retrieval warmup probe two",
@@ -416,11 +602,11 @@ _WARMUP_TEXTS: tuple[str, ...] = (
 
 
 def warmup_local_embedding_model() -> Dict[str, Any]:
-    """Один warm-up forward локальной модели тем же путём, что и поиск.
+    """Warm-up HTTP-запроса к серверу эмбеддингов.
 
-    Вызывается только когда локальная модель уже загружена. Не бросает
-    исключений: при ошибке фиксирует тип и возвращает статус ``error``,
-    чтобы prewarm продолжил работу по существующему fallback-пути.
+    Вызывается prewarm-ом до первого реального поиска. Не бросает исключений:
+    при ошибке фиксирует тип и возвращает статус ``error``, чтобы prewarm
+    продолжил работу по существующему fallback-пути.
     """
     started = time.perf_counter()
     try:
@@ -469,10 +655,11 @@ def validate_query_embedding_dimension(
 
 
 def prewarm_retrieval_backends() -> Dict[str, Any]:
-    """Однократная предзагрузка модели и коллекции (без исключений).
+    """Однократный warm-up HTTP-провайдера эмбеддингов и коллекции Chroma.
 
     Вызывается до создания ThreadPoolExecutor, чтобы исключить гонки
-    инициализации даже теоретически. Возвращает отчёт о состоянии.
+    инициализации даже теоретически. Возвращает отчёт о состоянии; исключений
+    не бросает.
     """
     global _prewarm_done, _prewarm_report
 
@@ -484,24 +671,23 @@ def prewarm_retrieval_backends() -> Dict[str, Any]:
             return dict(_prewarm_report)
 
         report: Dict[str, Any] = {
+            # Локальной torch-модели больше нет — ключ сохранён для контракта.
             "local_model": "disabled",
             "collection": "unknown",
             "collection_size": None,
             "dimension": None,
             "warmup": "skipped",
             "warmup_ms": None,
+            "warmup_dimension": None,
+            "embedding_provider": "api",
+            "embedding_endpoint": None,
             "errors": [],
         }
 
-        tokenizer, model, _device = _load_local_model()
-        if not _local_model_enabled():
-            report["local_model"] = "disabled"
-        elif model is not None:
-            report["local_model"] = "ok"
-        else:
-            report["local_model"] = "unavailable"
-            status = get_local_model_status()
-            report["local_model_error_type"] = status.get("error_type")
+        try:
+            report["embedding_endpoint"] = _embeddings_endpoint()
+        except EmbeddingConfigError:
+            report["embedding_endpoint"] = None
 
         try:
             collection = get_chroma_collection()
@@ -533,30 +719,29 @@ def prewarm_retrieval_backends() -> Dict[str, Any]:
                     }
                 )
 
-        # Warm-up forward выполняется после загрузки модели и Chroma, но до
-        # создания пула потоков: первый реальный forward станет «горячим».
-        if model is not None:
-            warmup = warmup_local_embedding_model()
-            report["warmup"] = warmup.get("status", "error")
-            report["warmup_ms"] = warmup.get("warmup_ms")
-            report["warmup_dimension"] = warmup.get("dimension")
-            if report["warmup"] != "ok":
-                report["errors"].append(
-                    {
-                        "type": warmup.get("error_type") or "WarmupError",
-                        "message": (
-                            "Warm-up forward локальной модели эмбеддингов "
-                            "не завершился; первый реальный вызов может "
-                            "быть холодным"
-                        ),
-                    }
-                )
-            logger.info(
-                "Retrieval prewarm: warmup=%s warmup_ms=%s texts=%s",
-                report["warmup"],
-                report["warmup_ms"],
-                warmup.get("texts"),
+        # Warm-up HTTP-запроса выполняется до создания пула потоков:
+        # первый реальный запрос станет «горячим».
+        warmup = warmup_local_embedding_model()
+        report["warmup"] = warmup.get("status", "error")
+        report["warmup_ms"] = warmup.get("warmup_ms")
+        report["warmup_dimension"] = warmup.get("dimension")
+        if report["warmup"] != "ok":
+            report["errors"].append(
+                {
+                    "type": warmup.get("error_type") or "WarmupError",
+                    "message": (
+                        "Warm-up HTTP-запроса к серверу эмбеддингов не "
+                        "завершился; первый реальный вызов может быть "
+                        "холодным"
+                    ),
+                }
             )
+        logger.info(
+            "Retrieval prewarm: warmup=%s warmup_ms=%s texts=%s",
+            report["warmup"],
+            report["warmup_ms"],
+            warmup.get("texts"),
+        )
 
         _prewarm_report = report
         _prewarm_done = True
@@ -603,133 +788,27 @@ def get_last_embedding_diagnostics() -> Dict[str, Any]:
     return diagnostics
 
 
-def _validate_embeddings(
-    vectors: List[List[float]], expected_count: int
-) -> None:
-    if len(vectors) != expected_count:
-        raise EmbeddingError(
-            "API эмбеддингов вернул неверное число векторов: "
-            f"ожидалось {expected_count}, получено {len(vectors)}"
-        )
-
-    dimensions = set()
-    for vector in vectors:
-        if not vector:
-            raise EmbeddingError("API эмбеддингов вернул пустой вектор")
-        dimensions.add(len(vector))
-
-    if len(dimensions) != 1:
-        raise EmbeddingError(
-            "API эмбеддингов вернул векторы разной размерности: "
-            f"{sorted(dimensions)}"
-        )
-
-    actual_dimension = dimensions.pop()
-    if EMBEDDING_DIMENSION and actual_dimension != EMBEDDING_DIMENSION:
-        raise EmbeddingDimensionError(
-            "Размерность эмбеддингов не соответствует ожидаемой: "
-            f"получено {actual_dimension}, ожидалось {EMBEDDING_DIMENSION}. "
-            "Проверьте EMBEDDING_MODEL/EMBEDDING_DIMENSION."
-        )
-
-
-def _api_embeddings(texts: List[str]) -> List[List[float]]:
-    client = _get_api_client()
-    response = client.embeddings.create(
-        model=EMBEDDING_MODEL, input=texts
-    )
-    data = list(response.data)
-    # Некоторые прокси возвращают элементы не по порядку — сортируем по index.
-    data.sort(key=lambda item: getattr(item, "index", 0))
-    vectors = [list(item.embedding) for item in data]
-    _validate_embeddings(vectors, len(texts))
-    return vectors
-
-
-def _local_embeddings(
-    texts: List[str],
-    tokenizer: Any,
-    model: Any,
-    device: str,
-    batch_size: int,
-) -> List[List[float]]:
-    """Инференс локальной модели под блокировкой (потокобезопасно)."""
-    import torch
-
-    all_embeddings: List[List[float]] = []
-    with _LOCAL_INFERENCE_LOCK:
-        for start in range(0, len(texts), batch_size):
-            batch_texts = texts[start : start + batch_size]
-            inputs = tokenizer(
-                batch_texts,
-                padding=True,
-                truncation=True,
-                max_length=1024,
-                return_tensors="pt",
-            ).to(device)
-
-            with torch.no_grad():
-                outputs = model(**inputs)
-                cls_rep = outputs.last_hidden_state[:, 0]
-                normalized = torch.nn.functional.normalize(
-                    cls_rep, p=2, dim=1
-                )
-                all_embeddings.extend(normalized.cpu().tolist())
-    return all_embeddings
-
-
 def compute_embeddings(
     texts: List[str], batch_size: int = 16
 ) -> List[List[float]]:
-    """Вычисляет эмбеддинги: локальная модель (LOCAL) или API платформы."""
+    """Вычисляет эмбеддинги через llama.cpp (``POST {BASE}/embeddings``).
+
+    При недоступности сервера и ``ALLOW_HASH_FALLBACK`` используется
+    hash-fallback (провайдер ``hash_fallback`` в диагностике). В SUBMIT-режиме
+    и при выключенном fallback бросается ``EmbeddingError``.
+    """
     if not texts:
         return []
 
-    tokenizer, model, device = _load_local_model()
-
-    if tokenizer is not None and model is not None:
-        try:
-            vectors = _local_embeddings(
-                texts, tokenizer, model, device, batch_size
-            )
-        except Exception as exc:  # noqa: BLE001 - локальный инференс упал
-            error = EmbeddingError(
-                "Локальная модель эмбеддингов недоступна для инференса: "
-                f"{type(exc).__name__}"
-            )
-            _record_embedding_state(
-                provider="local",
-                model=EMBEDDING_MODEL,
-                dimension=None,
-                success=False,
-                fallback_used=False,
-                error_type=type(exc).__name__,
-            )
-            raise error from exc
-
-        _record_embedding_state(
-            provider="local",
-            model=EMBEDDING_MODEL,
-            dimension=len(vectors[0]) if vectors else None,
-            success=True,
-            fallback_used=False,
-            error_type=None,
-        )
-        return vectors
-
-    # Локальная модель включена, но недоступна → вызов API является
-    # fallback-путём (диагностика должна это отражать).
-    local_fallback = tokenizer is None and _local_model_enabled()
-
     try:
-        vectors = _api_embeddings(texts)
+        vectors = _api_embeddings(texts, batch_size=batch_size)
     except Exception as exc:  # noqa: BLE001 - сеть/прокси/конфиг/валидация
         config_error = isinstance(exc, EmbeddingConfigError)
         if USE_SUBMIT or not ALLOW_HASH_FALLBACK:
             reason = (
                 "конфигурация API эмбеддингов невалидна"
                 if config_error
-                else "API эмбеддингов недоступен"
+                else "сервер эмбеддингов недоступен"
             )
             error_type = (
                 EmbeddingConfigError
@@ -750,13 +829,15 @@ def compute_embeddings(
                 f"({type(exc).__name__}). Значения ключей не логируются."
             ) from exc
 
+        logger.warning(
+            "Сервер эмбеддингов недоступен (%s). Использован hash-fallback.",
+            type(exc).__name__,
+        )
         print(
-            "[Предупреждение] API эмбеддингов недоступен "
+            "[Предупреждение] Сервер эмбеддингов недоступен "
             f"({type(exc).__name__}). Использован локальный hash-fallback."
         )
-        vectors = [
-            _fallback_embedding(text) for text in texts
-        ]
+        vectors = [_fallback_embedding(text) for text in texts]
         _record_embedding_state(
             provider="hash_fallback",
             model=None,
@@ -772,7 +853,7 @@ def compute_embeddings(
         model=EMBEDDING_MODEL,
         dimension=len(vectors[0]) if vectors else None,
         success=True,
-        fallback_used=local_fallback,
+        fallback_used=False,
         error_type=None,
     )
     return vectors
@@ -827,12 +908,10 @@ def save_embeddings_to_chroma(
 ) -> None:
     """Индексация чанков в ChromaDB с расчётом эмбеддингов по embedding_text."""
     collection = get_chroma_collection()
-    tokenizer, _, device = _load_local_model()
-    if tokenizer is not None:
-        print(
-            "-> Индексация в ChromaDB с использованием локального bge-m3 "
-            f"на устройстве: {device}"
-        )
+    logger.info(
+        "Индексация в ChromaDB через HTTP-сервер эмбеддингов (model=%s)",
+        EMBEDDING_MODEL,
+    )
 
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start : start + batch_size]

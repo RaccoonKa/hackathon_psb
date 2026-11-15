@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from rag_core.retrieval import vector_store as vs_mod
 from rag_core.retrieval.vector_store import (
@@ -95,30 +95,36 @@ def test_prepare_flat_metadata_no_structure_key():
 
 
 def test_compute_embeddings_fallback():
-    with patch.object(vs_mod, "_load_local_model", return_value=(None, None, None)), \
-         patch.object(vs_mod, "USE_SUBMIT", False), \
+    with patch.object(vs_mod, "USE_SUBMIT", False), \
          patch.object(vs_mod, "ALLOW_HASH_FALLBACK", True), \
-         patch.object(vs_mod, "_get_api_client") as mock_get_client:
-        mock_get_client.return_value.embeddings.create.side_effect = Exception("no api")
+         patch.object(
+             vs_mod,
+             "_request_embeddings",
+             side_effect=vs_mod.EmbeddingError("connection refused"),
+         ):
         result = compute_embeddings(["a", "b"])
     assert len(result) == 2
     assert len(result[0]) == 1024
+    diagnostics = vs_mod.get_last_embedding_diagnostics()
+    assert diagnostics["provider"] == "hash_fallback"
+    assert diagnostics["fallback_used"] is True
 
 
 def test_compute_embeddings_uses_api():
-    first = MagicMock(embedding=[0.1] * 1024)
-    second = MagicMock(embedding=[0.2] * 1024)
-    first.index = 0
-    second.index = 1
-    mock_data = [first, second]
-    mock_resp = MagicMock(data=mock_data)
-    with patch.object(vs_mod, "_load_local_model", return_value=(None, None, None)), \
-         patch.object(vs_mod, "_get_api_client") as mock_get_client:
-        mock_get_client.return_value.embeddings.create.return_value = mock_resp
+    # Векторы единичной нормы: L2-нормализация сохраняет значения.
+    vectors = [[1.0] + [0.0] * 1023, [0.0, 1.0] + [0.0] * 1022]
+    with patch.object(
+        vs_mod,
+        "_request_embeddings",
+        return_value=[list(vector) for vector in vectors],
+    ) as mock_request:
         result = compute_embeddings(["a", "b"])
-    assert len(result) == 2
-    assert result[0][0] == 0.1
-    assert result[1][0] == 0.2
+    assert mock_request.call_count == 1
+    assert result == vectors
+    diagnostics = vs_mod.get_last_embedding_diagnostics()
+    assert diagnostics["provider"] == "api"
+    assert diagnostics["success"] is True
+    assert diagnostics["fallback_used"] is False
 
 
 def test_get_query_embedding_returns_vector():

@@ -1,268 +1,325 @@
-import sys
-import types
+"""Глубокие тесты HTTP-слоя эмбеддингов (llama.cpp ``/v1/embeddings``).
+
+Полностью офлайн: локальный сервер не нужен, HTTP-слой проверяется через
+``httpx.MockTransport`` либо патч ``_request_embeddings``. Тестов с фейковыми
+``torch``/``transformers`` больше нет — локальный инференс удалён.
+"""
+
 from unittest.mock import patch
 
+import httpx
+
 from rag_core.retrieval import vector_store as vs_mod
-from rag_core.retrieval.vector_store import _load_local_model, compute_embeddings
+from rag_core.retrieval.vector_store import (
+    EmbeddingConfigError,
+    EmbeddingError,
+    EmbeddingDimensionError,
+    _api_embeddings,
+    _build_headers,
+    _embeddings_endpoint,
+    _load_local_model,
+    _local_model_enabled,
+    _normalize_vector,
+    _parse_embeddings_response,
+    compute_embeddings,
+    get_local_model_status,
+    prewarm_retrieval_backends,
+    reset_local_model_cache,
+    warmup_local_embedding_model,
+)
+
+_DIM = 1024
 
 
-class _NullCtx:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
+def _vector(first: float = 0.1, dim: int = _DIM):
+    return [first] + [0.0] * (dim - 1)
 
 
-class _FakeTensor:
-    def __init__(self, rows):
-        self._rows = rows
-
-    def __getitem__(self, key):
-        if isinstance(key, tuple) and key == (slice(None), 0):
-            return _FakeTensor([[r[0]] for r in self._rows])
-        return self
-
-    def cpu(self):
-        return self
-
-    def to(self, device):
-        return self
-
-    def tolist(self):
-        return self._rows
+def _vector_payload(vectors, indices=None):
+    if indices is None:
+        indices = list(range(len(vectors)))
+    return {
+        "object": "list",
+        "model": "bge-m3",
+        "data": [
+            {"object": "embedding", "index": index, "embedding": vector}
+            for index, vector in zip(indices, vectors)
+        ],
+    }
 
 
-class _FakeOutputs:
-    def __init__(self, rows):
-        self.last_hidden_state = _FakeTensor(rows)
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-class _FakeBatchEncoding(dict):
-    def to(self, device):
-        return self
+# --- совместимые заглушки локальной модели ----------------------------------
 
 
-class _FakeTokenizer:
-    def __init__(self):
-        self.call_count = 0
-
-    def __call__(self, texts, **kwargs):
-        self.call_count += 1
-        return _FakeBatchEncoding({"input_ids": [[1, 2, 3]] * len(texts)})
+def test_local_model_stubs_are_disabled():
+    assert _load_local_model() == (None, None, None)
+    assert _local_model_enabled() is False
 
 
-class _FakeModel:
-    def __init__(self):
-        self.call_count = 0
-
-    def __call__(self, **kwargs):
-        self.call_count += 1
-        n = len(kwargs.get("input_ids", []))
-        return _FakeOutputs([[0.5, 0.5] for _ in range(n)])
-
-
-class _FakeLoadedModel:
-    def to(self, device):
-        return self
-
-    def eval(self):
-        return self
+def test_local_model_status_reports_disabled():
+    status = get_local_model_status()
+    assert status["enabled"] is False
+    assert status["available"] is False
+    assert status["device"] is None
+    assert status["error_type"] is None
+    assert status["provider"] == "api"
 
 
-class _FakeTorchModule:
-    class cuda:
-        @staticmethod
-        def is_available():
-            return False
-
-    class nn:
-        class functional:
-            @staticmethod
-            def normalize(t, p, dim):
-                return t
-
-    @staticmethod
-    def no_grad():
-        return _NullCtx()
+# --- endpoint и заголовки ---------------------------------------------------
 
 
-def _install_fake_torch():
-    saved = sys.modules.get("torch")
-    sys.modules["torch"] = _FakeTorchModule()
-    return saved
+def test_embeddings_endpoint_appends_path():
+    with patch.object(
+        vs_mod, "EMBEDDING_API_BASE_URL", "http://127.0.0.1:8082/v1/"
+    ):
+        assert (
+            _embeddings_endpoint()
+            == "http://127.0.0.1:8082/v1/embeddings"
+        )
 
 
-def _restore_torch(saved):
-    if saved is None:
-        sys.modules.pop("torch", None)
+def test_embeddings_endpoint_rejects_empty_url():
+    with patch.object(vs_mod, "EMBEDDING_API_BASE_URL", "   "):
+        try:
+            _embeddings_endpoint()
+        except EmbeddingConfigError:
+            pass
+        else:
+            raise AssertionError("Ожидалась EmbeddingConfigError")
+
+
+def test_embeddings_endpoint_rejects_non_http_url():
+    with patch.object(
+        vs_mod, "EMBEDDING_API_BASE_URL", "ftp://127.0.0.1:8082/v1"
+    ):
+        try:
+            _embeddings_endpoint()
+        except EmbeddingConfigError:
+            pass
+        else:
+            raise AssertionError("Ожидалась EmbeddingConfigError")
+
+
+def test_build_headers_includes_bearer_key():
+    with patch.object(vs_mod, "EMBEDDING_API_KEY", "local"):
+        headers = _build_headers()
+    assert headers["Authorization"] == "Bearer local"
+    assert headers["Content-Type"] == "application/json"
+    assert headers["Accept"] == "application/json"
+
+
+def test_build_headers_skips_empty_key():
+    with patch.object(vs_mod, "EMBEDDING_API_KEY", ""):
+        headers = _build_headers()
+    assert "Authorization" not in headers
+
+
+# --- парсинг ответа и нормализация ------------------------------------------
+
+
+def test_parse_embeddings_response_sorts_by_index():
+    payload = _vector_payload(
+        [_vector(first=0.2), _vector(first=0.1)], indices=[1, 0]
+    )
+    vectors = _parse_embeddings_response(payload, 2)
+    assert vectors[0][0] == 0.1
+    assert vectors[1][0] == 0.2
+
+
+def test_parse_embeddings_response_rejects_different_dimensions():
+    payload = _vector_payload([_vector(), [0.1, 0.2, 0.3]])
+    try:
+        _parse_embeddings_response(payload, 2)
+    except EmbeddingError:
+        pass
     else:
-        sys.modules["torch"] = saved
+        raise AssertionError("Ожидалась EmbeddingError")
 
 
-def _install_fake_transformers(tok_from, model_from):
-    saved = sys.modules.get("transformers")
-    fake = types.ModuleType("transformers")
-    fake.AutoTokenizer = types.SimpleNamespace(from_pretrained=tok_from)
-    fake.AutoModel = types.SimpleNamespace(from_pretrained=model_from)
-    sys.modules["transformers"] = fake
-    return saved
-
-
-def _restore_transformers(saved):
-    if saved is None:
-        sys.modules.pop("transformers", None)
+def test_parse_embeddings_response_rejects_wrong_count():
+    payload = _vector_payload([_vector()])
+    try:
+        _parse_embeddings_response(payload, 2)
+    except EmbeddingError as exc:
+        assert "неверное число векторов" in str(exc)
     else:
-        sys.modules["transformers"] = saved
+        raise AssertionError("Ожидалась EmbeddingError")
 
 
-def _reset_local_cache():
-    # Публичный сброс также очищает кэш неудачи загрузки (_local_model_error).
-    vs_mod.reset_local_model_cache()
-    vs_mod._local_tokenizer = None
-    vs_mod._local_model = None
-    vs_mod._local_device = None
+def test_parse_embeddings_response_rejects_dimension_mismatch():
+    payload = _vector_payload([_vector(dim=8)])
+    with patch.object(vs_mod, "EMBEDDING_DIMENSION", 1024):
+        try:
+            _parse_embeddings_response(payload, 1)
+        except EmbeddingDimensionError:
+            pass
+        else:
+            raise AssertionError("Ожидалась EmbeddingDimensionError")
 
 
-def test_load_local_model_returns_none_when_path_missing():
-    _reset_local_cache()
-    with patch.object(vs_mod, "LOCAL_MODEL_PATH") as mock_path:
-        mock_path.exists.return_value = False
-        tok, model, dev = _load_local_model()
-    assert tok is None
-    assert model is None
-    assert dev is None
-
-
-def test_load_local_model_returns_none_when_import_fails():
-    _reset_local_cache()
-    saved_torch = sys.modules.pop("torch", None)
-    saved_transformers = sys.modules.pop("transformers", None)
+def test_parse_embeddings_response_error_field():
     try:
-        with patch.object(vs_mod, "LOCAL_MODEL_PATH") as mock_path:
-            mock_path.exists.return_value = True
-            with patch.dict(sys.modules, {"torch": None, "transformers": None}):
-                tok, model, dev = _load_local_model()
-        assert tok is None
-        assert model is None
-        assert dev is None
-    finally:
-        if saved_torch is not None:
-            sys.modules["torch"] = saved_torch
-        if saved_transformers is not None:
-            sys.modules["transformers"] = saved_transformers
-        _reset_local_cache()
+        _parse_embeddings_response(
+            {"error": {"message": "model not loaded"}}, 1
+        )
+    except EmbeddingError as exc:
+        assert "model not loaded" in str(exc)
+    else:
+        raise AssertionError("Ожидалась EmbeddingError")
 
 
-def test_load_local_model_loads_and_returns_triple():
-    _reset_local_cache()
-    calls = {"tok": 0, "model": 0}
+def test_normalize_vector_unit_length():
+    normalized = _normalize_vector([3.0, 4.0])
+    assert abs(sum(value * value for value in normalized) - 1.0) < 1e-9
 
-    def tok_from(path):
-        calls["tok"] += 1
-        return _FakeTokenizer()
 
-    def model_from(path):
-        calls["model"] += 1
-        return _FakeLoadedModel()
+def test_normalize_vector_zero_vector_unchanged():
+    assert _normalize_vector([0.0, 0.0]) == [0.0, 0.0]
 
-    saved_torch = _install_fake_torch()
-    saved_trans = _install_fake_transformers(tok_from, model_from)
+
+# --- батчинг и compute_embeddings -------------------------------------------
+
+
+def test_api_embeddings_batches_requests():
+    calls = []
+
+    def fake_request(texts):
+        calls.append(list(texts))
+        return [_vector() for _ in texts]
+
+    with patch.object(vs_mod, "_request_embeddings", side_effect=fake_request):
+        result = _api_embeddings(["a", "b", "c", "d", "e"], batch_size=2)
+
+    assert len(result) == 5
+    assert [len(batch) for batch in calls] == [2, 2, 1]
+
+
+def test_api_embeddings_empty_input_no_requests():
+    with patch.object(vs_mod, "_request_embeddings") as mock_request:
+        assert _api_embeddings([]) == []
+    assert mock_request.call_count == 0
+
+
+def test_api_embeddings_replaces_blank_texts():
+    captured = {}
+
+    def fake_request(texts):
+        captured["texts"] = list(texts)
+        return [_vector(dim=4) for _ in texts]
+
+    with patch.object(
+        vs_mod, "_request_embeddings", side_effect=fake_request
+    ), patch.object(vs_mod, "EMBEDDING_NORMALIZE", False), patch.object(
+        vs_mod, "EMBEDDING_DIMENSION", 0
+    ):
+        _api_embeddings(["ok", "   ", ""])
+
+    assert captured["texts"] == ["ok", " ", " "]
+
+
+def test_compute_embeddings_empty_returns_empty():
+    with patch.object(vs_mod, "_request_embeddings") as mock_request:
+        assert compute_embeddings([]) == []
+    assert mock_request.call_count == 0
+
+
+def test_compute_embeddings_batches_by_batch_size():
+    with patch.object(
+        vs_mod,
+        "_request_embeddings",
+        side_effect=lambda texts: [_vector() for _ in texts],
+    ) as mock_request:
+        result = compute_embeddings(["a", "b", "c", "d", "e"], batch_size=2)
+
+    assert len(result) == 5
+    assert mock_request.call_count == 3
+
+
+def test_compute_embeddings_uses_http_server():
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _vector_payload([_vector()])
+        return httpx.Response(200, json=payload)
+
+    client = _client(handler)
     try:
-        with patch.object(vs_mod, "LOCAL_MODEL_PATH") as mock_path:
-            mock_path.exists.return_value = True
-            tok, model, dev = _load_local_model()
-        assert tok is not None
-        assert model is not None
-        assert dev in ("cpu", "cuda")
-        assert calls == {"tok": 1, "model": 1}
+        with patch.object(vs_mod, "_get_http_client", return_value=client):
+            result = compute_embeddings(["запрос"])
     finally:
-        _restore_torch(saved_torch)
-        _restore_transformers(saved_trans)
-        _reset_local_cache()
+        client.close()
+
+    assert len(result) == 1
+    assert len(result[0]) == _DIM
+    diagnostics = vs_mod.get_last_embedding_diagnostics()
+    assert diagnostics["provider"] == "api"
+    assert diagnostics["success"] is True
+    assert diagnostics["fallback_used"] is False
 
 
-def test_load_local_model_caches_across_calls():
-    _reset_local_cache()
-    calls = {"tok": 0, "model": 0}
+# --- warmup / prewarm -------------------------------------------------------
 
-    def tok_from(path):
-        calls["tok"] += 1
-        return _FakeTokenizer()
 
-    def model_from(path):
-        calls["model"] += 1
-        return _FakeLoadedModel()
+def test_warmup_uses_http_layer():
+    with patch.object(
+        vs_mod,
+        "_request_embeddings",
+        side_effect=lambda texts: [_vector() for _ in texts],
+    ) as mock_request:
+        report = warmup_local_embedding_model()
 
-    saved_torch = _install_fake_torch()
-    saved_trans = _install_fake_transformers(tok_from, model_from)
+    assert report["status"] == "ok"
+    assert report["texts"] == 4
+    assert report["dimension"] == _DIM
+    assert report["warmup_ms"] is not None
+    assert mock_request.call_count == 1
+
+
+def test_warmup_error_does_not_raise():
+    with patch.object(
+        vs_mod,
+        "_request_embeddings",
+        side_effect=EmbeddingError("server is down"),
+    ):
+        report = warmup_local_embedding_model()
+
+    assert report["status"] == "error"
+    assert report["error_type"] == "EmbeddingError"
+    assert report["dimension"] is None
+
+
+def test_prewarm_report_keeps_contract_keys():
+    reset_local_model_cache()
     try:
-        with patch.object(vs_mod, "LOCAL_MODEL_PATH") as mock_path:
-            mock_path.exists.return_value = True
-            tok1, model1, dev1 = _load_local_model()
-            tok2, model2, dev2 = _load_local_model()
-            tok3, model3, dev3 = _load_local_model()
-        assert tok1 is tok2 is tok3
-        assert model1 is model2 is model3
-        assert dev1 == dev2 == dev3
-        assert calls == {"tok": 1, "model": 1}
+        with patch.object(
+            vs_mod,
+            "_request_embeddings",
+            side_effect=lambda texts: [_vector() for _ in texts],
+        ), patch.object(
+            vs_mod,
+            "get_chroma_collection",
+            side_effect=RuntimeError("chroma недоступна"),
+        ):
+            report = prewarm_retrieval_backends()
     finally:
-        _restore_torch(saved_torch)
-        _restore_transformers(saved_trans)
-        _reset_local_cache()
+        reset_local_model_cache()
 
+    for key in (
+        "local_model",
+        "collection",
+        "collection_size",
+        "dimension",
+        "warmup",
+        "warmup_ms",
+        "warmup_dimension",
+        "errors",
+    ):
+        assert key in report
 
-def test_compute_embeddings_uses_local_model():
-    _reset_local_cache()
-    fake_tok = _FakeTokenizer()
-    fake_model = _FakeModel()
-
-    saved_torch = _install_fake_torch()
-    try:
-        with patch.object(vs_mod, "_load_local_model", return_value=(fake_tok, fake_model, "cpu")), \
-             patch.object(vs_mod, "_get_api_client") as mock_get_client:
-            mock_get_client.return_value.embeddings.create.side_effect = AssertionError(
-                "Не должен вызывать API"
-            )
-            result = compute_embeddings(["a", "b"], batch_size=10)
-        assert len(result) == 2
-        assert all(isinstance(v, list) for v in result)
-        assert fake_tok.call_count == 1
-        assert fake_model.call_count == 1
-    finally:
-        _restore_torch(saved_torch)
-        _reset_local_cache()
-
-
-def test_compute_embeddings_local_batches_by_batch_size():
-    _reset_local_cache()
-    fake_tok = _FakeTokenizer()
-    fake_model = _FakeModel()
-
-    saved_torch = _install_fake_torch()
-    try:
-        with patch.object(vs_mod, "_load_local_model", return_value=(fake_tok, fake_model, "cpu")):
-            result = compute_embeddings(["a", "b", "c", "d", "e"], batch_size=2)
-        assert len(result) == 5
-        assert fake_tok.call_count == 3
-        assert fake_model.call_count == 3
-    finally:
-        _restore_torch(saved_torch)
-        _reset_local_cache()
-
-
-def test_compute_embeddings_local_empty_input():
-    _reset_local_cache()
-    fake_tok = _FakeTokenizer()
-    fake_model = _FakeModel()
-
-    saved_torch = _install_fake_torch()
-    try:
-        with patch.object(vs_mod, "_load_local_model", return_value=(fake_tok, fake_model, "cpu")):
-            result = compute_embeddings([])
-        assert result == []
-        assert fake_tok.call_count == 0
-        assert fake_model.call_count == 0
-    finally:
-        _restore_torch(saved_torch)
-        _reset_local_cache()
+    assert report["local_model"] == "disabled"
+    assert report["collection"] == "error"
+    assert report["warmup"] == "ok"
+    assert report["embedding_provider"] == "api"
+    assert report["embedding_endpoint"].endswith("/embeddings")
