@@ -12,7 +12,8 @@ USE_SUBMIT = False
 ```
 
 - `False` — LOCAL: локальные `data/`, `storage/`, `.env`, отдельные URL/ключи и
-  локальная модель `models/bge-m3` (если настроена).
+  локальный llama.cpp эмбеддинг-сервер (`EMBEDDING_API_BASE_URL`); локальный
+  inference через `transformers`/`torch` больше не используется.
 - `True` — SUBMIT: платформенные `DATA_DIR`, единый прокси `LLM_BASE_URL`/
   `LLM_API_KEY`, записываемый временный рабочий каталог, без локальных весов и
   без hash-fallback эмбеддингов.
@@ -20,6 +21,28 @@ USE_SUBMIT = False
 Все модули читают настройки только через [`src/config.py`](src/config.py:1).
 
 ## Локальная разработка
+
+### llama.cpp эмбеддинг-сервер (bge-m3)
+
+Эмбеддинги считает `llama-server` в OpenAI-совместимом режиме
+(`POST /v1/embeddings`); Python-клиент [`rag_core/retrieval/vector_store.py`](rag_core/retrieval/vector_store.py:1)
+ходит только по HTTP:
+
+```bash
+llama-server -m models/bge-m3/<gguf> --embedding --pooling cls \
+             --host 127.0.0.1 --port 8082 --alias bge-m3
+```
+
+Переменные окружения (см. [`.env.example`](.env.example:1)):
+
+```bash
+EMBEDDING_API_BASE_URL=http://127.0.0.1:8082/v1
+EMBEDDING_API_KEY=local
+EMBEDDING_MODEL=bge-m3
+EMBEDDING_TIMEOUT=180
+```
+
+### Запуск приложения и индексации
 
 ```bash
 python run_live.py

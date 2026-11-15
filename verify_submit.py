@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import shutil
@@ -21,6 +22,13 @@ from typing import Callable, Optional
 
 ROOT = Path(__file__).resolve().parent
 MAX_ZIP_BYTES = 128 * 1024 * 1024
+
+# Офлайн-кэш tiktoken: имя файла — sha1 от URL таблицы BPE cl100k_base,
+# содержимое сверяется по sha256.
+TIKTOKEN_CACHE_FILENAME = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+TIKTOKEN_CACHE_SHA256 = (
+    "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+)
 
 # Полный плоский состав выгрузки: базовые модули, вся архитектура generation
 # (orchestration/analysis/answer/llm/planning/policy/prompts/retrieval),
@@ -72,6 +80,8 @@ REQUIRED_FILES = {
     # --- служебные файлы ---
     "requirements.txt",
     "README.md",
+    # --- офлайн-кэш tiktoken (cl100k_base) ---
+    TIKTOKEN_CACHE_FILENAME,
 }
 
 EXPECTED_REQUIREMENTS = {
@@ -126,6 +136,10 @@ def _python_env(extra: Optional[dict] = None) -> dict:
     env = os.environ.copy()
     env["PYTHONPATH"] = ""
     env.pop("PYTHONHOME", None)
+    # Кэш tiktoken должен находиться самим модулем, а не доставаться из
+    # окружения разработчика.
+    env.pop("TIKTOKEN_CACHE_DIR", None)
+    env.pop("DATA_GYM_CACHE_DIR", None)
     if extra:
         env.update(extra)
     return env
@@ -277,6 +291,87 @@ def check_requirements(submit_dir: Path) -> None:
     forbidden = {"torch", "transformers", "faiss-cpu", "sentence-transformers"}
     if forbidden & set(seen):
         raise CheckFailure("В requirements попали тяжёлые/запрещённые пакеты")
+
+
+def check_tokenizer_cache(submit_dir: Path) -> None:
+    """Файл BPE обязан лежать в корне submit/ и работать без сети."""
+    cache_path = submit_dir / TIKTOKEN_CACHE_FILENAME
+    if not cache_path.is_file():
+        raise CheckFailure(
+            "В submit/ отсутствует офлайн-кэш tiktoken: "
+            f"{TIKTOKEN_CACHE_FILENAME}"
+        )
+
+    digest = hashlib.sha256()
+    with cache_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != TIKTOKEN_CACHE_SHA256:
+        raise CheckFailure(
+            "Файл офлайн-кэша tiktoken в submit/ повреждён: "
+            f"sha256={digest.hexdigest()}"
+        )
+
+    code = """
+import os
+from pathlib import Path
+
+os.environ.pop("TIKTOKEN_CACHE_DIR", None)
+os.environ.pop("DATA_GYM_CACHE_DIR", None)
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:9"
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:9"
+
+import indexing_tokenizer_utils as tokenizer
+
+module_dir = Path(tokenizer.__file__).resolve().parent
+assert tokenizer.resolve_cache_dir() == module_dir, (
+    tokenizer.resolve_cache_dir(),
+    module_dir,
+)
+assert os.environ.get("TIKTOKEN_CACHE_DIR") == str(module_dir), (
+    os.environ.get("TIKTOKEN_CACHE_DIR")
+)
+assert tokenizer.count_tokens("") == 0
+assert tokenizer.count_tokens("hello world") == 2
+print("tokenizer-ok")
+"""
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        copy = _copy_submit(submit_dir, tmp)
+        _expect_ok(
+            _run_python(code, cwd=copy),
+            "Офлайн-кэш tiktoken",
+        )
+
+
+def check_local_tokenizer_cache() -> None:
+    """LOCAL-режим обязан находить кэш в tiktoken_cache/ корня проекта."""
+    code = """
+import os
+from pathlib import Path
+
+os.environ.pop("TIKTOKEN_CACHE_DIR", None)
+os.environ.pop("DATA_GYM_CACHE_DIR", None)
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:9"
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:9"
+
+import rag_core.indexing.tokenizer_utils as tokenizer
+
+expected = Path(tokenizer.__file__).resolve().parent.parent.parent / "tiktoken_cache"
+assert tokenizer.resolve_cache_dir() == expected, (
+    tokenizer.resolve_cache_dir(),
+    expected,
+)
+assert os.environ.get("TIKTOKEN_CACHE_DIR") == str(expected), (
+    os.environ.get("TIKTOKEN_CACHE_DIR")
+)
+assert tokenizer.count_tokens("hello world") == 2
+print("local-tokenizer-ok")
+"""
+    _expect_ok(
+        _run_python(code, cwd=ROOT, pythonpath=ROOT),
+        "Офлайн-кэш tiktoken (LOCAL)",
+    )
 
 
 def check_isolated_imports(submit_dir: Path) -> None:
@@ -758,6 +853,8 @@ def run_checks(
         ("compile", lambda: check_compile(submit_dir)),
         ("импорты без rag_core.* / src.*", lambda: check_imports(submit_dir)),
         ("requirements", lambda: check_requirements(submit_dir)),
+        ("офлайн-кэш tiktoken", lambda: check_tokenizer_cache(submit_dir)),
+        ("офлайн-кэш tiktoken (LOCAL)", check_local_tokenizer_cache),
         ("изолированный импорт", lambda: check_isolated_imports(submit_dir)),
         ("конфигурация SUBMIT", lambda: check_submit_config(submit_dir)),
         ("конфигурация LOCAL", check_local_config),

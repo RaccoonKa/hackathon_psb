@@ -159,14 +159,18 @@ else:
     )
     API_KEY: str = os.getenv("API_KEY", "EMPTY")
 
+    # --- эмбеддинги: локальный llama.cpp в OpenAI-совместимом режиме ---
+    # transformers/torch больше не используются: сервер поднимается отдельно
+    # (``llama-server --embedding``), клиент ходит в ``{BASE}/embeddings``.
     EMBEDDING_API_BASE_URL: str = os.getenv(
         "EMBEDDING_API_BASE_URL",
-        os.getenv("API_BASE_URL", "https://tokenharbor.ai/v1"),
+        os.getenv("API_BASE_URL", "http://127.0.0.1:8082/v1"),
     )
     EMBEDDING_API_KEY: str = os.getenv(
-        "EMBEDDING_API_KEY", os.getenv("API_KEY", "")
+        "EMBEDDING_API_KEY", os.getenv("API_KEY", "local")
     )
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+    # EMBEDDING_MODEL приоритетнее устаревшего EMB_MODEL.
+    EMBEDDING_MODEL: str = _first_env("EMBEDDING_MODEL", "EMB_MODEL") or "bge-m3"
 
     LLM_MODEL: str = os.getenv(
         "LLM_MODEL", "deepseek-ai/DeepSeek-V4.1-Flash"
@@ -198,8 +202,9 @@ else:
     RERANKER_TOP_N: int = _env_int("RERANKER_TOP_N", 5, minimum=1)
     MAX_WORKERS: int = min(_env_int("MAX_WORKERS", 1, minimum=1), 8)
     CHUNKER: str = _first_env("CHUNKER") or "structural"
+    # bge-m3 отдаёт 1024-мерные векторы (совпадает с дефолтом SUBMIT).
     EMBEDDING_DIMENSION: int = _env_int(
-        "EMBEDDING_DIMENSION", 0, minimum=0
+        "EMBEDDING_DIMENSION", 1024, minimum=0
     )
 
     USE_STUB_RAG = os.getenv("USE_STUB_RAG", "false").lower() == "true"
@@ -408,11 +413,15 @@ RETRIEVAL_SHUTDOWN_GRACE_S: float = _env_float(
     "RETRIEVAL_SHUTDOWN_GRACE_S", 2.0
 )
 
-# Таймауты и ретраи клиента эмбеддингов (значения не логируются).
-EMBEDDING_API_TIMEOUT_S: float = _env_float("EMBEDDING_API_TIMEOUT_S", 60.0)
+# Таймауты и ретраи HTTP-клиента эмбеддингов (значения не логируются).
+EMBEDDING_TIMEOUT: float = _env_float("EMBEDDING_TIMEOUT", 180.0)
+# DEPRECATED alias для обратной совместимости импортов.
+EMBEDDING_API_TIMEOUT_S: float = EMBEDDING_TIMEOUT
 EMBEDDING_API_MAX_RETRIES: int = _env_int(
     "EMBEDDING_API_MAX_RETRIES", 1, minimum=0
 )
+# L2-нормализация векторов перед записью в Chroma/поиском.
+EMBEDDING_NORMALIZE: bool = _env_bool("EMBEDDING_NORMALIZE", True)
 
 ENABLE_MEMORY: bool = _env_bool("ENABLE_MEMORY", True)
 MAX_HISTORY_TURNS: int = _env_int("MAX_HISTORY_TURNS", 6, minimum=1)

@@ -22,6 +22,7 @@ MODULES = [
     "tests.test_keyword_store_deep",
     "tests.test_vector_store",
     "tests.test_vector_store_deep",
+    "tests.test_embedding_client",
     "tests.test_hybrid",
     "tests.test_hybrid_deep",
     "tests.test_h2_hybrid_routing",

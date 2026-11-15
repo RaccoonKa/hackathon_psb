@@ -1,42 +1,40 @@
 RAG ASSISTANT TEST RESULTS
 
-Всего запросов: 1
+Всего запросов: 8
 
 ######################################################################
 
 
 ======================================================================
-ЗАПРОС 1/1
+ЗАПРОС 1/8
 ======================================================================
-ВОПРОС: Пользователь: Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?
-Ассистент: Да, договоры на сумму свыше 10 000 000 (десяти миллионов) рублей подлежат одобрению генеральным директором до подписания. [РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). 2. Порядок согласования]
-Пользователь: А сейчас нужно ли одобрение генерального директора?
+ВОПРОС: Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?
 
 ОТВЕТ:
-Определить, требуется ли одобрение генерального директора в настоящее время, по предоставленным источникам невозможно: в контексте присутствует только редакция регламента, действовавшая с 10.01.2023 по 01.03.2025 и утратившая силу с 01.03.2025 в связи с утверждением новой редакции (приказ No 14-П от 17.02.2025) <source>S1</source>, при этом текст новой (действующей) редакции в источниках отсутствует. По утратившей силу редакции договоры на сумму свыше 10 000 000 (десяти миллионов) рублей подлежали одобрению генеральным директором до подписания <source>S1</source>.
+По договору аренды нежилого помещения № А-08/2024 с ООО «Северный Склад» арендная плата составляет 450 000 (четыреста пятьдесят тысяч) рублей в месяц, включая НДС <source>S1</source>. Вносится она ежемесячно, не позднее 5-го числа текущего месяца <source>S1</source>. Договор заключён с ООО «Меридиан», Арендодателем по которому выступает ООО «Северный Склад» <source>S2</source>.
 
 ИСТОЧНИКИ:
-  [S1] РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). | 2. Порядок согласования | score=0.9913371801376343 | chunk=doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4
+  [S1] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | 3. Арендная плата | score=0.9973129034042358 | chunk=contract_а-08-2024_v1_0002_76b6b25c
+  [S2] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | 1. Предмет договора | score=0.7272121906280518 | chunk=contract_а-08-2024_v1_0000_1518d2c3
 
 ИНТЕНТ: semantic
 ОТКАЗ: False | Причина: None
 УВЕРЕННОСТЬ: high
-ДОПУЩЕНИЯ: ['Речь идет о внутреннем порядке одобрения сделок (устав, регламент, политика одобрения) в конкретной организации', 'Вопрос подразумевает определение порога одобрения генерального директора, действующего на текущий момент', 'интерпретация: текст действующей с 01.03.2025 редакции регламента в предоставленных источниках отсутствует, поэтому применимый в настоящее время порог и порядок одобрения установить нельзя.']
-ИСПОЛЬЗОВАНА ИСТОРИЯ: True
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
 
 ПОЛНЫЙ ТРЕЙС:
 [
   {
     "step": "prefilter",
     "input": {
-      "query": "А сейчас нужно ли одобрение генерального директора?"
+      "query": "Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?"
     },
     "output": {
       "triggered": false,
       "template_key": null,
       "reason": null
     },
-    "latency_ms": 0.09,
+    "latency_ms": 0.562,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -49,7 +47,7 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "query_analysis",
     "input": {
-      "query": "Нужно ли одобрение генерального директора для договора на 12 млн рублей, заключавшегося в августе 2024 года, по состоянию на текущий момент?",
+      "query": "Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?",
       "event_date": null,
       "attempts": 1
     },
@@ -57,27 +55,38 @@ RAG ASSISTANT TEST RESULTS
       "intent": "semantic",
       "task_type": "lookup",
       "required_slots": [
-        "approval_process"
+        "rent_amount",
+        "payment_deadline"
       ],
-      "decomposition_count": 0,
-      "premises_count": 1,
+      "decomposition_count": 2,
+      "premises_count": 0,
       "rewritten_bm25": [
-        "порядок одобрения сделок генеральный директор порог суммы договор 12 млн рублей 2024 на",
-        "одобрение генерального директора порядок согласования сделки пороговая сумма регламент"
+        "арендная плата срок внесения договор аренды ООО «Северный Склад»",
+        "размер арендной платы договор аренды ООО «Северный Склад»",
+        "срок внесения арендной платы до какого числа договор аренды ООО «Северный Склад»"
       ],
       "rewritten_dense": [
-        "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок",
-        "Порядок и пороги одобрения сделок генеральным директором: с какого размера суммы договор требует согласования генерального директора по действующему регламенту"
+        "Какая арендная плата установлена договором аренды с ООО «Северный Склад» и в какой срок (до какого числа) она должна быть внесена?",
+        "Какой размер арендной платы (сумма платежа) предусмотрен договором аренды с ООО «Северный Склад»?",
+        "В какой срок и до какого числа арендатор обязан вносить арендную плату по договору аренды с ООО «Северный Склад»?"
       ],
-      "event_date": "2024-08-01",
+      "event_date": null,
       "degradation_reason": null,
-      "entities": [],
-      "entities_raw": []
+      "entities": [
+        {
+          "raw": "ООО «Северный Склад»",
+          "document_id": "contract_а-08-2024",
+          "resolved": true
+        }
+      ],
+      "entities_raw": [
+        "ООО «Северный Склад»"
+      ]
     },
-    "latency_ms": 11993.226,
+    "latency_ms": 10018.517,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2402,
-    "completion_tokens": 972,
+    "prompt_tokens": 1590,
+    "completion_tokens": 602,
     "extra": {},
     "stage_idx": 1,
     "failures_global": 0,
@@ -89,16 +98,17 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "intent": "semantic",
       "required_slots": [
-        "approval_process"
+        "rent_amount",
+        "payment_deadline"
       ],
-      "event_date": "2024-08-01"
+      "event_date": null
     },
     "output": {
       "tasks_count": 1,
       "tasks": [
         {
           "task_id": "task_0",
-          "query": "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок Порядок и пороги одобрения сделок генеральным директором: с какого размера суммы договор требует согласования генерального директора по действующему регламенту порядок одобрения сделок генеральный директор порог суммы договор 12 млн рублей 2024 на одобрение генерального директора порядок согласования сделки пороговая сумма регламент порядок согласования договора одобрение руководителем пороговая сумма",
+          "query": "Какая арендная плата установлена договором аренды с ООО «Северный Склад» и в какой срок (до какого числа) она должна быть внесена? Какой размер арендной платы (сумма платежа) предусмотрен договором аренды с ООО «Северный Склад»? В какой срок и до какого числа арендатор обязан вносить арендную плату по договору аренды с ООО «Северный Склад»? арендная плата срок внесения договор аренды ООО «Северный Склад» размер арендной платы договор аренды ООО «Северный Склад» срок внесения арендной платы до какого числа договор аренды ООО «Северный Склад» размер арендной платы стоимость аренды сумма ежемесячной платы срок внесения арендной платы порядок расчетов дата ежемесячной оплаты",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
           "intent": "semantic_query",
@@ -111,33 +121,39 @@ RAG ASSISTANT TEST RESULTS
       "hybrid_intent": "semantic_query",
       "query_parts": {
         "dense_rewrites": [
-          "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок",
-          "Порядок и пороги одобрения сделок генеральным директором: с какого размера суммы договор требует согласования генерального директора по действующему регламенту"
+          "Какая арендная плата установлена договором аренды с ООО «Северный Склад» и в какой срок (до какого числа) она должна быть внесена?",
+          "Какой размер арендной платы (сумма платежа) предусмотрен договором аренды с ООО «Северный Склад»?",
+          "В какой срок и до какого числа арендатор обязан вносить арендную плату по договору аренды с ООО «Северный Склад»?"
         ],
         "bm25_rewrites": [
-          "порядок одобрения сделок генеральный директор порог суммы договор 12 млн рублей 2024 на",
-          "одобрение генерального директора порядок согласования сделки пороговая сумма регламент"
+          "арендная плата срок внесения договор аренды ООО «Северный Склад»",
+          "размер арендной платы договор аренды ООО «Северный Склад»",
+          "срок внесения арендной платы до какого числа договор аренды ООО «Северный Склад»"
         ],
         "slot_expansions": [
-          "порядок согласования договора одобрение руководителем пороговая сумма"
+          "размер арендной платы стоимость аренды сумма ежемесячной платы",
+          "срок внесения арендной платы порядок расчетов дата ежемесячной оплаты"
         ],
-        "decomposition": [],
+        "decomposition": [
+          "Каков размер арендной платы по договору аренды с ООО «Северный Склад»?",
+          "До какого числа (в какой срок) нужно вносить арендную плату по договору аренды с ООО «Северный Склад»?"
+        ],
         "amendment_markers": []
       },
-      "combined_query_chars": 603,
+      "combined_query_chars": 679,
       "required_source_kinds": [
         "normative",
         "specific"
       ],
       "limits": {
         "top_k": 10,
-        "max_slot_queries": 2,
+        "max_slot_queries": 3,
         "task_timeout_s": 20.0,
         "max_followup_cycles": 1
       },
-      "document_type": "unknown"
+      "document_type": "rental"
     },
-    "latency_ms": 0.274,
+    "latency_ms": 0.155,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -152,7 +168,7 @@ RAG ASSISTANT TEST RESULTS
     "input": {
       "tasks_count": 1,
       "queries": [
-        "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок Порядок и пороги одобрения сделок генеральным директором: с какого размера суммы договор требует согласования генерального директора по действующему регламенту порядок одобрения сделок генеральный директор порог суммы договор 12 млн рублей 2024 на одобрение генерального директора порядок согласования сделки пороговая сумма регламент порядок согласования договора одобрение руководителем пороговая сумма"
+        "Какая арендная плата установлена договором аренды с ООО «Северный Склад» и в какой срок (до какого числа) она должна быть внесена? Какой размер арендной платы (сумма платежа) предусмотрен договором аренды с ООО «Северный Склад»? В какой срок и до какого числа арендатор обязан вносить арендную плату по договору аренды с ООО «Северный Склад»? арендная плата срок внесения договор аренды ООО «Северный Склад» размер арендной платы договор аренды ООО «Северный Склад» срок внесения арендной платы до какого числа договор аренды ООО «Северный Склад» размер арендной платы стоимость аренды сумма ежемесячной платы срок внесения арендной платы порядок расчетов дата ежемесячной оплаты"
       ],
       "modes": [
         "hybrid"
@@ -164,30 +180,24 @@ RAG ASSISTANT TEST RESULTS
     },
     "output": {
       "chunk_ids": [
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
-        "amend_1_п-17-2024_v1_0000_abe9e541",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
-        "contract_п-17-2024_v1_0000_b431bde6",
-        "contract_п-17-2024_v1_0007_1d906225",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443",
-        "contract_пт-05-2023_v1_0000_3581c527",
-        "contract_п-17-2024_v1_0001_975cfbf0",
-        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
         "contract_а-08-2024_v1_0005_52a8c58d"
       ],
       "scores": [
         0.016393,
-        0.016393,
-        0.016129,
-        0.01595,
-        0.015906,
+        0.015836,
         0.015726,
         0.015625,
-        0.015117,
-        0.014925,
-        0.014553
+        0.015531,
+        0.015445,
+        0.014925
       ],
-      "count": 10,
+      "count": 7,
       "degraded": false,
       "executor": {
         "submitted": 1,
@@ -199,7 +209,7 @@ RAG ASSISTANT TEST RESULTS
         "timed_out": 0,
         "queue_timeout": 0,
         "threads_alive_after_grace": 0,
-        "batch_duration_ms": 17110
+        "batch_duration_ms": 6792
       },
       "status": "ok",
       "errors": [],
@@ -208,20 +218,22 @@ RAG ASSISTANT TEST RESULTS
           "task_id": "task_0",
           "mode": "hybrid",
           "purpose": "semantic_hybrid",
-          "query": "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок …",
+          "query": "Какая арендная плата установлена договором аренды с ООО «Северный Склад» и в какой срок (до какого числа) она должна быть внесена? Какой размер арендной платы (сумма платежа) предусмотрен договором а…",
           "status": "ok",
-          "duration_ms": 17110,
+          "duration_ms": 6792,
           "error_type": null,
           "error_message": null,
           "search": {
-            "selected_doc_ids": null,
-            "allowed_chunk_ids_count": 27,
-            "bm25_candidates_count": 20,
-            "dense_candidates_count": 27,
-            "candidates_before_filters": 371,
-            "candidates_after_date_filter": 54,
-            "candidates_after_document_filter": 54,
-            "final_chunks_count": 20,
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 7,
+            "bm25_candidates_count": 7,
+            "dense_candidates_count": 7,
+            "candidates_before_filters": 351,
+            "candidates_after_date_filter": 34,
+            "candidates_after_document_filter": 14,
+            "final_chunks_count": 7,
             "validity_unknown_count": 0
           },
           "embeddings": {
@@ -235,7 +247,7 @@ RAG ASSISTANT TEST RESULTS
         }
       ]
     },
-    "latency_ms": 17110.467,
+    "latency_ms": 6792.768,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -250,7 +262,7 @@ RAG ASSISTANT TEST RESULTS
         "timed_out": 0,
         "queue_timeout": 0,
         "threads_alive_after_grace": 0,
-        "batch_duration_ms": 17110
+        "batch_duration_ms": 6792
       },
       "errors_count": 0,
       "degraded": false,
@@ -265,7 +277,7 @@ RAG ASSISTANT TEST RESULTS
         "local_model": "ok",
         "collection": "ok",
         "warmup": "ok",
-        "warmup_ms": 7893
+        "warmup_ms": 8918
       },
       "attempt": 1,
       "status": "ok"
@@ -278,44 +290,41 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "reranking",
     "input": {
-      "query": "Требуется ли одобрение генерального директора для заключения договора на сумму 12 миллионов рублей, заключенного в августе 2024 года, согласно действующему на текущий момент порядку одобрения сделок",
+      "query": "Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?",
       "top_n": 5,
       "input_chunk_ids": [
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
-        "amend_1_п-17-2024_v1_0000_abe9e541",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
-        "contract_п-17-2024_v1_0000_b431bde6",
-        "contract_п-17-2024_v1_0007_1d906225",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443",
-        "contract_пт-05-2023_v1_0000_3581c527",
-        "contract_п-17-2024_v1_0001_975cfbf0",
-        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
         "contract_а-08-2024_v1_0005_52a8c58d"
       ],
       "mode": "real"
     },
     "output": {
       "chunk_ids": [
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
-        "contract_п-17-2024_v1_0000_b431bde6",
-        "amend_1_п-17-2024_v1_0000_abe9e541",
-        "contract_п-17-2024_v1_0001_975cfbf0"
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0004_186a7aca"
       ],
       "scores": [
-        0.9913371801376343,
-        0.5303500890731812,
-        0.4802587032318115,
-        0.44875234365463257,
-        0.15460146963596344
+        0.9973129034042358,
+        0.7272121906280518,
+        0.6374368667602539,
+        0.14183884859085083,
+        0.04530767351388931
       ],
       "count": 5,
-      "before_count": 10,
+      "before_count": 7,
       "after_count": 5,
       "top_n": 5,
       "preserved_source_kinds": []
     },
-    "latency_ms": 37159.769,
+    "latency_ms": 20129.598,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -331,9 +340,10 @@ RAG ASSISTANT TEST RESULTS
       "chunks_count": 5,
       "viable_chunks_count": 5,
       "required_slots": [
-        "approval_process"
+        "rent_amount",
+        "payment_deadline"
       ],
-      "event_date": "2024-08-01"
+      "event_date": null
     },
     "output": {
       "sufficiency": "sufficient",
@@ -341,10 +351,12 @@ RAG ASSISTANT TEST RESULTS
       "viable_chunks_count": 5,
       "retrieved_chunks_count": 5,
       "required_slots": [
-        "approval_process"
+        "rent_amount",
+        "payment_deadline"
       ],
       "covered_slots": [
-        "approval_process"
+        "rent_amount",
+        "payment_deadline"
       ],
       "uncovered_slots": [],
       "missing_slots": [],
@@ -352,19 +364,19 @@ RAG ASSISTANT TEST RESULTS
       "min_viable_score": 0.005,
       "checked_chunks_count": 5,
       "slot_match_counts": {
-        "approval_process": 4
+        "rent_amount": 1,
+        "payment_deadline": 2
       },
       "retrieval_fallback": false,
       "contradictions_count": 0,
       "version_issues_count": 0,
       "source_kind_counts": {
-        "normative": 2,
-        "specific": 3
+        "specific": 5
       },
-      "missing_source_kinds_count": 0,
+      "missing_source_kinds_count": 1,
       "version_uncertainty_count": 0
     },
-    "latency_ms": 31.595,
+    "latency_ms": 1.109,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -377,7 +389,7 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "policy_precheck",
     "input": {
-      "premises_count": 1,
+      "premises_count": 0,
       "chunks_count": 5,
       "trusted_chunks_count": 5,
       "untrusted_chunks_count": 0,
@@ -386,22 +398,12 @@ RAG ASSISTANT TEST RESULTS
     "output": {
       "premise_mismatch": false,
       "premise_details": [],
-      "premise_unknown_count": 1,
-      "premises": [
-        {
-          "text": "Договор заключался в августе 2024 года",
-          "kind": "date",
-          "value": "2024-08",
-          "status": "unknown",
-          "reason": "non_normalizable_value",
-          "evidence_source_id": null,
-          "conflicting_value": null
-        }
-      ],
+      "premise_unknown_count": 0,
+      "premises": [],
       "injection_flagged": false,
       "refusal_forbidden": true
     },
-    "latency_ms": 1.326,
+    "latency_ms": 0.099,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -415,11 +417,11 @@ RAG ASSISTANT TEST RESULTS
     "step": "context_assembly",
     "input": {
       "chunk_ids": [
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
-        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
-        "contract_п-17-2024_v1_0000_b431bde6",
-        "amend_1_п-17-2024_v1_0000_abe9e541",
-        "contract_п-17-2024_v1_0001_975cfbf0"
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0004_186a7aca"
       ]
     },
     "output": {
@@ -430,9 +432,9 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "context_length": 4233
+      "context_length": 3144
     },
-    "latency_ms": 11.357,
+    "latency_ms": 8.061,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -445,22 +447,22 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "generation",
     "input": {
-      "query": "А сейчас нужно ли одобрение генерального директора?",
-      "context_length": 4233,
-      "history_turns": 2,
+      "query": "Какая арендная плата по договору с ООО «Северный Склад» и до какого числа её нужно вносить?",
+      "context_length": 3144,
+      "history_turns": 0,
       "attempts": 1
     },
     "output": {
-      "answer_length": 570,
-      "claims_count": 2,
-      "assumptions_count": 3,
-      "missing_info_count": 1,
+      "answer_length": 380,
+      "claims_count": 3,
+      "assumptions_count": 0,
+      "missing_info_count": 0,
       "refusal_reason": null
     },
-    "latency_ms": 8829.867,
+    "latency_ms": 5907.991,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 4105,
-    "completion_tokens": 1093,
+    "prompt_tokens": 3567,
+    "completion_tokens": 452,
     "extra": {},
     "stage_idx": 6,
     "failures_global": 0,
@@ -470,30 +472,31 @@ RAG ASSISTANT TEST RESULTS
   {
     "step": "verify_draft",
     "input": {
-      "claims_count": 2,
-      "core_claims_count": 1,
+      "claims_count": 3,
+      "core_claims_count": 2,
       "non_core_claims_count": 1,
       "question_source": "original",
-      "question_length": 51,
-      "answer_length": 570
+      "question_length": 91,
+      "answer_length": 380
     },
     "output": {
       "final_verdict": "accept",
       "supported_locked": [
         0,
-        1
+        1,
+        2
       ],
       "citation_errors_count": 0,
       "injection_signals_count": 0,
       "answer_to_question": {
         "verdict": "match",
-        "reason": "Ответ прямо отвечает на вопрос о необходимости одобрения генерального директора в настоящее время: указывает, что по имеющимся источникам это определить невозможно, поскольку действующая редакция регламента отсутствует, и описывает порядок одобрения по утратившей силу редакции, покрывая параметр approval_process."
+        "reason": "Ответ прямо указывает размер арендной платы (450 000 рублей в месяц, включая НДС) и срок её внесения (ежемесячно, не позднее 5-го числа текущего месяца), покрывая оба обязательных параметра: rent_amount и payment_deadline."
       },
       "verifier_unavailable": false,
       "verifier_unavailable_reason": null,
       "auto_accept_blocked": false,
       "claims_synthesized": false,
-      "supported_claims_count": 2,
+      "supported_claims_count": 3,
       "contradicted_claims_count": 0,
       "not_in_source_claims_count": 0,
       "unverified_claims_count": 0,
@@ -503,14 +506,14 @@ RAG ASSISTANT TEST RESULTS
       "source_role_issues_count": 0,
       "pruned_claims_count": 0,
       "question_source": "original",
-      "question_length": 51,
-      "answer_length": 570,
+      "question_length": 91,
+      "answer_length": 380,
       "verdict_reason": "all_verified"
     },
-    "latency_ms": 4388.254,
+    "latency_ms": 3630.458,
     "model": "deepseek-v4.1-flash:free",
-    "prompt_tokens": 2571,
-    "completion_tokens": 391,
+    "prompt_tokens": 2181,
+    "completion_tokens": 479,
     "extra": {},
     "stage_idx": 7,
     "failures_global": 0,
@@ -528,7 +531,554 @@ RAG ASSISTANT TEST RESULTS
         "S4",
         "S5"
       ],
-      "answer_length": 570
+      "answer_length": 380
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 2,
+      "cited_source_ids": [
+        "S1",
+        "S2"
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "all_conditions_met"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 1,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 1,
+        "tasks_completed": 1,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.125,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 2/8
+======================================================================
+ВОПРОС: Какой максимальный срок испытания можно установить главному бухгалтеру?
+
+ОТВЕТ:
+Для главного бухгалтера срок испытания не может превышать шести месяцев, если иное не установлено федеральным законом <source>S1</source>. Общее ограничение в три месяца на главных бухгалтеров не распространяется <source>S1</source>.
+
+ИСТОЧНИКИ:
+  [S1] Испытательный срок. Статья 70. ТК РФ Испытание при приеме на работу. Трудовой кодекс Российской Федерации от 30.12.2001 N 197-ФЗ (ТК РФ) | Статья 70. Испытание при приеме на работу | score=0.9949570298194885 | chunk=doc_тк_ст70_действующая_v1_0002_606e9955
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['интерпретация: указанный шестимесячный предел относится к должности главного бухгалтера как прямо названной в норме; при заключении срочного трудового договора на срок от двух до шести месяцев действует специальное ограничение — не более двух недель <source>S1</source>']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Какой максимальный срок испытания можно установить главному бухгалтеру?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.083,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "lookup",
+      "required_slots": [
+        "probation_period"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 0,
+      "rewritten_bm25": [
+        "максимальный срок испытания главному бухгалтеру",
+        "срок испытания главный бухгалтер"
+      ],
+      "rewritten_dense": [
+        "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+        "Максимальный срок испытания для главного бухгалтера"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [],
+      "entities_raw": []
+    },
+    "latency_ms": 7562.169,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1575,
+    "completion_tokens": 964,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "probation_period"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Какой максимальный срок испытания можно установить главному бухгалтеру? Максимальный срок испытания для главного бухгалтера максимальный срок испытания главному бухгалтеру срок испытания главный бухгалтер испытательный срок при приеме на работу продолжительность испытания",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+          "Максимальный срок испытания для главного бухгалтера"
+        ],
+        "bm25_rewrites": [
+          "максимальный срок испытания главному бухгалтеру",
+          "срок испытания главный бухгалтер"
+        ],
+        "slot_expansions": [
+          "испытательный срок при приеме на работу продолжительность испытания"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 272,
+      "required_source_kinds": [
+        "normative"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "unknown"
+    },
+    "latency_ms": 0.469,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Какой максимальный срок испытания можно установить главному бухгалтеру? Максимальный срок испытания для главного бухгалтера максимальный срок испытания главному бухгалтеру срок испытания главный бухгалтер испытательный срок при приеме на работу продолжительность испытания"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_тк_ст70_действующая_v1_0002_606e9955",
+        "doc_тк_ст70_действующая_v1_0001_d406ab1a",
+        "doc_тк_ст70_действующая_v1_0000_f97e3061",
+        "doc_тк_ст99_действующая_v1_0005_35a9aaa7",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0001_0614e26d",
+        "doc_тк_ст99_действующая_v1_0006_02b79d4c",
+        "doc_тк_ст99_действующая_v1_0007_881fbea0",
+        "doc_тк_ст99_действующая_v1_0001_c93c1357",
+        "doc_тк_ст59_действующая_v1_0002_b8ad8254",
+        "doc_тк_ст59_действующая_v1_0005_f9fc1b71"
+      ],
+      "scores": [
+        0.016393,
+        0.016129,
+        0.015873,
+        0.015349,
+        0.014982,
+        0.014823,
+        0.014606,
+        0.014395,
+        0.014268,
+        0.013377
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8177
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Какой максимальный срок испытания можно установить главному бухгалтеру? Максимальный срок испытания для главного бухгалтера максимальный срок испытания главному бухгалтеру срок испытания главный бухг…",
+          "status": "ok",
+          "duration_ms": 8177,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 62,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 333,
+            "candidates_after_date_filter": 76,
+            "candidates_after_document_filter": 76,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8177.491,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8177
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "doc_тк_ст70_действующая_v1_0002_606e9955",
+        "doc_тк_ст70_действующая_v1_0001_d406ab1a",
+        "doc_тк_ст70_действующая_v1_0000_f97e3061",
+        "doc_тк_ст99_действующая_v1_0005_35a9aaa7",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0001_0614e26d",
+        "doc_тк_ст99_действующая_v1_0006_02b79d4c",
+        "doc_тк_ст99_действующая_v1_0007_881fbea0",
+        "doc_тк_ст99_действующая_v1_0001_c93c1357",
+        "doc_тк_ст59_действующая_v1_0002_b8ad8254",
+        "doc_тк_ст59_действующая_v1_0005_f9fc1b71"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_тк_ст70_действующая_v1_0002_606e9955",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0001_0614e26d",
+        "doc_тк_ст70_действующая_v1_0001_d406ab1a",
+        "doc_тк_ст70_действующая_v1_0000_f97e3061",
+        "doc_тк_ст59_действующая_v1_0005_f9fc1b71"
+      ],
+      "scores": [
+        0.9949570298194885,
+        0.6301863193511963,
+        0.1558462530374527,
+        0.06445831805467606,
+        0.011361194774508476
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 39777.473,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 5,
+      "required_slots": [
+        "probation_period"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "viable_chunks_count": 5,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "probation_period"
+      ],
+      "covered_slots": [
+        "probation_period"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 5,
+      "slot_match_counts": {
+        "probation_period": 2
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "normative": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 2.835,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 0,
+      "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 0,
+      "premises": [],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 0.348,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "doc_тк_ст70_действующая_v1_0002_606e9955",
+        "doc_регламент-согласования-договоров-ред-2025_v1_0001_0614e26d",
+        "doc_тк_ст70_действующая_v1_0001_d406ab1a",
+        "doc_тк_ст70_действующая_v1_0000_f97e3061",
+        "doc_тк_ст59_действующая_v1_0005_f9fc1b71"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 5274
+    },
+    "latency_ms": 1.53,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "Какой максимальный срок испытания можно установить главному бухгалтеру?",
+      "context_length": 5274,
+      "history_turns": 0,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 233,
+      "claims_count": 2,
+      "assumptions_count": 1,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 5305.661,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 3822,
+    "completion_tokens": 496,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 2,
+      "core_claims_count": 1,
+      "non_core_claims_count": 1,
+      "question_source": "original",
+      "question_length": 71,
+      "answer_length": 233
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо указывает максимальный срок испытания для главного бухгалтера — шесть месяцев, если иное не установлено федеральным законом, что соответствует запрошенному параметру probation_period."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 2,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 71,
+      "answer_length": 233,
+      "verdict_reason": "all_verified"
+    },
+    "latency_ms": 4479.32,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2342,
+    "completion_tokens": 277,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 233
     },
     "output": {
       "refused": false,
@@ -553,7 +1103,7 @@ RAG ASSISTANT TEST RESULTS
         "tasks_timed_out": 0
       }
     },
-    "latency_ms": 0.664,
+    "latency_ms": 0.162,
     "model": null,
     "prompt_tokens": null,
     "completion_tokens": null,
@@ -562,5 +1112,3697 @@ RAG ASSISTANT TEST RESULTS
     "failures_global": 0,
     "failures_step": 0,
     "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 3/8
+======================================================================
+ВОПРОС: Какой размер пособия по беременности и родам?
+
+ОТВЕТ:
+В предоставленной базе знаний недостаточно сведений для ответа на ваш запрос. Пожалуйста, уточните реквизиты документа (номер договора, название нормативного акта, статью или дату события).
+
+ИСТОЧНИКИ:
+  (нет источников)
+
+ИНТЕНТ: semantic
+ОТКАЗ: True | Причина: no_relevant_documents
+УВЕРЕННОСТЬ: low
+НЕДОСТАЮЩАЯ ИНФО: ['general']
+ДОПУЩЕНИЯ: ['Речь идет о государственном пособии по беременности и родам (ст. 255 ТК РФ, ФЗ № 81-ФЗ «О государственных пособиях гражданам, имеющим детей»)', 'Пользователь спрашивает о размере (порядке расчета) выплаты, а не о порядке назначения или сроках обращения']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.199,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "explain",
+      "required_slots": [
+        "general"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 0,
+      "rewritten_bm25": [
+        "размер пособия по беременности и родам",
+        "пособие по беременности и родам размер выплаты порядок расчета"
+      ],
+      "rewritten_dense": [
+        "Какой размер (сумма) пособия по беременности и родам и как он рассчитывается: нормативное регулирование, средний заработок, минимальный и максимальный размер выплаты",
+        "Размер пособия по беременности и родам: порядок исчисления исходя из среднего заработка, предельная величина базы, минимальный размер, продолжительность отпуска 140 дней"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [],
+      "entities_raw": []
+    },
+    "latency_ms": 7212.501,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1568,
+    "completion_tokens": 633,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "general"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Какой размер (сумма) пособия по беременности и родам и как он рассчитывается: нормативное регулирование, средний заработок, минимальный и максимальный размер выплаты Размер пособия по беременности и родам: порядок исчисления исходя из среднего заработка, предельная величина базы, минимальный размер, продолжительность отпуска 140 дней пособие по беременности и родам размер выплаты порядок расчета",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Какой размер (сумма) пособия по беременности и родам и как он рассчитывается: нормативное регулирование, средний заработок, минимальный и максимальный размер выплаты",
+          "Размер пособия по беременности и родам: порядок исчисления исходя из среднего заработка, предельная величина базы, минимальный размер, продолжительность отпуска 140 дней"
+        ],
+        "bm25_rewrites": [
+          "размер пособия по беременности и родам",
+          "пособие по беременности и родам размер выплаты порядок расчета"
+        ],
+        "slot_expansions": [],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 398,
+      "required_source_kinds": [
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "unknown"
+    },
+    "latency_ms": 0.333,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Какой размер (сумма) пособия по беременности и родам и как он рассчитывается: нормативное регулирование, средний заработок, минимальный и максимальный размер выплаты Размер пособия по беременности и родам: порядок исчисления исходя из среднего заработка, предельная величина базы, минимальный размер, продолжительность отпуска 140 дней пособие по беременности и родам размер выплаты порядок расчета"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_пт-05-2023_v1_0003_d951ea1d",
+        "contract_п-17-2024_v1_0003_6776ab4c",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_пт-05-2023_v1_0001_d675f5ca",
+        "contract_пт-05-2023_v1_0002_1e9543d9",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_п-17-2024_v1_0006_c1b0ed18",
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0001_975cfbf0"
+      ],
+      "scores": [
+        0.016208,
+        0.016021,
+        0.015873,
+        0.015553,
+        0.014925,
+        0.014832,
+        0.014769,
+        0.014561,
+        0.014404,
+        0.014145
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8402
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Какой размер (сумма) пособия по беременности и родам и как он рассчитывается: нормативное регулирование, средний заработок, минимальный и максимальный размер выплаты Размер пособия по беременности и …",
+          "status": "ok",
+          "duration_ms": 8402,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 27,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 27,
+            "candidates_before_filters": 346,
+            "candidates_after_date_filter": 52,
+            "candidates_after_document_filter": 52,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8402.537,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8402
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_пт-05-2023_v1_0003_d951ea1d",
+        "contract_п-17-2024_v1_0003_6776ab4c",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_пт-05-2023_v1_0001_d675f5ca",
+        "contract_пт-05-2023_v1_0002_1e9543d9",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_п-17-2024_v1_0006_c1b0ed18",
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0001_975cfbf0"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0006_c1b0ed18",
+        "contract_пт-05-2023_v1_0003_d951ea1d",
+        "contract_п-17-2024_v1_0001_975cfbf0",
+        "contract_пт-05-2023_v1_0001_d675f5ca",
+        "contract_пт-05-2023_v1_0002_1e9543d9"
+      ],
+      "scores": [
+        5.39198808837682e-05,
+        4.6812281652819365e-05,
+        2.3055712517816573e-05,
+        1.4522830497298855e-05,
+        1.0641101653163787e-05
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 25074.998,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 0,
+      "required_slots": [
+        "general"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "insufficient",
+      "reason": "core_slot_not_covered",
+      "viable_chunks_count": 0,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "general"
+      ],
+      "covered_slots": [],
+      "uncovered_slots": [
+        "general"
+      ],
+      "missing_slots": [
+        "general"
+      ],
+      "core_slot_covered": false,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 0,
+      "slot_match_counts": {
+        "general": 0
+      },
+      "retrieval_fallback": true,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 0.444,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "refusal",
+    "input": {
+      "query": "Какой размер пособия по беременности и родам?",
+      "intent": "semantic",
+      "reason": "no_relevant_documents"
+    },
+    "output": {
+      "refused": true,
+      "answer_length": 189,
+      "refusal_kind": "no_relevant_documents",
+      "retrieval_returned_chunks": 5,
+      "viable_chunks_count": 0,
+      "sufficiency": "insufficient",
+      "retrieval_attempt": 1
+    },
+    "latency_ms": 0.021,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 4/8
+======================================================================
+ВОПРОС: Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?
+
+ОТВЕТ:
+Согласно п. 3.1 договора аренды нежилого помещения № А-08/2024, заключённого с ООО «Северный Склад», арендная плата составляет 450 000 (четыреста пятьдесят тысяч) рублей в месяц, включая НДС <source>S1</source>. Размер арендной платы 500 000 рублей в месяц в предоставленных источниках не подтверждается.
+
+ИСТОЧНИКИ:
+  [S1] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | 3. Арендная плата | score=0.9061390161514282 | chunk=contract_а-08-2024_v1_0002_76b6b25c
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['Под вопросом «почему» понимается поиск условий договора, обосновывающих или устанавливающих размер арендной платы', 'интерпретация: договором установлен размер арендной платы 450 000 рублей в месяц; сведения о размере 500 000 рублей в найденных источниках отсутствуют (статус предпосылки — UNKNOWN).']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.179,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "explain",
+      "required_slots": [
+        "rent_amount"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 1,
+      "rewritten_bm25": [
+        "договор ООО Северный Склад арендная плата 500 000 рублей в месяц основания размер",
+        "ООО Северный Склад договор арендная плата размер 500000 рублей месяц условие"
+      ],
+      "rewritten_dense": [
+        "Найти в договоре с ООО «Северный Склад» условия, объясняющие или устанавливающие арендную плату в размере 500 000 рублей в месяц",
+        "Какие положения договора с ООО «Северный Склад» определяют размер арендной платы и обосновывают его величину 500 000 рублей в месяц"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [
+        {
+          "raw": "ООО «Северный Склад»",
+          "document_id": "contract_а-08-2024",
+          "resolved": true
+        }
+      ],
+      "entities_raw": [
+        "ООО «Северный Склад»"
+      ]
+    },
+    "latency_ms": 10271.937,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1587,
+    "completion_tokens": 640,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "rent_amount"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Найти в договоре с ООО «Северный Склад» условия, объясняющие или устанавливающие арендную плату в размере 500 000 рублей в месяц Какие положения договора с ООО «Северный Склад» определяют размер арендной платы и обосновывают его величину 500 000 рублей в месяц договор ООО Северный Склад арендная плата 500 000 рублей в месяц основания размер ООО Северный Склад договор арендная плата размер 500000 рублей месяц условие размер арендной платы стоимость аренды сумма ежемесячной платы",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Найти в договоре с ООО «Северный Склад» условия, объясняющие или устанавливающие арендную плату в размере 500 000 рублей в месяц",
+          "Какие положения договора с ООО «Северный Склад» определяют размер арендной платы и обосновывают его величину 500 000 рублей в месяц"
+        ],
+        "bm25_rewrites": [
+          "договор ООО Северный Склад арендная плата 500 000 рублей в месяц основания размер",
+          "ООО Северный Склад договор арендная плата размер 500000 рублей месяц условие"
+        ],
+        "slot_expansions": [
+          "размер арендной платы стоимость аренды сумма ежемесячной платы"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 482,
+      "required_source_kinds": [
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "rental"
+    },
+    "latency_ms": 0.32,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Найти в договоре с ООО «Северный Склад» условия, объясняющие или устанавливающие арендную плату в размере 500 000 рублей в месяц Какие положения договора с ООО «Северный Склад» определяют размер арендной платы и обосновывают его величину 500 000 рублей в месяц договор ООО Северный Склад арендная плата 500 000 рублей в месяц основания размер ООО Северный Склад договор арендная плата размер 500000 рублей месяц условие размер арендной платы стоимость аренды сумма ежемесячной платы"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0001_99ab711c"
+      ],
+      "scores": [
+        0.016393,
+        0.016129,
+        0.015873,
+        0.015553,
+        0.015457,
+        0.015152,
+        0.014925
+      ],
+      "count": 7,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 9079
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Найти в договоре с ООО «Северный Склад» условия, объясняющие или устанавливающие арендную плату в размере 500 000 рублей в месяц Какие положения договора с ООО «Северный Склад» определяют размер арен…",
+          "status": "ok",
+          "duration_ms": 9079,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 7,
+            "bm25_candidates_count": 7,
+            "dense_candidates_count": 7,
+            "candidates_before_filters": 351,
+            "candidates_after_date_filter": 34,
+            "candidates_after_document_filter": 14,
+            "final_chunks_count": 7,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 9079.382,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 9079
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0001_99ab711c"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0003_30638405"
+      ],
+      "scores": [
+        0.9061390161514282,
+        0.6304792165756226,
+        0.4477432668209076,
+        0.02965294010937214,
+        0.021086277440190315
+      ],
+      "count": 5,
+      "before_count": 7,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 19952.188,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 5,
+      "required_slots": [
+        "rent_amount"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "viable_chunks_count": 5,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "rent_amount"
+      ],
+      "covered_slots": [
+        "rent_amount"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 5,
+      "slot_match_counts": {
+        "rent_amount": 1
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 1.078,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 1,
+      "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 1,
+      "premises": [
+        {
+          "text": "По договору с ООО «Северный Склад» арендная плата составляет 500 000 рублей в месяц",
+          "kind": "amount",
+          "value": "500000",
+          "status": "unknown",
+          "reason": "no_anchored_match",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 2.751,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0004_186a7aca",
+        "contract_а-08-2024_v1_0003_30638405"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 3371
+    },
+    "latency_ms": 0.905,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "Почему по договору с ООО «Северный Склад» арендная плата 500 000 рублей в месяц?",
+      "context_length": 3371,
+      "history_turns": 0,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 304,
+      "claims_count": 2,
+      "assumptions_count": 2,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 11649.475,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 3627,
+    "completion_tokens": 1320,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 2,
+      "core_claims_count": 1,
+      "non_core_claims_count": 1,
+      "question_source": "original",
+      "question_length": 80,
+      "answer_length": 304
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо отвечает на вопрос о размере арендной платы по договору с ООО «Северный Склад», указывая фактическую сумму 450 000 рублей в месяц и опровергая предпосылку о 500 000 рублей; параметр rent_amount покрыт."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 2,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 80,
+      "answer_length": 304,
+      "verdict_reason": "all_verified"
+    },
+    "latency_ms": 4689.646,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2177,
+    "completion_tokens": 305,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 304
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 1,
+      "cited_source_ids": [
+        "S1"
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "all_conditions_met"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 1,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 1,
+        "tasks_completed": 1,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.159,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 5/8
+======================================================================
+ВОПРОС: Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?
+
+ОТВЕТ:
+Да, одобрение генерального директора требовалось: договоры на сумму свыше 10 000 000 рублей подлежат одобрению генеральным директором до подписания <source>S1</source>, а 12 000 000 рублей превышают этот порог. Дополнительно такой договор как превышающий 1 000 000 рублей согласуется с финансовым директором <source>S1</source>. Указанный порядок установлен регламентом, действовавшим в период с 10.01.2023 по 01.03.2025, то есть применимым на дату события (август 2024 года) <source>S1</source>.
+
+ИСТОЧНИКИ:
+  [S1] РЕДАКЦИЯ УТРАТИЛА СИЛУ с 01.03.2025 в связи с утверждением новой редакции регламента (приказ № 14-П от 17.02.2025). | 2. Порядок согласования | score=0.9960384964942932 | chunk=doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['Речь идет о необходимости внутреннего одобрения сделки генеральным директором как единоличным исполнительным органом.', 'Точная дата заключения договора в августе 2024 года не указана.', 'интерпретация: сумма договора 12 000 000 рублей и дата заключения (август 2024 года) приняты как условия сценария, заданные пользователем; документ сделки с этими параметрами в контексте отсутствует.', 'интерпретация: поскольку 12 000 000 рублей превышает порог 10 000 000 рублей, к договору применимо правило об одобрении генеральным директором.']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.078,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "explain",
+      "required_slots": [
+        "approval_process"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 2,
+      "rewritten_bm25": [
+        "одобрение генерального директора договор 12 млн рублей август 2024",
+        "требуется ли одобрение генерального директора для договора на 12 млн рублей в августе 2024"
+      ],
+      "rewritten_dense": [
+        "Нужно ли было одобрение генерального директора для заключения договора на 12 млн рублей, заключенного в августе 2024 года?",
+        "Каков порядок и условия получения одобрения генерального директора на договор или сделку на сумму 12 млн рублей в августе 2024 года?"
+      ],
+      "event_date": "2024-08-01",
+      "degradation_reason": null,
+      "entities": [],
+      "entities_raw": []
+    },
+    "latency_ms": 22481.915,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1588,
+    "completion_tokens": 2232,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "approval_process"
+      ],
+      "event_date": "2024-08-01"
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Нужно ли было одобрение генерального директора для заключения договора на 12 млн рублей, заключенного в августе 2024 года? Каков порядок и условия получения одобрения генерального директора на договор или сделку на сумму 12 млн рублей в августе 2024 года? одобрение генерального директора договор 12 млн рублей август 2024 требуется ли одобрение генерального директора для договора на 12 млн рублей в августе 2024 порядок согласования договора одобрение руководителем пороговая сумма",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Нужно ли было одобрение генерального директора для заключения договора на 12 млн рублей, заключенного в августе 2024 года?",
+          "Каков порядок и условия получения одобрения генерального директора на договор или сделку на сумму 12 млн рублей в августе 2024 года?"
+        ],
+        "bm25_rewrites": [
+          "одобрение генерального директора договор 12 млн рублей август 2024",
+          "требуется ли одобрение генерального директора для договора на 12 млн рублей в августе 2024"
+        ],
+        "slot_expansions": [
+          "порядок согласования договора одобрение руководителем пороговая сумма"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 483,
+      "required_source_kinds": [
+        "normative"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "unknown"
+    },
+    "latency_ms": 0.219,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Нужно ли было одобрение генерального директора для заключения договора на 12 млн рублей, заключенного в августе 2024 года? Каков порядок и условия получения одобрения генерального директора на договор или сделку на сумму 12 млн рублей в августе 2024 года? одобрение генерального директора договор 12 млн рублей август 2024 требуется ли одобрение генерального директора для договора на 12 млн рублей в августе 2024 порядок согласования договора одобрение руководителем пороговая сумма"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
+        "doc_коап_ст13-11_действующая_v1_0018_c89027e3",
+        "doc_коап_ст13-11_действующая_v1_0013_7a49a429",
+        "doc_коап_ст13-11_действующая_v1_0014_3670e2c9",
+        "doc_коап_ст13-11_действующая_v1_0021_8edbc19d",
+        "doc_коап_ст13-11_действующая_v1_0015_a7a9e59e",
+        "doc_коап_ст13-11_действующая_v1_0019_80d83296",
+        "doc_коап_ст13-11_действующая_v1_0012_2a2011b9",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443"
+      ],
+      "scores": [
+        0.016314,
+        0.016208,
+        0.013196,
+        0.012619,
+        0.012617,
+        0.012553,
+        0.012062,
+        0.011703,
+        0.011143,
+        0.011111
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8762
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Нужно ли было одобрение генерального директора для заключения договора на 12 млн рублей, заключенного в августе 2024 года? Каков порядок и условия получения одобрения генерального директора на догово…",
+          "status": "ok",
+          "duration_ms": 8762,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 197,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 40,
+            "candidates_before_filters": 379,
+            "candidates_after_date_filter": 234,
+            "candidates_after_document_filter": 234,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8762.318,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8762
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
+        "doc_коап_ст13-11_действующая_v1_0018_c89027e3",
+        "doc_коап_ст13-11_действующая_v1_0013_7a49a429",
+        "doc_коап_ст13-11_действующая_v1_0014_3670e2c9",
+        "doc_коап_ст13-11_действующая_v1_0021_8edbc19d",
+        "doc_коап_ст13-11_действующая_v1_0015_a7a9e59e",
+        "doc_коап_ст13-11_действующая_v1_0019_80d83296",
+        "doc_коап_ст13-11_действующая_v1_0012_2a2011b9",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443",
+        "doc_коап_ст13-11_действующая_v1_0015_a7a9e59e",
+        "doc_коап_ст13-11_действующая_v1_0021_8edbc19d"
+      ],
+      "scores": [
+        0.9960384964942932,
+        0.418722927570343,
+        0.0018186834640800953,
+        0.0007078765775077045,
+        0.0006213854067027569
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 43336.282,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 2,
+      "required_slots": [
+        "approval_process"
+      ],
+      "event_date": "2024-08-01"
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "viable_chunks_count": 2,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "approval_process"
+      ],
+      "covered_slots": [
+        "approval_process"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 2,
+      "slot_match_counts": {
+        "approval_process": 2
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "normative": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 2
+    },
+    "latency_ms": 13.0,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 2,
+      "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 2,
+      "premises": [
+        {
+          "text": "Договор на 12 млн рублей",
+          "kind": "amount",
+          "value": "12000000",
+          "status": "unknown",
+          "reason": "no_anchored_match",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        },
+        {
+          "text": "Договор заключали в августе 2024 года",
+          "kind": "date",
+          "value": "2024-08",
+          "status": "unknown",
+          "reason": "non_normalizable_value",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 1.697,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0001_83c63ea4",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0000_4500cd07",
+        "doc_регламент-согласования-договоров-ред-2023--утратил-силу_v1_0002_53d26443",
+        "doc_коап_ст13-11_действующая_v1_0015_a7a9e59e",
+        "doc_коап_ст13-11_действующая_v1_0021_8edbc19d"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 4942
+    },
+    "latency_ms": 0.532,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "Договор на 12 млн рублей заключали в августе 2024 года. Нужно ли было одобрение генерального директора?",
+      "context_length": 4942,
+      "history_turns": 0,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 496,
+      "claims_count": 3,
+      "assumptions_count": 4,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 10400.548,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 4061,
+    "completion_tokens": 1062,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 3,
+      "core_claims_count": 1,
+      "non_core_claims_count": 2,
+      "question_source": "original",
+      "question_length": 103,
+      "answer_length": 496
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1,
+        2
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо отвечает на вопрос об одобрении генерального директора для договора на 12 млн рублей, указывая порог 10 млн рублей и применимость регламента на август 2024 года, что покрывает требуемый параметр approval_process."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 3,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 103,
+      "answer_length": 496,
+      "verdict_reason": "all_verified"
+    },
+    "latency_ms": 9925.487,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2603,
+    "completion_tokens": 354,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 496
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 1,
+      "cited_source_ids": [
+        "S1"
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "all_conditions_met"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 1,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 1,
+        "tasks_completed": 1,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.141,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 6/8
+======================================================================
+ВОПРОС: Пользователь: Какой гарантийный срок на товар по договору с ООО «Альфа-Трейд»?
+Ассистент: По договору поставки № П-17/2024 с ООО «Альфа-Трейд» гарантийный срок — 24 месяца с даты поставки (п. 5.2).
+Пользователь: А за сколько дней после поставки нужно проверить качество?
+
+ОТВЕТ:
+Проверить качество Товара нужно в течение 5 (пяти) рабочих дней с даты поставки <source>S1</source>. Датой поставки считается дата подписания Покупателем универсального передаточного документа (УПД) <source>S3</source>.
+
+ИСТОЧНИКИ:
+  [S1] ДОГОВОР ПОСТАВКИ № П-17/2024 | 6. Приёмка Товара | score=0.9996799230575562 | chunk=contract_п-17-2024_v1_0005_ccbdda44
+  [S3] ДОГОВОР ПОСТАВКИ № П-17/2024 | 3. Порядок поставки | score=0.9304092526435852 | chunk=contract_п-17-2024_v1_0002_2f85e789
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['Под проверкой качества товара понимается срок приемки товара по качеству, установленный договором поставки No П-17/2024.']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: True
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "А за сколько дней после поставки нужно проверить качество?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.14,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "За сколько дней после поставки товара по договору поставки № П-17/2024 с ООО «Альфа-Трейд» нужно проверить качество товара?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "lookup",
+      "required_slots": [
+        "acceptance_terms"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 0,
+      "rewritten_bm25": [
+        "договор поставки П-17/2024 ООО «Альфа-Трейд» срок проверки качества товара после поставки",
+        "договор поставки П-17/2024 срок приемки товара по качеству дни после поставки"
+      ],
+      "rewritten_dense": [
+        "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки?",
+        "Срок приемки товара по качеству: за сколько дней после поставки покупатель обязан проверить качество товара по договору поставки No П-17/2024 с ООО «Альфа-Трейд»?"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [
+        {
+          "raw": "договор поставки No П-17/2024",
+          "document_id": null,
+          "resolved": false
+        },
+        {
+          "raw": "ООО «Альфа-Трейд»",
+          "document_id": null,
+          "resolved": false
+        }
+      ],
+      "entities_raw": [
+        "договор поставки No П-17/2024",
+        "ООО «Альфа-Трейд»"
+      ]
+    },
+    "latency_ms": 7537.275,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2346,
+    "completion_tokens": 527,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "acceptance_terms"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки? Срок приемки товара по качеству: за сколько дней после поставки покупатель обязан проверить качество товара по договору поставки No П-17/2024 с ООО «Альфа-Трейд»? договор поставки П-17/2024 ООО «Альфа-Трейд» срок проверки качества товара после поставки договор поставки П-17/2024 срок приемки товара по качеству дни после поставки порядок и срок приемки товара по качеству претензия акт недостатков",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "normative",
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки?",
+          "Срок приемки товара по качеству: за сколько дней после поставки покупатель обязан проверить качество товара по договору поставки No П-17/2024 с ООО «Альфа-Трейд»?"
+        ],
+        "bm25_rewrites": [
+          "договор поставки П-17/2024 ООО «Альфа-Трейд» срок проверки качества товара после поставки",
+          "договор поставки П-17/2024 срок приемки товара по качеству дни после поставки"
+        ],
+        "slot_expansions": [
+          "порядок и срок приемки товара по качеству претензия акт недостатков"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 535,
+      "required_source_kinds": [
+        "normative",
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "supply"
+    },
+    "latency_ms": 0.155,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки? Срок приемки товара по качеству: за сколько дней после поставки покупатель обязан проверить качество товара по договору поставки No П-17/2024 с ООО «Альфа-Трейд»? договор поставки П-17/2024 ООО «Альфа-Трейд» срок проверки качества товара после поставки договор поставки П-17/2024 срок приемки товара по качеству дни после поставки порядок и срок приемки товара по качеству претензия акт недостатков"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0002_2f85e789",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "doc_письмо-комплаенс-службы-к-12-от-15-04-2025_v1_0000_8eec847a",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "doc_служебная-записка-об-архиве-договоров_v1_0000_00bd75a3",
+        "contract_п-17-2024_v1_0008_f5b0477e",
+        "doc_тк_ст70_действующая_v1_0002_606e9955"
+      ],
+      "scores": [
+        0.018032,
+        0.017657,
+        0.017379,
+        0.016772,
+        0.016323,
+        0.016314,
+        0.016206,
+        0.016029,
+        0.015971,
+        0.015906
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 17672
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки? Срок приемки товара по качеству: за сколько дней после поставк…",
+          "status": "ok",
+          "duration_ms": 17672,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 27,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 27,
+            "candidates_before_filters": 371,
+            "candidates_after_date_filter": 54,
+            "candidates_after_document_filter": 54,
+            "final_chunks_count": 20,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 17672.609,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 17672
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 2,
+      "doc_boost_applied": 8,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "Какой срок установлен договором поставки No П-17/2024 с ООО «Альфа-Трейд» для проверки качества поставленного товара после его поставки?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0002_2f85e789",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "doc_письмо-комплаенс-службы-к-12-от-15-04-2025_v1_0000_8eec847a",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "doc_служебная-записка-об-архиве-договоров_v1_0000_00bd75a3",
+        "contract_п-17-2024_v1_0008_f5b0477e",
+        "doc_тк_ст70_действующая_v1_0002_606e9955"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0002_2f85e789",
+        "contract_п-17-2024_v1_0008_f5b0477e",
+        "amend_1_п-17-2024_v1_0000_abe9e541"
+      ],
+      "scores": [
+        0.9996799230575562,
+        0.9983634352684021,
+        0.9304092526435852,
+        0.8729113340377808,
+        0.6407579183578491
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 6,
+      "top_n": 5,
+      "preserved_source_kinds": [
+        "normative"
+      ]
+    },
+    "latency_ms": 37309.993,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 6,
+      "viable_chunks_count": 6,
+      "required_slots": [
+        "acceptance_terms"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "sufficient",
+      "reason": "all_required_slots_covered",
+      "viable_chunks_count": 6,
+      "retrieved_chunks_count": 6,
+      "required_slots": [
+        "acceptance_terms"
+      ],
+      "covered_slots": [
+        "acceptance_terms"
+      ],
+      "uncovered_slots": [],
+      "missing_slots": [],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 6,
+      "slot_match_counts": {
+        "acceptance_terms": 3
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5,
+        "normative": 1
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 3.302,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 0,
+      "chunks_count": 6,
+      "trusted_chunks_count": 6,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "sufficient"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 0,
+      "premises": [],
+      "injection_flagged": false,
+      "refusal_forbidden": true
+    },
+    "latency_ms": 0.579,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0002_2f85e789",
+        "contract_п-17-2024_v1_0008_f5b0477e",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "doc_письмо-комплаенс-службы-к-12-от-15-04-2025_v1_0000_8eec847a"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6"
+      ],
+      "context_length": 4542
+    },
+    "latency_ms": 7.959,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "А за сколько дней после поставки нужно проверить качество?",
+      "context_length": 4542,
+      "history_turns": 2,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 219,
+      "claims_count": 2,
+      "assumptions_count": 1,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 3971.804,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 4068,
+    "completion_tokens": 277,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 2,
+      "core_claims_count": 1,
+      "non_core_claims_count": 1,
+      "question_source": "original",
+      "question_length": 58,
+      "answer_length": 219
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо указывает срок проверки качества — 5 рабочих дней с даты поставки, что соответствует запрошенному параметру acceptance_terms."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 2,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 58,
+      "answer_length": 219,
+      "verdict_reason": "all_verified"
+    },
+    "latency_ms": 3447.924,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2415,
+    "completion_tokens": 236,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6"
+      ],
+      "answer_length": 219
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 2,
+      "cited_source_ids": [
+        "S1",
+        "S3"
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "all_conditions_met"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 1,
+        "attempts_ok": 1,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 1,
+        "tasks_completed": 1,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.145,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 7/8
+======================================================================
+ВОПРОС: К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?
+
+ОТВЕТ:
+Да. По договору аренды нежилого помещения No А-08/2024 Арендодателем является ООО «Северный Склад» <source>S2</source>, и он обязан обеспечить беспрепятственный доступ Арендатора и его транспорта к Помещению круглосуточно <source>S3</source>. Приезд грузовика в два часа ночи укладывается в этот круглосуточный режим доступа.
+
+ИСТОЧНИКИ:
+  [S2] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | 1. Предмет договора | score=0.9894043207168579 | chunk=contract_а-08-2024_v1_0000_1518d2c3
+  [S3] ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024 | 4. Права и обязанности сторон | score=0.7857234477996826 | chunk=contract_а-08-2024_v1_0003_30638405
+
+ИНТЕНТ: semantic
+ОТКАЗ: False | Причина: None
+УВЕРЕННОСТЬ: high
+ДОПУЩЕНИЯ: ['вопрос о ночном пропуске транспорта на склад трактуется как условие доставки/доступа транспорта по договору', 'интерпретация: грузовик, приезжающий к складу арендатора, относится к «транспорту Арендатора», а приезд в два часа ночи охватывается обязанностью обеспечить доступ «круглосуточно».']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.21,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "lookup",
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "decomposition_count": 0,
+      "premises_count": 1,
+      "rewritten_bm25": [
+        "договор Северный Склад пропуск грузового транспорта на склад в ночное время",
+        "условия доставки и пропуска транспорта на склад ночное время договор Северный Склад"
+      ],
+      "rewritten_dense": [
+        "предусмотрен ли договором с «Северным Складом» пропуск грузового транспорта на склад в Химках в ночное время, в том числе в два часа ночи",
+        "какие условия доставки, доступа и пропуска транспорта на склад установлены договором с «Северным Складом», включая круглосуточный режим работы склада"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [
+        {
+          "raw": "Северный Склад",
+          "document_id": "contract_а-08-2024",
+          "resolved": true
+        }
+      ],
+      "entities_raw": [
+        "Северный Склад"
+      ]
+    },
+    "latency_ms": 6399.547,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1598,
+    "completion_tokens": 552,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "предусмотрен ли договором с «Северным Складом» пропуск грузового транспорта на склад в Химках в ночное время, в том числе в два часа ночи какие условия доставки, доступа и пропуска транспорта на склад установлены договором с «Северным Складом», включая круглосуточный режим работы склада договор Северный Склад пропуск грузового транспорта на склад в ночное время условия доставки и пропуска транспорта на склад ночное время договор Северный Склад условия и адрес доставки распределение расходов на упаковку и перевозку",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "предусмотрен ли договором с «Северным Складом» пропуск грузового транспорта на склад в Химках в ночное время, в том числе в два часа ночи",
+          "какие условия доставки, доступа и пропуска транспорта на склад установлены договором с «Северным Складом», включая круглосуточный режим работы склада"
+        ],
+        "bm25_rewrites": [
+          "договор Северный Склад пропуск грузового транспорта на склад в ночное время",
+          "условия доставки и пропуска транспорта на склад ночное время договор Северный Склад"
+        ],
+        "slot_expansions": [
+          "условия и адрес доставки распределение расходов на упаковку и перевозку"
+        ],
+        "decomposition": [],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 519,
+      "required_source_kinds": [
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 2,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "supply"
+    },
+    "latency_ms": 0.166,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "предусмотрен ли договором с «Северным Складом» пропуск грузового транспорта на склад в Химках в ночное время, в том числе в два часа ночи какие условия доставки, доступа и пропуска транспорта на склад установлены договором с «Северным Складом», включая круглосуточный режим работы склада договор Северный Склад пропуск грузового транспорта на склад в ночное время условия доставки и пропуска транспорта на склад ночное время договор Северный Склад условия и адрес доставки распределение расходов на упаковку и перевозку"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "scores": [
+        0.016393,
+        0.016129,
+        0.015873,
+        0.015483,
+        0.015385,
+        0.015294,
+        0.014925
+      ],
+      "count": 7,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8438
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "предусмотрен ли договором с «Северным Складом» пропуск грузового транспорта на склад в Химках в ночное время, в том числе в два часа ночи какие условия доставки, доступа и пропуска транспорта на скла…",
+          "status": "ok",
+          "duration_ms": 8437,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 7,
+            "bm25_candidates_count": 7,
+            "dense_candidates_count": 7,
+            "candidates_before_filters": 351,
+            "candidates_after_date_filter": 34,
+            "candidates_after_document_filter": 14,
+            "final_chunks_count": 7,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8437.982,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8438
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "scores": [
+        0.9902106523513794,
+        0.9894043207168579,
+        0.7857234477996826,
+        0.012704872526228428,
+        0.002967177890241146
+      ],
+      "count": 5,
+      "before_count": 7,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 22006.774,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 4,
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "insufficient",
+      "reason": "core_slot_not_covered",
+      "viable_chunks_count": 4,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "covered_slots": [],
+      "uncovered_slots": [
+        "delivery_terms"
+      ],
+      "missing_slots": [
+        "delivery_terms"
+      ],
+      "core_slot_covered": false,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 4,
+      "slot_match_counts": {
+        "delivery_terms": 0
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 1.443,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_followup_retrieval",
+    "input": {
+      "missing_slots": [
+        "delivery_terms"
+      ],
+      "existing_queries_count": 1
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "followup_task_0",
+          "query": "договор Северный Склад пропуск грузового транспорта на склад в ночное время условия и адрес доставки распределение расходов на упаковку и перевозку",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:delivery_terms",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "slot_expansions": [
+          "условия и адрес доставки распределение расходов на упаковку и перевозку"
+        ]
+      },
+      "combined_query_chars": 147,
+      "slots_used": [
+        "delivery_terms"
+      ],
+      "required_source_kinds": [
+        "specific"
+      ],
+      "document_type": "supply",
+      "skipped_duplicate_slots": [],
+      "limits": {
+        "top_k": 10,
+        "max_slots": 3
+      },
+      "followup_cycle": 1
+    },
+    "latency_ms": 1.055,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "договор Северный Склад пропуск грузового транспорта на склад в ночное время условия и адрес доставки распределение расходов на упаковку и перевозку"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 2
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "scores": [
+        0.016393,
+        0.016129,
+        0.015873,
+        0.015483,
+        0.015457,
+        0.015221,
+        0.014925
+      ],
+      "count": 7,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 7507
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:delivery_terms",
+          "query": "договор Северный Склад пропуск грузового транспорта на склад в ночное время условия и адрес доставки распределение расходов на упаковку и перевозку",
+          "status": "ok",
+          "duration_ms": 7507,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": [
+              "contract_а-08-2024"
+            ],
+            "allowed_chunk_ids_count": 7,
+            "bm25_candidates_count": 7,
+            "dense_candidates_count": 7,
+            "candidates_before_filters": 341,
+            "candidates_after_date_filter": 34,
+            "candidates_after_document_filter": 14,
+            "final_chunks_count": 7,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 7507.256,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 7507
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 0,
+      "doc_boost_applied": 0,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 2,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0001_99ab711c",
+        "contract_а-08-2024_v1_0002_76b6b25c",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ],
+      "scores": [
+        0.9902106523513794,
+        0.9894043207168579,
+        0.7853890061378479,
+        0.012768823653459549,
+        0.002967177890241146
+      ],
+      "count": 5,
+      "before_count": 7,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 22506.089,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 4,
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "insufficient",
+      "reason": "core_slot_not_covered",
+      "viable_chunks_count": 4,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "delivery_terms"
+      ],
+      "covered_slots": [],
+      "uncovered_slots": [
+        "delivery_terms"
+      ],
+      "missing_slots": [
+        "delivery_terms"
+      ],
+      "core_slot_covered": false,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 4,
+      "slot_match_counts": {
+        "delivery_terms": 0
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 1.445,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 1,
+      "chunks_count": 5,
+      "trusted_chunks_count": 5,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "partial"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 1,
+      "premises": [
+        {
+          "text": "грузовик приезжает на склад в Химках иногда в два часа ночи",
+          "kind": "term",
+          "value": "02:00",
+          "status": "unknown",
+          "reason": "non_normalizable_value",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": false
+    },
+    "latency_ms": 1.811,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "contract_а-08-2024_v1_0006_46d4983f",
+        "contract_а-08-2024_v1_0000_1518d2c3",
+        "contract_а-08-2024_v1_0003_30638405",
+        "contract_а-08-2024_v1_0005_52a8c58d",
+        "contract_а-08-2024_v1_0004_186a7aca"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "context_length": 3210
+    },
+    "latency_ms": 1.299,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "generation",
+    "input": {
+      "query": "К нашему складу в Химках грузовик приезжает иногда в два часа ночи. По договору с «Северным Складом» нас должны пропускать?",
+      "context_length": 3210,
+      "history_turns": 0,
+      "attempts": 1
+    },
+    "output": {
+      "answer_length": 325,
+      "claims_count": 2,
+      "assumptions_count": 2,
+      "missing_info_count": 0,
+      "refusal_reason": null
+    },
+    "latency_ms": 6585.968,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 3558,
+    "completion_tokens": 697,
+    "extra": {},
+    "stage_idx": 6,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "verify_draft",
+    "input": {
+      "claims_count": 2,
+      "core_claims_count": 1,
+      "non_core_claims_count": 1,
+      "question_source": "original",
+      "question_length": 123,
+      "answer_length": 325
+    },
+    "output": {
+      "final_verdict": "accept",
+      "supported_locked": [
+        0,
+        1
+      ],
+      "citation_errors_count": 0,
+      "injection_signals_count": 0,
+      "answer_to_question": {
+        "verdict": "match",
+        "reason": "Ответ прямо отвечает на вопрос о пропуске грузовика в два часа ночи, ссылаясь на договор с ООО «Северный Склад» и круглосуточный доступ транспорта Арендатора к Помещению, что покрывает запрошенный параметр delivery_terms."
+      },
+      "verifier_unavailable": false,
+      "verifier_unavailable_reason": null,
+      "auto_accept_blocked": false,
+      "claims_synthesized": false,
+      "supported_claims_count": 2,
+      "contradicted_claims_count": 0,
+      "not_in_source_claims_count": 0,
+      "unverified_claims_count": 0,
+      "text_claim_consistency": true,
+      "text_claim_issues_count": 0,
+      "source_role_issues": [],
+      "source_role_issues_count": 0,
+      "pruned_claims_count": 0,
+      "question_source": "original",
+      "question_length": 123,
+      "answer_length": 325,
+      "verdict_reason": "all_verified"
+    },
+    "latency_ms": 4110.107,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 2136,
+    "completion_tokens": 442,
+    "extra": {},
+    "stage_idx": 7,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "response_assembly",
+    "input": {
+      "intent": "semantic",
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "answer_length": 325
+    },
+    "output": {
+      "refused": false,
+      "sources_count": 2,
+      "cited_source_ids": [
+        "S2",
+        "S3"
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "all_conditions_met"
+      ],
+      "degradation_reasons": [],
+      "retrieval_summary": {
+        "attempts": 2,
+        "attempts_ok": 2,
+        "attempts_partial": 0,
+        "attempts_error": 0,
+        "tasks_submitted": 2,
+        "tasks_completed": 2,
+        "tasks_failed": 0,
+        "tasks_cancelled": 0,
+        "tasks_timed_out": 0
+      }
+    },
+    "latency_ms": 0.183,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 8,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  }
+]
+
+
+======================================================================
+ЗАПРОС 8/8
+======================================================================
+ВОПРОС: «Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?
+
+ОТВЕТ:
+Не удалось корректно обработать запрос в установленное время. Пожалуйста, переформулируйте вопрос более конкретно, указав название или номер договора/нормативного акта и интересующее условие.
+
+ИСТОЧНИКИ:
+  (нет источников)
+
+ИНТЕНТ: semantic
+ОТКАЗ: True | Причина: cannot_parse
+УВЕРЕННОСТЬ: low
+ДЕГРАДАЦИИ: ['cannot_parse']
+ИСПОЛЬЗОВАНА ИСТОРИЯ: False
+
+ПОЛНЫЙ ТРЕЙС:
+[
+  {
+    "step": "prefilter",
+    "input": {
+      "query": "«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?"
+    },
+    "output": {
+      "triggered": false,
+      "template_key": null,
+      "reason": null
+    },
+    "latency_ms": 0.221,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 0,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "query_analysis",
+    "input": {
+      "query": "«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?",
+      "event_date": null,
+      "attempts": 1
+    },
+    "output": {
+      "intent": "semantic",
+      "task_type": "lookup",
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "decomposition_count": 2,
+      "premises_count": 1,
+      "rewritten_bm25": [
+        "Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов",
+        "Альфа-Трейд порядок приёмки товара по качеству акт о выявленных недостатках сроки уведомления поставщика",
+        "Альфа-Трейд гарантийный срок на мебель претензия по качеству комплект документов"
+      ],
+      "rewritten_dense": [
+        "Какие документы необходимо приложить к претензии поставщику «Альфа-Трейд» в связи с поставкой мебели с дефектами по договору поставки",
+        "Каким образом договор с «Альфа-Трейд» регулирует приёмку товара по качеству: составление акта о недостатках, сроки и порядок уведомления поставщика, фиксация дефектов",
+        "Какие гарантийные обязательства «Альфа-Трейд» и порядок предъявления требований в связи с недостатками качества товара, какие документы подтверждают гарантийный случай"
+      ],
+      "event_date": null,
+      "degradation_reason": null,
+      "entities": [
+        {
+          "raw": "Альфа-Трейд",
+          "document_id": null,
+          "resolved": false
+        }
+      ],
+      "entities_raw": [
+        "Альфа-Трейд"
+      ]
+    },
+    "latency_ms": 10342.882,
+    "model": "deepseek-v4.1-flash:free",
+    "prompt_tokens": 1587,
+    "completion_tokens": 1060,
+    "extra": {},
+    "stage_idx": 1,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_retrieval",
+    "input": {
+      "intent": "semantic",
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "query": "Какие документы необходимо приложить к претензии поставщику «Альфа-Трейд» в связи с поставкой мебели с дефектами по договору поставки Каким образом договор с «Альфа-Трейд» регулирует приёмку товара по качеству: составление акта о недостатках, сроки и порядок уведомления поставщика, фиксация дефектов Какие гарантийные обязательства «Альфа-Трейд» и порядок предъявления требований в связи с недостатками качества товара, какие документы подтверждают гарантийный случай Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов Альфа-Трейд порядок приёмки товара по качеству акт о выявленных недостатках сроки уведомления поставщика Альфа-Трейд гарантийный срок на мебель претензия по качеству комплект документов порядок и срок приемки товара по качеству претензия акт недостатков гарантийный срок на товар условия и порядок исчисления гарантии",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "dense_rewrites": [
+          "Какие документы необходимо приложить к претензии поставщику «Альфа-Трейд» в связи с поставкой мебели с дефектами по договору поставки",
+          "Каким образом договор с «Альфа-Трейд» регулирует приёмку товара по качеству: составление акта о недостатках, сроки и порядок уведомления поставщика, фиксация дефектов",
+          "Какие гарантийные обязательства «Альфа-Трейд» и порядок предъявления требований в связи с недостатками качества товара, какие документы подтверждают гарантийный случай"
+        ],
+        "bm25_rewrites": [
+          "Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов",
+          "Альфа-Трейд порядок приёмки товара по качеству акт о выявленных недостатках сроки уведомления поставщика",
+          "Альфа-Трейд гарантийный срок на мебель претензия по качеству комплект документов"
+        ],
+        "slot_expansions": [
+          "порядок и срок приемки товара по качеству претензия акт недостатков",
+          "гарантийный срок на товар условия и порядок исчисления гарантии"
+        ],
+        "decomposition": [
+          "Какой порядок приёмки товара по качеству и фиксации выявленных дефектов предусмотрен договором с «Альфа-Трейд» (акт, сроки уведомления, состав документов)?",
+          "Какие гарантийные условия и порядок предъявления требований по качеству (в том числе перечень прилагаемых документов) установлены договором с «Альфа-Трейд»?"
+        ],
+        "amendment_markers": []
+      },
+      "combined_query_chars": 872,
+      "required_source_kinds": [
+        "specific"
+      ],
+      "limits": {
+        "top_k": 10,
+        "max_slot_queries": 3,
+        "task_timeout_s": 20.0,
+        "max_followup_cycles": 1
+      },
+      "document_type": "supply"
+    },
+    "latency_ms": 0.191,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Какие документы необходимо приложить к претензии поставщику «Альфа-Трейд» в связи с поставкой мебели с дефектами по договору поставки Каким образом договор с «Альфа-Трейд» регулирует приёмку товара по качеству: составление акта о недостатках, сроки и порядок уведомления поставщика, фиксация дефектов Какие гарантийные обязательства «Альфа-Трейд» и порядок предъявления требований в связи с недостатками качества товара, какие документы подтверждают гарантийный случай Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов Альфа-Трейд порядок приёмки товара по качеству акт о выявленных недостатках сроки уведомления поставщика Альфа-Трейд гарантийный срок на мебель претензия по качеству комплект документов порядок и срок приемки товара по качеству претензия акт недостатков гарантийный срок на товар условия и порядок исчисления гарантии"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 1
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_пт-05-2023_v1_0005_b50f3025",
+        "contract_пт-05-2023_v1_0002_1e9543d9",
+        "contract_пт-05-2023_v1_0008_fa6ab52a"
+      ],
+      "scores": [
+        0.017861,
+        0.017545,
+        0.017256,
+        0.016823,
+        0.016492,
+        0.016431,
+        0.015906,
+        0.014461,
+        0.014348,
+        0.014199
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8798
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "semantic_hybrid",
+          "query": "Какие документы необходимо приложить к претензии поставщику «Альфа-Трейд» в связи с поставкой мебели с дефектами по договору поставки Каким образом договор с «Альфа-Трейд» регулирует приёмку товара п…",
+          "status": "ok",
+          "duration_ms": 8798,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 27,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 27,
+            "candidates_before_filters": 371,
+            "candidates_after_date_filter": 54,
+            "candidates_after_document_filter": 54,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8798.379,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8798
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 2,
+      "doc_boost_applied": 6,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 1,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_пт-05-2023_v1_0005_b50f3025",
+        "contract_пт-05-2023_v1_0002_1e9543d9",
+        "contract_пт-05-2023_v1_0008_fa6ab52a"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_пт-05-2023_v1_0000_3581c527"
+      ],
+      "scores": [
+        0.9871290922164917,
+        0.8258856534957886,
+        0.2604614496231079,
+        0.12567797303199768,
+        0.05960448086261749
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 29770.177,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 5,
+      "viable_chunks_count": 5,
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "partial",
+      "reason": "missing_required_slots",
+      "viable_chunks_count": 5,
+      "retrieved_chunks_count": 5,
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "covered_slots": [
+        "acceptance_terms"
+      ],
+      "uncovered_slots": [
+        "warranty_period"
+      ],
+      "missing_slots": [
+        "warranty_period"
+      ],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 5,
+      "slot_match_counts": {
+        "acceptance_terms": 1,
+        "warranty_period": 0
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 5
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 14.362,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "plan_followup_retrieval",
+    "input": {
+      "missing_slots": [
+        "warranty_period"
+      ],
+      "existing_queries_count": 1
+    },
+    "output": {
+      "tasks_count": 1,
+      "tasks": [
+        {
+          "task_id": "followup_task_0",
+          "query": "Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов гарантийный срок на товар условия и порядок исчисления гарантии",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:warranty_period",
+          "intent": "semantic_query",
+          "source_kinds": [
+            "specific"
+          ]
+        }
+      ],
+      "hybrid_intent": "semantic_query",
+      "query_parts": {
+        "slot_expansions": [
+          "гарантийный срок на товар условия и порядок исчисления гарантии"
+        ]
+      },
+      "combined_query_chars": 149,
+      "slots_used": [
+        "warranty_period"
+      ],
+      "required_source_kinds": [
+        "specific"
+      ],
+      "document_type": "supply",
+      "skipped_duplicate_slots": [],
+      "limits": {
+        "top_k": 10,
+        "max_slots": 3
+      },
+      "followup_cycle": 1
+    },
+    "latency_ms": 8.966,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 2,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "rag_retrieval",
+    "input": {
+      "tasks_count": 1,
+      "queries": [
+        "Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов гарантийный срок на товар условия и порядок исчисления гарантии"
+      ],
+      "modes": [
+        "hybrid"
+      ],
+      "intents": [
+        "semantic_query"
+      ],
+      "attempt": 2
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_пт-05-2023_v1_0005_b50f3025",
+        "contract_п-17-2024_v1_0003_6776ab4c",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_пт-05-2023_v1_0008_fa6ab52a",
+        "contract_пт-05-2023_v1_0003_d951ea1d"
+      ],
+      "scores": [
+        0.017576,
+        0.01746,
+        0.016903,
+        0.016679,
+        0.016324,
+        0.016314,
+        0.015547,
+        0.015385,
+        0.014255,
+        0.014145
+      ],
+      "count": 10,
+      "degraded": false,
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8398
+      },
+      "status": "ok",
+      "errors": [],
+      "tasks": [
+        {
+          "task_id": "task_0",
+          "mode": "hybrid",
+          "purpose": "followup_hybrid:warranty_period",
+          "query": "Альфа-Трейд претензия по дефектам поставленной мебели перечень прилагаемых документов гарантийный срок на товар условия и порядок исчисления гарантии",
+          "status": "ok",
+          "duration_ms": 8397,
+          "error_type": null,
+          "error_message": null,
+          "search": {
+            "selected_doc_ids": null,
+            "allowed_chunk_ids_count": 27,
+            "bm25_candidates_count": 20,
+            "dense_candidates_count": 27,
+            "candidates_before_filters": 358,
+            "candidates_after_date_filter": 52,
+            "candidates_after_document_filter": 52,
+            "final_chunks_count": 10,
+            "validity_unknown_count": 0
+          },
+          "embeddings": {
+            "provider": "local",
+            "model": "BAAI/bge-m3",
+            "dimension": 1024,
+            "success": true,
+            "fallback_used": false,
+            "error_type": null
+          }
+        }
+      ]
+    },
+    "latency_ms": 8398.117,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {
+      "executor": {
+        "submitted": 1,
+        "started": 1,
+        "completed": 1,
+        "failed": 0,
+        "queued": 0,
+        "cancelled": 0,
+        "timed_out": 0,
+        "queue_timeout": 0,
+        "threads_alive_after_grace": 0,
+        "batch_duration_ms": 8398
+      },
+      "errors_count": 0,
+      "degraded": false,
+      "execution": "sequential",
+      "aggregation": "none",
+      "rrf_levels": 1,
+      "hybrid_rrf_k": 60,
+      "doc_boost_factor": 1.1,
+      "boost_doc_ids_count": 2,
+      "doc_boost_applied": 6,
+      "prewarm": {
+        "local_model": "ok",
+        "collection": "ok",
+        "warmup": "ok",
+        "warmup_ms": 8918
+      },
+      "attempt": 2,
+      "status": "ok"
+    },
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "reranking",
+    "input": {
+      "query": "«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?",
+      "top_n": 5,
+      "input_chunk_ids": [
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0004_cbf5dd62",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_п-17-2024_v1_0007_1d906225",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "contract_пт-05-2023_v1_0005_b50f3025",
+        "contract_п-17-2024_v1_0003_6776ab4c",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_пт-05-2023_v1_0008_fa6ab52a",
+        "contract_пт-05-2023_v1_0003_d951ea1d"
+      ],
+      "mode": "real"
+    },
+    "output": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_п-17-2024_v1_0007_1d906225"
+      ],
+      "scores": [
+        0.8258856534957886,
+        0.260126531124115,
+        0.12710416316986084,
+        0.05895846337080002,
+        0.055812228471040726
+      ],
+      "count": 5,
+      "before_count": 10,
+      "after_count": 5,
+      "top_n": 5,
+      "preserved_source_kinds": []
+    },
+    "latency_ms": 32605.599,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 3,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "assess_evidence",
+    "input": {
+      "chunks_count": 6,
+      "viable_chunks_count": 6,
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "event_date": null
+    },
+    "output": {
+      "sufficiency": "partial",
+      "reason": "missing_required_slots",
+      "viable_chunks_count": 6,
+      "retrieved_chunks_count": 6,
+      "required_slots": [
+        "acceptance_terms",
+        "warranty_period"
+      ],
+      "covered_slots": [
+        "acceptance_terms"
+      ],
+      "uncovered_slots": [
+        "warranty_period"
+      ],
+      "missing_slots": [
+        "warranty_period"
+      ],
+      "core_slot_covered": true,
+      "min_viable_score": 0.005,
+      "checked_chunks_count": 6,
+      "slot_match_counts": {
+        "acceptance_terms": 2,
+        "warranty_period": 0
+      },
+      "retrieval_fallback": false,
+      "contradictions_count": 0,
+      "version_issues_count": 0,
+      "source_kind_counts": {
+        "specific": 6
+      },
+      "missing_source_kinds_count": 0,
+      "version_uncertainty_count": 0
+    },
+    "latency_ms": 1.443,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 4,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "policy_precheck",
+    "input": {
+      "premises_count": 1,
+      "chunks_count": 6,
+      "trusted_chunks_count": 6,
+      "untrusted_chunks_count": 0,
+      "sufficiency": "partial"
+    },
+    "output": {
+      "premise_mismatch": false,
+      "premise_details": [],
+      "premise_unknown_count": 1,
+      "premises": [
+        {
+          "text": "Поставщик «Альфа-Трейд» поставил мебель с дефектами",
+          "kind": "fact",
+          "value": "наличие дефектов поставленного товара",
+          "status": "unknown",
+          "reason": "not_comparable",
+          "evidence_source_id": null,
+          "conflicting_value": null
+        }
+      ],
+      "injection_flagged": false,
+      "refusal_forbidden": false
+    },
+    "latency_ms": 0.544,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "context_assembly",
+    "input": {
+      "chunk_ids": [
+        "contract_п-17-2024_v1_0005_ccbdda44",
+        "contract_п-17-2024_v1_0000_b431bde6",
+        "contract_п-17-2024_v1_0009_a6c7df19",
+        "amend_1_п-17-2024_v1_0000_abe9e541",
+        "contract_пт-05-2023_v1_0000_3581c527",
+        "contract_п-17-2024_v1_0007_1d906225"
+      ]
+    },
+    "output": {
+      "source_ids": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6"
+      ],
+      "context_length": 4613
+    },
+    "latency_ms": 1.285,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": 5,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": null
+  },
+  {
+    "step": "refusal",
+    "input": {
+      "query": "«Альфа-Трейд» привёз мебель с дефектами. Что нужно приложить к претензии?",
+      "reason": "cannot_parse"
+    },
+    "output": {
+      "refused": true,
+      "answer_length": 191
+    },
+    "latency_ms": 0.007,
+    "model": null,
+    "prompt_tokens": null,
+    "completion_tokens": null,
+    "extra": {},
+    "stage_idx": null,
+    "failures_global": 0,
+    "failures_step": 0,
+    "degradation": "cannot_parse"
   }
 ]

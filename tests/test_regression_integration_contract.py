@@ -1,8 +1,8 @@
 """Тяжёлый интеграционный регрессионный тест контрольного вопроса.
 
 Использует РЕАЛЬНЫЙ retrieval по реальному индексу (BM25 + Chroma +
-локальная bge-m3 + chunks.jsonl). Замоканы только LLM-этапы (анализ запроса,
-генератор-стаб и верификатор), сам retrieval — настоящий.
+llama.cpp эмбеддинг-сервер + chunks.jsonl). Замоканы только LLM-этапы
+(анализ запроса, генератор-стаб и верификатор), сам retrieval — настоящий.
 
 Генератор-стаб формирует ответ ИЗ ПЕРЕДАННОГО КОНТЕКСТА: находит source-метки
 блоков, содержащих оба факта, и цитирует именно их. Если артефакты индекса
@@ -36,7 +36,6 @@ INTEGRATION = True
 HEAVY = True
 
 ROOT = Path(__file__).resolve().parent.parent
-MODEL_DIR = ROOT / "models" / "bge-m3"
 BM25_FILE = ROOT / "storage" / "bm25_index" / "bm25.pkl"
 CHROMA_DIR = ROOT / "storage" / "chroma_db"
 CHUNKS_FILE = ROOT / "data" / "processed" / "chunks.jsonl"
@@ -53,13 +52,30 @@ CONTROL_QUESTION = (
 def _skip_if_artifacts_missing() -> None:
     missing = [
         str(path)
-        for path in (MODEL_DIR, BM25_FILE, CHROMA_DIR, CHUNKS_FILE)
+        for path in (BM25_FILE, CHROMA_DIR, CHUNKS_FILE)
         if not path.exists()
     ]
     if missing:
         raise SkipTest(
             "Интеграционный тест пропущен: отсутствуют артефакты " + ", ".join(missing)
         )
+
+    # Эмбеддинги считает внешний llama.cpp-сервер: без него реальный
+    # retrieval невозможен, поэтому тест честно пропускается.
+    try:
+        vs_mod.get_query_embedding("проверка доступности сервера эмбеддингов")
+    except Exception as exc:  # noqa: BLE001 - нет сервера → skip
+        raise SkipTest(
+            "Интеграционный тест пропущен: сервер эмбеддингов недоступен "
+            f"({type(exc).__name__})"
+        )
+    diagnostics = vs_mod.get_last_embedding_diagnostics()
+    if diagnostics.get("provider") != "api":
+        raise SkipTest(
+            "Интеграционный тест пропущен: сервер эмбеддингов недоступен "
+            f"(провайдер {diagnostics.get('provider')})"
+        )
+
     try:
         collection = vs_mod.get_chroma_collection()
         count = int(collection.count())

@@ -127,3 +127,43 @@ def test_max_retries_non_negative():
 
 def test_real_rag_default_score():
     assert 0.0 <= config.REAL_RAG_DEFAULT_SCORE <= 1.0
+
+
+# --- конфиг эмбеддингов (llama.cpp OpenAI-совместимый сервер) ----------------
+
+
+def test_embedding_api_base_url_is_http_url():
+    assert isinstance(config.EMBEDDING_API_BASE_URL, str)
+    assert config.EMBEDDING_API_BASE_URL.startswith(("http://", "https://"))
+    assert config.EMBEDDING_API_BASE_URL.rstrip("/").endswith("/v1")
+
+
+def test_embedding_api_key_is_string():
+    assert isinstance(config.EMBEDDING_API_KEY, str)
+
+
+def test_embedding_model_is_bge_m3():
+    assert isinstance(config.EMBEDDING_MODEL, str)
+    assert config.EMBEDDING_MODEL.strip()
+    assert "bge" in config.EMBEDDING_MODEL.lower()
+
+
+def test_embedding_timeout_positive_float():
+    assert isinstance(config.EMBEDDING_TIMEOUT, float)
+    assert config.EMBEDDING_TIMEOUT > 0.0
+    # DEPRECATED alias должен совпадать с новым именем.
+    assert config.EMBEDDING_API_TIMEOUT_S == config.EMBEDDING_TIMEOUT
+
+
+def test_embedding_dimension_matches_bge_m3():
+    assert isinstance(config.EMBEDDING_DIMENSION, int)
+    assert config.EMBEDDING_DIMENSION == 1024
+
+
+def test_embedding_normalize_is_bool():
+    assert isinstance(config.EMBEDDING_NORMALIZE, bool)
+
+
+def test_embedding_max_retries_non_negative():
+    assert isinstance(config.EMBEDDING_API_MAX_RETRIES, int)
+    assert config.EMBEDDING_API_MAX_RETRIES >= 0

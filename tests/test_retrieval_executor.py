@@ -9,10 +9,12 @@
 * диагностика timeout-задач не содержит фиктивных ``0``/``success: true``.
 """
 
-import sys
+import json
 import threading
 import time
 from unittest.mock import patch
+
+import httpx
 
 from rag_core.generation.errors import RetrievalAPIError, RetrievalTimeoutError
 from rag_core.generation.retrieval import bridge as bridge_mod
@@ -308,81 +310,38 @@ def test_all_tasks_timed_out_raises_timeout_error():
             raise AssertionError("Ожидался RetrievalTimeoutError")
 
 
-# --- 6. Cold/warm: prewarm делает warm-up forward --------------------------
+# --- 6. Cold/warm: prewarm прогревает HTTP-сервер эмбеддингов --------------
 
 
-class _NullCtx:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
+_EMBEDDING_DIMENSION = 1024
 
 
-class _FakeTensor:
-    def __init__(self, rows):
-        self._rows = rows
-
-    def __getitem__(self, key):
-        if isinstance(key, tuple) and key == (slice(None), 0):
-            return _FakeTensor([[r[0]] for r in self._rows])
-        return self
-
-    def cpu(self):
-        return self
-
-    def to(self, device):
-        return self
-
-    def tolist(self):
-        return self._rows
+def _embedding_vector() -> list:
+    return [0.5] + [0.0] * (_EMBEDDING_DIMENSION - 1)
 
 
-class _FakeOutputs:
-    def __init__(self, rows):
-        self.last_hidden_state = _FakeTensor(rows)
-
-
-class _FakeBatchEncoding(dict):
-    def to(self, device):
-        return self
-
-
-class _SlowFirstTokenizer:
-    def __call__(self, texts, **kwargs):
-        return _FakeBatchEncoding({"input_ids": [[1, 2, 3]] * len(texts)})
-
-
-class _SlowFirstModel:
-    """Первый forward медленный (имитация холодного bge-m3)."""
+class _SlowFirstTransport:
+    """Первый HTTP-запрос медленный (имитация холодного llama.cpp)."""
 
     def __init__(self, delay: float = 0.4):
         self.delay = delay
         self.calls = 0
 
-    def __call__(self, **kwargs):
+    def __call__(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
         if self.calls == 1:
             time.sleep(self.delay)
-        count = len(kwargs.get("input_ids", []))
-        return _FakeOutputs([[0.5, 0.5] for _ in range(count)])
-
-
-class _FakeTorchModule:
-    class cuda:
-        @staticmethod
-        def is_available():
-            return False
-
-    class nn:
-        class functional:
-            @staticmethod
-            def normalize(tensor, p, dim):
-                return tensor
-
-    @staticmethod
-    def no_grad():
-        return _NullCtx()
+        payload = json.loads(request.content.decode("utf-8"))
+        texts = payload.get("input") or []
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": index, "embedding": _embedding_vector()}
+                    for index in range(len(texts))
+                ]
+            },
+        )
 
 
 class _FakeCollection:
@@ -391,16 +350,12 @@ class _FakeCollection:
 
 
 def test_prewarm_warms_first_forward_and_first_batch_is_warm():
-    fake_model = _SlowFirstModel(delay=0.4)
-    fake_tokenizer = _SlowFirstTokenizer()
-    saved_torch = sys.modules.get("torch")
-    sys.modules["torch"] = _FakeTorchModule()
+    transport = _SlowFirstTransport(delay=0.4)
+    client = httpx.Client(transport=httpx.MockTransport(transport))
     try:
         vs_mod.reset_local_model_cache()
         with patch.object(
-            vs_mod,
-            "_load_local_model",
-            return_value=(fake_tokenizer, fake_model, "cpu"),
+            vs_mod, "_get_http_client", return_value=client
         ), patch.object(
             vs_mod, "get_chroma_collection", return_value=_FakeCollection()
         ), patch.object(
@@ -411,8 +366,9 @@ def test_prewarm_warms_first_forward_and_first_batch_is_warm():
             assert report["warmup"] == "ok"
             assert report["warmup_ms"] is not None
             assert report["warmup_ms"] >= 250
-            # Warm-up уже израсходовал медленный первый forward.
-            assert fake_model.calls == 1
+            assert report["embedding_provider"] == "api"
+            # Warm-up уже израсходовал медленный первый HTTP-запрос.
+            assert transport.calls == 1
 
             def worker(task, state=None):
                 vs_mod.compute_embeddings([task.query])
@@ -440,11 +396,8 @@ def test_prewarm_warms_first_forward_and_first_batch_is_warm():
             assert [chunk.chunk_id for chunk in chunks] == ["warm"]
             assert diagnostics["tasks"][0]["status"] == "ok"
             assert diagnostics["prewarm"]["warmup"] == "ok"
-            # Второй forward (уже горячий) уложился в 0.2 с.
-            assert fake_model.calls == 2
+            # Второй HTTP-запрос (уже горячий) уложился в 0.2 с.
+            assert transport.calls == 2
     finally:
         vs_mod.reset_local_model_cache()
-        if saved_torch is None:
-            sys.modules.pop("torch", None)
-        else:
-            sys.modules["torch"] = saved_torch
+        client.close()

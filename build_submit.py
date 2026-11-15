@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,16 @@ VERIFY_SCRIPT = ROOT / "verify_submit.py"
 ZIP_PATH = ROOT / "submit.zip"
 
 MAX_ZIP_BYTES = 128 * 1024 * 1024
+
+# Офлайн-кэш tiktoken для кодировки cl100k_base. Имя файла — sha1 от URL
+# таблицы BPE, содержимое сверяется по sha256. Файл копируется в корень
+# submit/, чтобы плоская сборка не зависела от сети и от каталогов платформы.
+TIKTOKEN_CACHE_SOURCE_DIR = ROOT / "tiktoken_cache"
+TIKTOKEN_CACHE_FILENAME = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+TIKTOKEN_CACHE_SHA256 = (
+    "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+)
+TIKTOKEN_CACHE_SOURCE = TIKTOKEN_CACHE_SOURCE_DIR / TIKTOKEN_CACHE_FILENAME
 
 # source -> target в плоской сборке
 MODULE_SOURCES: List[Tuple[str, str]] = [
@@ -209,6 +220,20 @@ python solution.py
 единый ключ платформы. Локальные веса BGE-M3 в SUBMIT-режиме не
 загружаются, hash-fallback эмбеддингов запрещён.
 
+## Офлайн-кэш tiktoken
+
+Таблица BPE кодировки `cl100k_base` поставляется вместе с артефактом:
+файл `9b5ad71b2ce5302211f9c61530b329a4922fc6a4` (sha256
+`223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`)
+лежит в корне `submit/` наравне с остальными файлами. При сборке
+`python build_submit.py` он копируется из `tiktoken_cache/` корня
+проекта, а сборка падает, если файл отсутствует или повреждён.
+
+`indexing_tokenizer_utils.py` подключает каталог с этим файлом через
+`TIKTOKEN_CACHE_DIR` до вызова `tiktoken.get_encoding(...)`, поэтому
+токенизация работает без сети. Если платформа задаёт
+`TIKTOKEN_CACHE_DIR` сама, это значение переписывается.
+
 ## Политика длины ответа
 
 Если ответ превышает 10 000 символов, он сокращается по последней
@@ -369,6 +394,15 @@ def rewrite_source(source: str, source_name: str) -> str:
     return header + code + "\n"
 
 
+def file_sha256(path: Path) -> str:
+    """Считает sha256 файла потоково, не загружая его целиком в память."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def ensure_required_sources() -> None:
     missing = [
         source for source, _ in MODULE_SOURCES if not (ROOT / source).is_file()
@@ -379,6 +413,23 @@ def ensure_required_sources() -> None:
         )
     if not VERIFY_SCRIPT.is_file():
         raise BuildError(f"Не найден {VERIFY_SCRIPT.name}")
+    if not TIKTOKEN_CACHE_SOURCE.is_file():
+        raise BuildError(
+            "Не найден офлайн-кэш tiktoken: "
+            f"{TIKTOKEN_CACHE_SOURCE.relative_to(ROOT)}. Скачайте cl100k_base "
+            "один раз командой TIKTOKEN_CACHE_DIR=tiktoken_cache python -c "
+            "\"import tiktoken; tiktoken.get_encoding('cl100k_base')\" "
+            "и повторите сборку."
+        )
+    actual_hash = file_sha256(TIKTOKEN_CACHE_SOURCE)
+    if actual_hash != TIKTOKEN_CACHE_SHA256:
+        raise BuildError(
+            "Офлайн-кэш tiktoken повреждён: "
+            f"sha256={actual_hash}, ожидался {TIKTOKEN_CACHE_SHA256}. "
+            "Файл нужно скачать заново с "
+            "https://openaipublic.blob.core.windows.net/encodings/"
+            "cl100k_base.tiktoken"
+        )
 
 
 def clean_submit_dir() -> None:
@@ -412,6 +463,11 @@ def write_auxiliary_files() -> None:
     )
     (SUBMIT_DIR / "README.md").write_text(
         SUBMIT_README, encoding="utf-8"
+    )
+    # Файл BPE кладётся в корень артефакта: плоская сборка не содержит
+    # подкаталогов, а indexing_tokenizer_utils ищет кэш рядом с собой.
+    shutil.copyfile(
+        TIKTOKEN_CACHE_SOURCE, SUBMIT_DIR / TIKTOKEN_CACHE_FILENAME
     )
 
 
@@ -511,6 +567,18 @@ def validate_generated() -> None:
         raise BuildError("Не создан submit/README.md")
     if not (SUBMIT_DIR / "settings_submit.py").is_file():
         raise BuildError("Не создан submit/settings_submit.py")
+
+    cache_target = SUBMIT_DIR / TIKTOKEN_CACHE_FILENAME
+    if not cache_target.is_file():
+        raise BuildError(
+            "В submit/ не скопирован офлайн-кэш tiktoken "
+            f"({TIKTOKEN_CACHE_FILENAME})"
+        )
+    if file_sha256(cache_target) != TIKTOKEN_CACHE_SHA256:
+        raise BuildError(
+            "Скопированный в submit/ офлайн-кэш tiktoken не совпадает "
+            "по sha256 с исходным файлом"
+        )
 
 
 def make_zip() -> Path:
