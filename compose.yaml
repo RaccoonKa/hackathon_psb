@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - ASSISTANT_BACKEND=rag
       - DATABASE_URL=sqlite:////app/storage/chat.db
@@ -17,13 +17,14 @@ services:
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-local}
       - EMBEDDING_TIMEOUT=${EMBEDDING_TIMEOUT:-180}
       - RERANKER_MODEL=${RERANKER_MODEL:-Qwen/Qwen3-Reranker-8B}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:5173,http://127.0.0.1:5173}
     volumes:
       - ./storage:/app/storage
       - ./data:/app/data
       - ./models:/app/models:ro
     env_file:
-      - .env
+      - path: .env
+        required: false
     command: >
       sh -c "if [ ! -f /app/data/manifests/indexing_manifest.json ]; then
                echo 'Indexing manifest not found, running build_index.py...';
@@ -42,4 +43,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
