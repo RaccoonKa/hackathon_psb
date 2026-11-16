@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type MouseEvent } from 'react';
 import axios from 'axios';
 import {
-  IconPlus, IconSearch, IconBell, IconMessage, IconMore,
+  IconPlus, IconSearch, IconMessage, IconMore,
   IconSend, IconFileText,
   IconX, IconCheckCheck, IconBot
 } from './Icons';
@@ -400,11 +400,6 @@ export default function App() {
           />
         </div>
 
-        <div className="flex items-center gap-4 text-[#0b1e4b]">
-          <button className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
-            <IconBell className="w-5 h-5" />
-          </button>
-        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -717,6 +712,7 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1 text-gray-500">
+
                 <button
                   onClick={() => setIsRightPanelOpen(false)}
                   className="p-1.5 hover:bg-gray-100 rounded"
@@ -789,6 +785,7 @@ export default function App() {
               )}
 
             </div>
+
           </aside>
         )}
 
