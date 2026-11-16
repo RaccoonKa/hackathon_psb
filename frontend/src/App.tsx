@@ -1,11 +1,9 @@
-
 import { useState, useRef, useEffect, type MouseEvent } from 'react';
 import axios from 'axios';
 import {
   IconPlus, IconSearch, IconBell, IconMessage, IconMore,
   IconSend, IconFileText,
-  IconDownload, IconMaximize, IconX, IconChevronLeft,
-  IconChevronRight, IconCheckCheck, IconMinus, IconBot
+  IconX, IconCheckCheck, IconBot
 } from './Icons';
 
 import PsbLogo from './assets/logo.png';
@@ -719,14 +717,6 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1 text-gray-500">
-                <button className="p-1.5 hover:bg-gray-100 rounded">
-                  <IconDownload className="w-4 h-4" />
-                </button>
-
-                <button className="p-1.5 hover:bg-gray-100 rounded">
-                  <IconMaximize className="w-4 h-4" />
-                </button>
-
                 <button
                   onClick={() => setIsRightPanelOpen(false)}
                   className="p-1.5 hover:bg-gray-100 rounded"
@@ -799,45 +789,6 @@ export default function App() {
               )}
 
             </div>
-
-            <div className="h-16 border-t border-gray-200 px-4 flex items-center justify-between bg-gray-50 shrink-0">
-
-              <div className="flex items-center bg-white border border-gray-200 rounded-lg px-2 py-1 shadow-sm opacity-50 pointer-events-none">
-                <button className="p-1 text-gray-400 hover:text-gray-700">
-                  <IconChevronLeft className="w-4 h-4" />
-                </button>
-
-                <span className="text-xs font-medium px-4">
-                  1 из 3
-                </span>
-
-                <button className="p-1 text-gray-400 hover:text-gray-700">
-                  <IconChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex items-center bg-white border border-gray-200 rounded-lg px-2 py-1 shadow-sm gap-2 text-gray-600 opacity-50 pointer-events-none">
-                <button className="p-1 hover:text-gray-900">
-                  <IconMinus className="w-3 h-3" />
-                </button>
-
-                <span className="text-xs font-medium w-10 text-center">
-                  100%
-                </span>
-
-                <button className="p-1 hover:text-gray-900">
-                  <IconPlus className="w-3 h-3" />
-                </button>
-
-                <div className="w-px h-4 bg-gray-300 mx-1"></div>
-
-                <button className="p-1 hover:text-gray-900">
-                  <IconMaximize className="w-3 h-3" />
-                </button>
-              </div>
-
-            </div>
-
           </aside>
         )}
 
